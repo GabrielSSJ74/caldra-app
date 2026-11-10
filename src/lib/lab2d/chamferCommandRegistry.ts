@@ -357,8 +357,8 @@ export const CHAMFER_COMMAND_REGISTRY: readonly ChamferCommandDefinition[] = [
   },
   {
     id: "ui.layout_mode_toggle",
-    label: "Layout (Compacto | Clássico)",
-    fullLabel: "Alternar preferência de layout vertical entre Compacto (Lightroom) e Clássico",
+    label: "Layout (Compacta | PRUMO)",
+    fullLabel: "Alternar preferência de interface entre Compacta (Padrão) e PRUMO (Espacial Zero Barras)",
     classicOrigin: "topbar_right",
     verticalCategory: "topbar",
     verticalGroup: "more",

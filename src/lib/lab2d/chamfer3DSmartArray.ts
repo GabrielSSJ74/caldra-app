@@ -311,6 +311,8 @@ export interface SmartMiterFrameParams3D {
   profileCrossSectionMm?: number;
   profileDepthMm?: number;
   wallThicknessMm?: number;
+  isHollowTube?: boolean;
+  cornerFilletRadiusMm?: number;
   plane?: SmartFramePlane3D;
   jointMode?: SmartFrameJointMode3D;
   innerDivisionsCount?: number;
@@ -333,6 +335,19 @@ export interface SmartMiterFrameMemberSpec3D {
   rotation3D: { rxDeg: number; ryDeg: number; rzDeg: number };
   longLengthMm: number;
   shortLengthMm: number;
+  // Vetores explícitos livres de torção para barra tubular em meia-esquadria 45°
+  cornerOrigin3D: { x: number; y: number; z: number };
+  dirLen3D: { x: number; y: number; z: number };
+  dirIn3D: { x: number; y: number; z: number };
+  dirZ3D: { x: number; y: number; z: number };
+  profileWidthMm: number;
+  profileHeightZMm: number;
+  wallThicknessMm: number;
+  isHollowTube: boolean;
+  cornerFilletRadiusMm: number;
+  startMiterRatio: number;
+  endMiterRatio: number;
+  trapezoidPts2D: { x: number; y: number }[];
 }
 
 export interface SmartMiterFrameResult3D {
@@ -345,6 +360,8 @@ export interface SmartMiterFrameResult3D {
   profileCrossSectionMm: number;
   profileDepthMm: number;
   wallThicknessMm: number;
+  isHollowTube: boolean;
+  cornerFilletRadiusMm: number;
   innerWidthMm: number;
   innerHeightMm: number;
   midWidthMm: number;
@@ -367,20 +384,111 @@ export interface SmartMiterFrameResult3D {
   valid: boolean;
 }
 
+/**
+ * Extrai a seção transversal real (W x H_z), espessura de parede e raio de canto
+ * do tubo/perfil selecionado, ignorando rotações parasitas para montagem de quadro.
+ */
+export function extractTubeCrossSectionFromBody3D(
+  body: DirectBody3D | null | undefined,
+  maxFrameRefDimMm?: number,
+): {
+  profileWidthMm: number;
+  profileDepthMm: number;
+  wallThicknessMm: number;
+  isHollowTube: boolean;
+  cornerFilletRadiusMm: number;
+} {
+  if (!body) {
+    return {
+      profileWidthMm: 20,
+      profileDepthMm: 20,
+      wallThicknessMm: 2.0,
+      isHollowTube: true,
+      cornerFilletRadiusMm: 1.5,
+    };
+  }
+  const dx = Math.max(4, Math.abs(body.bbox3D.maxX - body.bbox3D.minX));
+  const dy = Math.max(4, Math.abs(body.bbox3D.maxY - body.bbox3D.minY));
+  const dz = Math.max(4, Math.abs(body.bbox3D.maxZ - body.bbox3D.minZ));
+  const sorted = [dx, dy, dz].sort((a, b) => a - b);
+  let w = sorted[0];
+  let hz = sorted[1];
+
+  // Se a peça base era um bloco largo cujas dimensões excedem 35% do quadro desejado,
+  // adapta proporcionalmente a bitola para manter um quadro tubular válido (ex.: 20x20mm ou 40x40mm)
+  if (maxFrameRefDimMm && maxFrameRefDimMm > 20 && w > maxFrameRefDimMm * 0.35) {
+    const adapted = Math.max(10, Math.min(50, Math.round(maxFrameRefDimMm * 0.1)));
+    w = adapted;
+    hz = adapted;
+  }
+
+  const rawShellT = Number(body.shellThicknessMm ?? body.shellWallThicknessMm ?? 0);
+  const isHollowTube = rawShellT > 0.2;
+  const wallThicknessMm = isHollowTube
+    ? Math.max(0.8, Math.min(Math.min(w, hz) * 0.4, rawShellT))
+    : Math.max(1.2, Math.min(Math.min(w, hz) * 0.25, 2.0));
+  const cornerFilletRadiusMm = Math.max(
+    0,
+    Math.min(Math.min(w, hz) * 0.35, Number(body.edgeFilletRadiusMm ?? 0)),
+  );
+
+  return {
+    profileWidthMm: Number(w.toFixed(2)),
+    profileDepthMm: Number(hz.toFixed(2)),
+    wallThicknessMm: Number(wallThicknessMm.toFixed(2)),
+    isHollowTube,
+    cornerFilletRadiusMm: Number(cornerFilletRadiusMm.toFixed(2)),
+  };
+}
+
+function evalMiterBarPoint3D(
+  origin: { x: number; y: number; z: number },
+  dirLen: { x: number; y: number; z: number },
+  dirIn: { x: number; y: number; z: number },
+  dirZ: { x: number; y: number; z: number },
+  sAlongLen: number,
+  uAcrossIn: number,
+  zHeight: number,
+): { x: number; y: number; z: number } {
+  return {
+    x: origin.x + sAlongLen * dirLen.x + uAcrossIn * dirIn.x + zHeight * dirZ.x,
+    y: origin.y + sAlongLen * dirLen.y + uAcrossIn * dirIn.y + zHeight * dirZ.y,
+    z: origin.z + sAlongLen * dirLen.z + uAcrossIn * dirIn.z + zHeight * dirZ.z,
+  };
+}
+
 export function computeSmartMiterFrame3D(
   params: SmartMiterFrameParams3D,
 ): SmartMiterFrameResult3D {
-  const rawD = params.profileWidthMm ?? params.profileCrossSectionMm ?? 40;
-  const d = Math.max(5, Number(rawD) || 40);
-  const depth = Math.max(5, Number(params.profileDepthMm ?? d) || d);
-  const wallT = Math.max(0.8, Math.min(d * 0.4, Number(params.wallThicknessMm) || 2.0));
-  const rawW = params.widthInputMm ?? params.inputWidthMm ?? 1000;
-  const rawH = params.heightInputMm ?? params.inputHeightMm ?? 1000;
-  const L = Math.max(d * 2.2, Number(rawW) || 1000);
-  const A = Math.max(d * 2.2, Number(rawH) || 1000);
+  const rawW = Math.max(20, Number(params.widthInputMm ?? params.inputWidthMm ?? 1000) || 1000);
+  const rawH = Math.max(20, Number(params.heightInputMm ?? params.inputHeightMm ?? 1000) || 1000);
+  const minInputDim = Math.min(rawW, rawH);
+
+  const rawD = params.profileWidthMm ?? params.profileCrossSectionMm ?? 20;
+  let d = Math.max(5, Number(rawD) || 20);
+  let depth = Math.max(5, Number(params.profileDepthMm ?? d) || d);
+
+  // Garante que em modo Externa ou Média a bitola W nunca engula o vão livre (L - 2*W >= 4mm)
+  if (params.measureRef === "outer" && d * 2 >= minInputDim - 4) {
+    d = Math.max(5, Math.min(40, Math.floor((minInputDim * 0.2) * 10) / 10));
+    depth = Math.min(depth, d);
+  } else if (params.measureRef === "mid" && d >= minInputDim - 4) {
+    d = Math.max(5, Math.min(40, Math.floor((minInputDim * 0.2) * 10) / 10));
+    depth = Math.min(depth, d);
+  }
+
+  const L = rawW;
+  const A = rawH;
+  const wallT = Math.max(0.8, Math.min(Math.min(d, depth) * 0.4, Number(params.wallThicknessMm) || 2.0));
+  const isHollowTube = params.isHollowTube ?? true;
+  const cornerFilletRadiusMm = Math.max(
+    0,
+    Math.min(Math.min(d, depth) * 0.35, Number(params.cornerFilletRadiusMm ?? 0)),
+  );
   const plane: SmartFramePlane3D = params.plane ?? "xy";
   const jointMode: SmartFrameJointMode3D = params.jointMode ?? "miter_45";
   const miterAngleDeg = jointMode === "miter_45" ? 45 : 0;
+  const miterRatio = jointMode === "miter_45" ? 1 : 0;
 
   let innerWidthMm = L;
   let innerHeightMm = A;
@@ -401,15 +509,15 @@ export function computeSmartMiterFrame3D(
     midHeightMm = A;
     outerWidthMm = L + d;
     outerHeightMm = A + d;
-    innerWidthMm = Math.max(0, L - d);
-    innerHeightMm = Math.max(0, A - d);
+    innerWidthMm = Math.max(2, L - d);
+    innerHeightMm = Math.max(2, A - d);
   } else {
     outerWidthMm = L;
     outerHeightMm = A;
     midWidthMm = Math.max(d, L - d);
     midHeightMm = Math.max(d, A - d);
-    innerWidthMm = Math.max(0, L - 2 * d);
-    innerHeightMm = Math.max(0, A - 2 * d);
+    innerWidthMm = Math.max(2, L - 2 * d);
+    innerHeightMm = Math.max(2, A - 2 * d);
   }
 
   const cx = params.center3D?.x ?? 0;
@@ -419,7 +527,6 @@ export function computeSmartMiterFrame3D(
   const halfOutW = outerWidthMm * 0.5;
   const halfOutH = outerHeightMm * 0.5;
   const halfInW = innerWidthMm * 0.5;
-  const halfInH = innerHeightMm * 0.5;
 
   const nDiv = Math.max(0, Math.min(60, Math.round(params.innerDivisionsCount ?? 0)));
   const grilleRes =
@@ -438,202 +545,201 @@ export function computeSmartMiterFrame3D(
   const innerClearGapMm = grilleRes ? grilleRes.clearGapMm : Number(innerWidthMm.toFixed(2));
   const innerPitchMm = grilleRes ? grilleRes.pitchCenterToCenterMm : 0;
 
-  const members: SmartMiterFrameMemberSpec3D[] = [];
+  // Sistema de eixos do plano do quadro (U = Largura L_ext, V = Altura A_ext, N = Espessura H_z)
+  let frameOrigin3D = { x: cx - halfOutW, y: cy - halfOutH, z: Math.max(0, cz) };
+  let axisU = { x: 1, y: 0, z: 0 };
+  let axisV = { x: 0, y: 1, z: 0 };
+  let axisN = { x: 0, y: 0, z: 1 };
 
   if (plane === "xz") {
-    // Quadro Frontal em Pé (Largura no eixo X, Altura no eixo Z)
-    const y0 = cy - depth * 0.5;
-    const y1 = cy + depth * 0.5;
-    const zBot = Math.max(0, cz);
-    const zTop = zBot + outerHeightMm;
+    frameOrigin3D = { x: cx - halfOutW, y: cy - depth * 0.5, z: Math.max(0, cz) };
+    axisU = { x: 1, y: 0, z: 0 };
+    axisV = { x: 0, y: 0, z: 1 };
+    axisN = { x: 0, y: 1, z: 0 };
+  } else if (plane === "yz") {
+    frameOrigin3D = { x: cx - depth * 0.5, y: cy - halfOutW, z: Math.max(0, cz) };
+    axisU = { x: 0, y: 1, z: 0 };
+    axisV = { x: 0, y: 0, z: 1 };
+    axisN = { x: 1, y: 0, z: 0 };
+  }
 
-    // Montante Esquerdo (vertical em Z)
-    members.push({
-      role: "left",
-      label: `Montante Esquerdo (${outerHeightMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx - halfOutW,
-      maxX: cx - halfInW,
-      minY: y0,
-      maxY: y1,
-      elevationZ: zBot,
-      extrudeHeightMm: outerHeightMm,
-      miterCutTopDeg: miterAngleDeg,
-      miterCutBottomDeg: miterAngleDeg,
-      miterAxis: "x",
-      rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerHeightMm.toFixed(2)),
-      shortLengthMm: Number(innerHeightMm.toFixed(2)),
-    });
-
-    // Montante Direito (vertical em Z)
-    members.push({
-      role: "right",
-      label: `Montante Direito (${outerHeightMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx + halfInW,
-      maxX: cx + halfOutW,
-      minY: y0,
-      maxY: y1,
-      elevationZ: zBot,
-      extrudeHeightMm: outerHeightMm,
-      miterCutTopDeg: -miterAngleDeg,
-      miterCutBottomDeg: -miterAngleDeg,
-      miterAxis: "x",
-      rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerHeightMm.toFixed(2)),
-      shortLengthMm: Number(innerHeightMm.toFixed(2)),
-    });
-
-    // Travessa Inferior (horizontal em X)
-    members.push({
-      role: "bottom",
-      label: `Travessa Inferior (${outerWidthMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx - halfOutW,
-      maxX: cx + halfOutW,
-      minY: y0,
-      maxY: y1,
-      elevationZ: zBot,
-      extrudeHeightMm: d,
-      miterCutTopDeg: miterAngleDeg,
-      miterCutBottomDeg: -miterAngleDeg,
-      miterAxis: "x",
-      rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerWidthMm.toFixed(2)),
-      shortLengthMm: Number(innerWidthMm.toFixed(2)),
-    });
-
-    // Travessa Superior (horizontal em X)
-    members.push({
-      role: "top",
-      label: `Travessa Superior (${outerWidthMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx - halfOutW,
-      maxX: cx + halfOutW,
-      minY: y0,
-      maxY: y1,
-      elevationZ: zTop - d,
-      extrudeHeightMm: d,
-      miterCutTopDeg: -miterAngleDeg,
-      miterCutBottomDeg: miterAngleDeg,
-      miterAxis: "x",
-      rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerWidthMm.toFixed(2)),
-      shortLengthMm: Number(innerWidthMm.toFixed(2)),
-    });
-
-    if (grilleRes && grilleRes.valid) {
-      grilleRes.centerCoordsMm.forEach((xCenter, idx) => {
-        members.push({
-          role: "inner_grille",
-          label: `Tubo Interno #${idx + 1} (${innerHeightMm.toFixed(0)} mm)`,
-          minX: xCenter - d * 0.5,
-          maxX: xCenter + d * 0.5,
-          minY: y0,
-          maxY: y1,
-          elevationZ: zBot + d,
-          extrudeHeightMm: Math.max(10, innerHeightMm),
-          miterCutTopDeg: 0,
-          miterCutBottomDeg: 0,
-          miterAxis: "x",
-          rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-          longLengthMm: Number(innerHeightMm.toFixed(2)),
-          shortLengthMm: Number(innerHeightMm.toFixed(2)),
-        });
-      });
+  const makeBarSpec = (
+    role: "bottom" | "right" | "top" | "left" | "inner_grille",
+    label: string,
+    cornerOrigin3D: { x: number; y: number; z: number },
+    dirLen3D: { x: number; y: number; z: number },
+    dirIn3D: { x: number; y: number; z: number },
+    longLengthMm: number,
+    shortLengthMm: number,
+    startMiter: number,
+    endMiter: number,
+    miterAxis: "x" | "y",
+  ): SmartMiterFrameMemberSpec3D => {
+    const p00 = evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, 0, 0, 0);
+    const p10 = evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, longLengthMm, 0, 0);
+    const p11 = evalMiterBarPoint3D(
+      cornerOrigin3D,
+      dirLen3D,
+      dirIn3D,
+      axisN,
+      longLengthMm - endMiter * d,
+      d,
+      0,
+    );
+    const p01 = evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, startMiter * d, d, 0);
+    const topCorners = [
+      evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, 0, 0, depth),
+      evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, longLengthMm, 0, depth),
+      evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, longLengthMm - endMiter * d, d, depth),
+      evalMiterBarPoint3D(cornerOrigin3D, dirLen3D, dirIn3D, axisN, startMiter * d, d, depth),
+    ];
+    const allPts = [p00, p10, p11, p01, ...topCorners];
+    let bMinX = Infinity;
+    let bMaxX = -Infinity;
+    let bMinY = Infinity;
+    let bMaxY = -Infinity;
+    let bMinZ = Infinity;
+    let bMaxZ = -Infinity;
+    for (const p of allPts) {
+      if (p.x < bMinX) bMinX = p.x;
+      if (p.x > bMaxX) bMaxX = p.x;
+      if (p.y < bMinY) bMinY = p.y;
+      if (p.y > bMaxY) bMaxY = p.y;
+      if (p.z < bMinZ) bMinZ = p.z;
+      if (p.z > bMaxZ) bMaxZ = p.z;
     }
-  } else {
-    // Quadro no Plano XY (Deitado na Mesa) ou YZ
-    const zBase = Math.max(0, cz);
-    // Travessa Superior (+Y)
-    members.push({
-      role: "top",
-      label: `Travessa Superior (${outerWidthMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx - halfOutW,
-      maxX: cx + halfOutW,
-      minY: cy + halfInH,
-      maxY: cy + halfOutH,
-      elevationZ: zBase,
-      extrudeHeightMm: depth,
-      miterCutTopDeg: miterAngleDeg,
-      miterCutBottomDeg: -miterAngleDeg,
-      miterAxis: "x",
-      rotation3D: plane === "yz" ? { rxDeg: 0, ryDeg: 90, rzDeg: 0 } : { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerWidthMm.toFixed(2)),
-      shortLengthMm: Number(innerWidthMm.toFixed(2)),
-    });
 
-    // Travessa Inferior (-Y)
-    members.push({
-      role: "bottom",
-      label: `Travessa Inferior (${outerWidthMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx - halfOutW,
-      maxX: cx + halfOutW,
-      minY: cy - halfOutH,
-      maxY: cy - halfInH,
-      elevationZ: zBase,
-      extrudeHeightMm: depth,
-      miterCutTopDeg: -miterAngleDeg,
-      miterCutBottomDeg: miterAngleDeg,
-      miterAxis: "x",
-      rotation3D: plane === "yz" ? { rxDeg: 0, ryDeg: 90, rzDeg: 0 } : { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerWidthMm.toFixed(2)),
-      shortLengthMm: Number(innerWidthMm.toFixed(2)),
-    });
+    return {
+      role,
+      label,
+      minX: Number(bMinX.toFixed(3)),
+      maxX: Number(bMaxX.toFixed(3)),
+      minY: Number(bMinY.toFixed(3)),
+      maxY: Number(bMaxY.toFixed(3)),
+      elevationZ: Number(bMinZ.toFixed(3)),
+      extrudeHeightMm: Number(Math.max(1, bMaxZ - bMinZ).toFixed(3)),
+      miterCutTopDeg: startMiter > 0 ? miterAngleDeg : 0,
+      miterCutBottomDeg: endMiter > 0 ? -miterAngleDeg : 0,
+      miterAxis,
+      rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
+      longLengthMm: Number(longLengthMm.toFixed(2)),
+      shortLengthMm: Number(shortLengthMm.toFixed(2)),
+      cornerOrigin3D,
+      dirLen3D,
+      dirIn3D,
+      dirZ3D: axisN,
+      profileWidthMm: Number(d.toFixed(2)),
+      profileHeightZMm: Number(depth.toFixed(2)),
+      wallThicknessMm: Number(wallT.toFixed(2)),
+      isHollowTube,
+      cornerFilletRadiusMm,
+      startMiterRatio: startMiter,
+      endMiterRatio: endMiter,
+      trapezoidPts2D: [
+        { x: Number(p00.x.toFixed(2)), y: Number(p00.y.toFixed(2)) },
+        { x: Number(p10.x.toFixed(2)), y: Number(p10.y.toFixed(2)) },
+        { x: Number(p11.x.toFixed(2)), y: Number(p11.y.toFixed(2)) },
+        { x: Number(p01.x.toFixed(2)), y: Number(p01.y.toFixed(2)) },
+      ],
+    };
+  };
 
-    // Montante Esquerdo (-X)
-    members.push({
-      role: "left",
-      label: `Montante Esquerdo (${outerHeightMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx - halfOutW,
-      maxX: cx - halfInW,
-      minY: cy - halfOutH,
-      maxY: cy + halfOutH,
-      elevationZ: zBase,
-      extrudeHeightMm: depth,
-      miterCutTopDeg: miterAngleDeg,
-      miterCutBottomDeg: -miterAngleDeg,
-      miterAxis: "y",
-      rotation3D: plane === "yz" ? { rxDeg: 0, ryDeg: 90, rzDeg: 0 } : { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerHeightMm.toFixed(2)),
-      shortLengthMm: Number(innerHeightMm.toFixed(2)),
-    });
+  // As 4 barras do Quadro 45° percorrendo o perímetro em sentido anti-horário sem nenhuma torção:
+  // 1. Barra Frontal / Inferior (Comp = L_ext): Origem (0, 0), dir_len = +U, dir_in = +V
+  const originBottom = { ...frameOrigin3D };
+  // 2. Barra Direita (Comp = A_ext): Origem (L_ext, 0), dir_len = +V, dir_in = -U
+  const originRight = {
+    x: frameOrigin3D.x + outerWidthMm * axisU.x,
+    y: frameOrigin3D.y + outerWidthMm * axisU.y,
+    z: frameOrigin3D.z + outerWidthMm * axisU.z,
+  };
+  // 3. Barra Traseira / Superior (Comp = L_ext): Origem (L_ext, A_ext), dir_len = -U, dir_in = -V
+  const originTop = {
+    x: frameOrigin3D.x + outerWidthMm * axisU.x + outerHeightMm * axisV.x,
+    y: frameOrigin3D.y + outerWidthMm * axisU.y + outerHeightMm * axisV.y,
+    z: frameOrigin3D.z + outerWidthMm * axisU.z + outerHeightMm * axisV.z,
+  };
+  // 4. Barra Esquerda (Comp = A_ext): Origem (0, A_ext), dir_len = -V, dir_in = +U
+  const originLeft = {
+    x: frameOrigin3D.x + outerHeightMm * axisV.x,
+    y: frameOrigin3D.y + outerHeightMm * axisV.y,
+    z: frameOrigin3D.z + outerHeightMm * axisV.z,
+  };
 
-    // Montante Direito (+X)
-    members.push({
-      role: "right",
-      label: `Montante Direito (${outerHeightMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
-      minX: cx + halfInW,
-      maxX: cx + halfOutW,
-      minY: cy - halfOutH,
-      maxY: cy + halfOutH,
-      elevationZ: zBase,
-      extrudeHeightMm: depth,
-      miterCutTopDeg: -miterAngleDeg,
-      miterCutBottomDeg: miterAngleDeg,
-      miterAxis: "y",
-      rotation3D: plane === "yz" ? { rxDeg: 0, ryDeg: 90, rzDeg: 0 } : { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-      longLengthMm: Number(outerHeightMm.toFixed(2)),
-      shortLengthMm: Number(innerHeightMm.toFixed(2)),
-    });
+  const members: SmartMiterFrameMemberSpec3D[] = [
+    makeBarSpec(
+      "bottom",
+      `Barra Frontal/Inferior (${outerWidthMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
+      originBottom,
+      axisU,
+      axisV,
+      outerWidthMm,
+      innerWidthMm,
+      miterRatio,
+      miterRatio,
+      "x",
+    ),
+    makeBarSpec(
+      "right",
+      `Barra Direita (${outerHeightMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
+      originRight,
+      axisV,
+      { x: -axisU.x, y: -axisU.y, z: -axisU.z },
+      outerHeightMm,
+      innerHeightMm,
+      miterRatio,
+      miterRatio,
+      "y",
+    ),
+    makeBarSpec(
+      "top",
+      `Barra Traseira/Superior (${outerWidthMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
+      originTop,
+      { x: -axisU.x, y: -axisU.y, z: -axisU.z },
+      { x: -axisV.x, y: -axisV.y, z: -axisV.z },
+      outerWidthMm,
+      innerWidthMm,
+      miterRatio,
+      miterRatio,
+      "x",
+    ),
+    makeBarSpec(
+      "left",
+      `Barra Esquerda (${outerHeightMm.toFixed(0)} mm · ${miterAngleDeg}°/${miterAngleDeg}°)`,
+      originLeft,
+      { x: -axisV.x, y: -axisV.y, z: -axisV.z },
+      axisU,
+      outerHeightMm,
+      innerHeightMm,
+      miterRatio,
+      miterRatio,
+      "y",
+    ),
+  ];
 
-    if (grilleRes && grilleRes.valid) {
-      grilleRes.centerCoordsMm.forEach((xCenter, idx) => {
-        members.push({
-          role: "inner_grille",
-          label: `Tubo Interno #${idx + 1} (${innerHeightMm.toFixed(0)} mm)`,
-          minX: xCenter - d * 0.5,
-          maxX: xCenter + d * 0.5,
-          minY: cy - halfInH,
-          maxY: cy + halfInH,
-          elevationZ: zBase,
-          extrudeHeightMm: depth,
-          miterCutTopDeg: 0,
-          miterCutBottomDeg: 0,
-          miterAxis: "y",
-          rotation3D: plane === "yz" ? { rxDeg: 0, ryDeg: 90, rzDeg: 0 } : { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
-          longLengthMm: Number(innerHeightMm.toFixed(2)),
-          shortLengthMm: Number(innerHeightMm.toFixed(2)),
-        });
-      });
-    }
+  if (grilleRes && grilleRes.valid) {
+    grilleRes.centerCoordsMm.forEach((xCenter, idx) => {
+      const offsetAlongU = xCenter - (cx - halfOutW) - d * 0.5;
+      const grilleOrigin = {
+        x: frameOrigin3D.x + offsetAlongU * axisU.x + d * axisV.x,
+        y: frameOrigin3D.y + offsetAlongU * axisU.y + d * axisV.y,
+        z: frameOrigin3D.z + offsetAlongU * axisU.z + d * axisV.z,
+      };
+      members.push(
+        makeBarSpec(
+          "inner_grille",
+          `Tubo Interno #${idx + 1} (${innerHeightMm.toFixed(0)} mm)`,
+          grilleOrigin,
+          axisV,
+          axisU,
+          Math.max(10, innerHeightMm),
+          Math.max(10, innerHeightMm),
+          0,
+          0,
+          "y",
+        ),
+      );
+    });
   }
 
   let minX = Infinity;
@@ -661,6 +767,8 @@ export function computeSmartMiterFrame3D(
     profileCrossSectionMm: Number(d.toFixed(2)),
     profileDepthMm: Number(depth.toFixed(2)),
     wallThicknessMm: Number(wallT.toFixed(2)),
+    isHollowTube,
+    cornerFilletRadiusMm,
     innerWidthMm: Number(innerWidthMm.toFixed(2)),
     innerHeightMm: Number(innerHeightMm.toFixed(2)),
     midWidthMm: Number(midWidthMm.toFixed(2)),
@@ -680,7 +788,240 @@ export function computeSmartMiterFrame3D(
       minZ: Number.isFinite(minZ) ? minZ : 0,
       maxZ: Number.isFinite(maxZ) ? maxZ : depth,
     },
-    valid: innerWidthMm >= 10 && innerHeightMm >= 10 && (nDiv === 0 || Boolean(grilleRes?.valid)),
+    valid: innerWidthMm >= 2 && innerHeightMm >= 2 && (nDiv === 0 || Boolean(grilleRes?.valid)),
+  };
+}
+
+/**
+ * Gera os loops 2D (externo e interno se vazado) da seção transversal (u, z) em [0..W] x [0..H_z]
+ * e projeta sem torção nos planos de meia-esquadria 45° inicial e final:
+ * P_inicio(u, z) = Origem + (startMiterRatio * u) * dir_len + u * dir_in + z * dir_z
+ * P_fim(u, z)    = Origem + (Comp - endMiterRatio * u) * dir_len + u * dir_in + z * dir_z
+ */
+export function buildHorizontalMiterBar3DPolygons(member: {
+  cornerOrigin3D: { x: number; y: number; z: number };
+  dirLen3D: { x: number; y: number; z: number };
+  dirIn3D: { x: number; y: number; z: number };
+  dirZ3D: { x: number; y: number; z: number };
+  longLengthMm: number;
+  profileWidthMm: number;
+  profileHeightZMm: number;
+  wallThicknessMm?: number;
+  isHollowTube?: boolean;
+  startMiterRatio?: number;
+  endMiterRatio?: number;
+}): {
+  outerStartLoop3D: { x: number; y: number; z: number }[];
+  outerEndLoop3D: { x: number; y: number; z: number }[];
+  innerStartLoop3D: { x: number; y: number; z: number }[] | null;
+  innerEndLoop3D: { x: number; y: number; z: number }[] | null;
+  quads3D: {
+    id: string;
+    kind: "top" | "bottom" | "outer_side" | "inner_side" | "inner_wall" | "miter_cap";
+    vertices3D: { x: number; y: number; z: number }[];
+    normal3D: { x: number; y: number; z: number };
+  }[];
+  featureLines3D: [
+    { x: number; y: number; z: number },
+    { x: number; y: number; z: number },
+  ][];
+} {
+  const W = Math.max(4, member.profileWidthMm);
+  const Hz = Math.max(4, member.profileHeightZMm);
+  const Comp = Math.max(W * 1.05, member.longLengthMm);
+  const sRatio = member.startMiterRatio ?? 1;
+  const eRatio = member.endMiterRatio ?? 1;
+  const rawT = Number(member.wallThicknessMm ?? 0);
+  const isHollow = (member.isHollowTube ?? rawT > 0.2) && rawT > 0.2 && rawT < Math.min(W, Hz) * 0.46;
+  const t = isHollow ? rawT : 0;
+
+  // Seção transversal retangular (u, z):
+  // 0: (0, 0) [Inferior Externo]
+  // 1: (W, 0) [Inferior Interno]
+  // 2: (W, Hz) [Superior Interno]
+  // 3: (0, Hz) [Superior Externo]
+  const outerProfileUZ = [
+    { u: 0, z: 0 },
+    { u: W, z: 0 },
+    { u: W, z: Hz },
+    { u: 0, z: Hz },
+  ];
+
+  const evalStart = (u: number, z: number) =>
+    evalMiterBarPoint3D(
+      member.cornerOrigin3D,
+      member.dirLen3D,
+      member.dirIn3D,
+      member.dirZ3D,
+      sRatio * u,
+      u,
+      z,
+    );
+  const evalEnd = (u: number, z: number) =>
+    evalMiterBarPoint3D(
+      member.cornerOrigin3D,
+      member.dirLen3D,
+      member.dirIn3D,
+      member.dirZ3D,
+      Comp - eRatio * u,
+      u,
+      z,
+    );
+
+  const outerStartLoop3D = outerProfileUZ.map((p) => evalStart(p.u, p.z));
+  const outerEndLoop3D = outerProfileUZ.map((p) => evalEnd(p.u, p.z));
+
+  const innerProfileUZ = isHollow
+    ? [
+        { u: t, z: t },
+        { u: W - t, z: t },
+        { u: W - t, z: Hz - t },
+        { u: t, z: Hz - t },
+      ]
+    : null;
+
+  const innerStartLoop3D = innerProfileUZ
+    ? innerProfileUZ.map((p) => evalStart(p.u, p.z))
+    : null;
+  const innerEndLoop3D = innerProfileUZ
+    ? innerProfileUZ.map((p) => evalEnd(p.u, p.z))
+    : null;
+
+  const computeNormal = (
+    a: { x: number; y: number; z: number },
+    b: { x: number; y: number; z: number },
+    c: { x: number; y: number; z: number },
+  ) => {
+    const ux = b.x - a.x;
+    const uy = b.y - a.y;
+    const uz = b.z - a.z;
+    const vx = c.x - a.x;
+    const vy = c.y - a.y;
+    const vz = c.z - a.z;
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    return { x: nx / len, y: ny / len, z: nz / len };
+  };
+
+  const quads3D: {
+    id: string;
+    kind: "top" | "bottom" | "outer_side" | "inner_side" | "inner_wall" | "miter_cap";
+    vertices3D: { x: number; y: number; z: number }[];
+    normal3D: { x: number; y: number; z: number };
+  }[] = [];
+
+  // 4 faces longitudinais externas conectando diretamente o índice i -> i+1 de P_inicio a P_fim:
+  // i=0 (0->1): face inferior (z=0)
+  // i=1 (1->2): face lateral interna (u=W)
+  // i=2 (2->3): face superior (z=Hz)
+  // i=3 (3->0): face lateral externa (u=0)
+  const sideKinds: ("bottom" | "inner_side" | "top" | "outer_side")[] = [
+    "bottom",
+    "inner_side",
+    "top",
+    "outer_side",
+  ];
+  for (let i = 0; i < 4; i++) {
+    const next = (i + 1) % 4;
+    const v0 = outerStartLoop3D[i];
+    const v1 = outerEndLoop3D[i];
+    const v2 = outerEndLoop3D[next];
+    const v3 = outerStartLoop3D[next];
+    quads3D.push({
+      id: `outer-${i}`,
+      kind: sideKinds[i],
+      vertices3D: [v0, v1, v2, v3],
+      normal3D: computeNormal(v0, v1, v2),
+    });
+  }
+
+  // Se o tubo é vazado, adiciona as 4 paredes longitudinais internas + anéis de topo nas 2 bocas em 45°
+  if (innerStartLoop3D && innerEndLoop3D) {
+    for (let i = 0; i < 4; i++) {
+      const next = (i + 1) % 4;
+      const v0 = innerStartLoop3D[next];
+      const v1 = innerEndLoop3D[next];
+      const v2 = innerEndLoop3D[i];
+      const v3 = innerStartLoop3D[i];
+      quads3D.push({
+        id: `inner-${i}`,
+        kind: "inner_wall",
+        vertices3D: [v0, v1, v2, v3],
+        normal3D: computeNormal(v0, v1, v2),
+      });
+      // Anel de fechamento da parede na boca inicial (45°)
+      const s0 = outerStartLoop3D[i];
+      const s1 = outerStartLoop3D[next];
+      const s2 = innerStartLoop3D[next];
+      const s3 = innerStartLoop3D[i];
+      quads3D.push({
+        id: `cap-start-${i}`,
+        kind: "miter_cap",
+        vertices3D: [s0, s3, s2, s1],
+        normal3D: computeNormal(s0, s3, s2),
+      });
+      // Anel de fechamento da parede na boca final (45°)
+      const e0 = outerEndLoop3D[i];
+      const e1 = outerEndLoop3D[next];
+      const e2 = innerEndLoop3D[next];
+      const e3 = innerEndLoop3D[i];
+      quads3D.push({
+        id: `cap-end-${i}`,
+        kind: "miter_cap",
+        vertices3D: [e0, e1, e2, e3],
+        normal3D: computeNormal(e0, e1, e2),
+      });
+    }
+  } else {
+    // Barra maciça: tampas completas nas duas extremidades 45°
+    quads3D.push({
+      id: "cap-start-solid",
+      kind: "miter_cap",
+      vertices3D: [
+        outerStartLoop3D[0],
+        outerStartLoop3D[3],
+        outerStartLoop3D[2],
+        outerStartLoop3D[1],
+      ],
+      normal3D: computeNormal(outerStartLoop3D[0], outerStartLoop3D[3], outerStartLoop3D[2]),
+    });
+    quads3D.push({
+      id: "cap-end-solid",
+      kind: "miter_cap",
+      vertices3D: [
+        outerEndLoop3D[0],
+        outerEndLoop3D[1],
+        outerEndLoop3D[2],
+        outerEndLoop3D[3],
+      ],
+      normal3D: computeNormal(outerEndLoop3D[0], outerEndLoop3D[1], outerEndLoop3D[2]),
+    });
+  }
+
+  // Arestas vivas (incluindo as linhas diagonais de corte 45° nos cantos!)
+  const featureLines3D: [
+    { x: number; y: number; z: number },
+    { x: number; y: number; z: number },
+  ][] = [];
+  for (let i = 0; i < 4; i++) {
+    const next = (i + 1) % 4;
+    // Aresta longitudinal externa i
+    featureLines3D.push([outerStartLoop3D[i], outerEndLoop3D[i]]);
+    // Aresta do corte 45° inicial (incluindo a diagonal na face superior e inferior!)
+    featureLines3D.push([outerStartLoop3D[i], outerStartLoop3D[next]]);
+    // Aresta do corte 45° final
+    featureLines3D.push([outerEndLoop3D[i], outerEndLoop3D[next]]);
+  }
+
+  return {
+    outerStartLoop3D,
+    outerEndLoop3D,
+    innerStartLoop3D,
+    innerEndLoop3D,
+    quads3D,
+    featureLines3D,
   };
 }
 
@@ -714,17 +1055,24 @@ export function generateSmartMiterFrameEntities3D(
     srcEnt?.shellWallThickness ||
     frameResult.wallThicknessMm ||
     2.0;
+  const isHollowTube =
+    sourceBody !== null
+      ? (sourceBody.shellThicknessMm ?? sourceBody.shellWallThicknessMm ?? 0) > 0.2 || frameResult.isHollowTube
+      : frameResult.isHollowTube;
   const colorHex = sourceBody?.colorHex || "#94A3B8";
   const materialName = sourceBody?.materialName || "Aço Estrutural ASTM A36";
 
   for (const m of frameResult.members) {
     const newId = uid();
-    const pts = [
-      { x: Number(m.minX.toFixed(2)), y: Number(m.minY.toFixed(2)) },
-      { x: Number(m.maxX.toFixed(2)), y: Number(m.minY.toFixed(2)) },
-      { x: Number(m.maxX.toFixed(2)), y: Number(m.maxY.toFixed(2)) },
-      { x: Number(m.minX.toFixed(2)), y: Number(m.maxY.toFixed(2)) },
-    ];
+    const pts =
+      m.trapezoidPts2D && m.trapezoidPts2D.length >= 4
+        ? m.trapezoidPts2D
+        : [
+            { x: Number(m.minX.toFixed(2)), y: Number(m.minY.toFixed(2)) },
+            { x: Number(m.maxX.toFixed(2)), y: Number(m.minY.toFixed(2)) },
+            { x: Number(m.maxX.toFixed(2)), y: Number(m.maxY.toFixed(2)) },
+            { x: Number(m.minX.toFixed(2)), y: Number(m.maxY.toFixed(2)) },
+          ];
     const ent: Entity = {
       id: newId,
       layer: "corte",
@@ -733,21 +1081,37 @@ export function generateSmartMiterFrameEntities3D(
       closed: true,
       elevationZ: Number(m.elevationZ.toFixed(2)),
       extrudeHeight: Number(m.extrudeHeightMm.toFixed(2)),
-      shellWallThickness: wallT,
+      shellWallThickness: isHollowTube ? wallT : 0,
       params: {
         isIndependentBody3D: true,
         booleanMode3D: "new_body",
+        isHorizontalMiterBar3D: true,
+        miterBarSpec3D: {
+          cornerOrigin3D: m.cornerOrigin3D,
+          dirLen3D: m.dirLen3D,
+          dirIn3D: m.dirIn3D,
+          dirZ3D: m.dirZ3D,
+          longLengthMm: m.longLengthMm,
+          shortLengthMm: m.shortLengthMm,
+          profileWidthMm: m.profileWidthMm,
+          profileHeightZMm: m.profileHeightZMm,
+          wallThicknessMm: isHollowTube ? wallT : 0,
+          isHollowTube,
+          cornerFilletRadiusMm: m.cornerFilletRadiusMm,
+          startMiterRatio: m.startMiterRatio,
+          endMiterRatio: m.endMiterRatio,
+        },
         elevationZ: Number(m.elevationZ.toFixed(2)),
         extrudeHeight: Number(m.extrudeHeightMm.toFixed(2)),
         extrudeHeightMm: Number(m.extrudeHeightMm.toFixed(2)),
-        shellWallThickness: wallT,
-        shellThicknessMm: wallT,
+        shellWallThickness: isHollowTube ? wallT : 0,
+        shellThicknessMm: isHollowTube ? wallT : 0,
         shellOpenCaps: ["top", "bottom"],
         miterCutTopDeg: m.miterCutTopDeg,
         miterCutTopAxis: m.miterAxis,
         miterCutBottomDeg: m.miterCutBottomDeg,
         miterCutBottomAxis: m.miterAxis,
-        rotation3D: m.rotation3D,
+        rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
         bodyName: m.label,
         bodyColorHex: colorHex,
         bodyMaterial: materialName,
@@ -760,15 +1124,15 @@ export function generateSmartMiterFrameEntities3D(
     createdIds.push(newId);
   }
 
-  // Remove o perfil de origem se era apenas o tubo semente isolado para substituir pelo quadro completo
-  const baseEntities =
-    sourceEntityId && entities.length === 1 && entities[0]?.id === sourceEntityId
-      ? []
-      : entities;
+  // Substitui a peça base selecionada pelas 4 barras reais do quadro em meia-esquadria 45°
+  const baseEntities = sourceEntityId
+    ? entities.filter((e) => e.id !== sourceEntityId)
+    : entities;
 
   return {
     updatedEntities: [...baseEntities, ...createdEntities],
     createdIds,
   };
 }
+
 

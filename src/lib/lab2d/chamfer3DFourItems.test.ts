@@ -24,69 +24,72 @@ function makeBaseBoxEntity(id = "box_1", w = 100, h = 100, extrudeHeight = 500):
   };
 }
 
-test("Item 1: Shell / Casca 3D opens exact selected face in Caixa (1 Face) and axis pair in Tubo (2 Faces)", () => {
+test("Item 1: Shell / Casca 3D hollows end-to-end in Tubo (2 Faces) even when lateral face is clicked, and opens single end in Caixa (1 Face)", () => {
   const base = makeBaseBoxEntity("shell_piece", 100, 100, 500);
-  const scene0 = buildDirectTopology3DScene([base], 20);
+  const withFillet = applyDirectFilletOrChamfer3DToEntities(
+    [base],
+    [base.id],
+    "fillet",
+    10,
+  );
+  const scene0 = buildDirectTopology3DScene(withFillet, 20);
   const body0 = scene0.bodies[0]!;
 
-  // Find FRONT (+Y), BACK (-Y), LEFT (-X), RIGHT (+X), TOP (+Z), BOTTOM (-Z) faces
+  // Find FRONT (+Y), LEFT (-X), TOP (+Z), BOTTOM (-Z) faces
   const frontFace = body0.faces.find((f) => f.role === "side" && f.normal.y > 0.7)!;
-  const backFace = body0.faces.find((f) => f.role === "side" && f.normal.y < -0.7)!;
   const leftFace = body0.faces.find((f) => f.role === "side" && f.normal.x < -0.7)!;
   const topFace = body0.faces.find((f) => f.role === "top")!;
   const bottomFace = body0.faces.find((f) => f.role === "bottom")!;
 
   assert.ok(frontFace, "Front face should exist");
-  assert.ok(backFace, "Back face should exist");
   assert.ok(leftFace, "Left face should exist");
 
-  // 1A. Caixa (1 Face) on FRONT face -> opens ONLY ["front"]
-  const capsFrontBox = resolveShellOpenCapsFromSelection3D([frontFace], "top_only");
-  assert.deepEqual(capsFrontBox, ["front"]);
+  // 1A. Tubo (2 Faces) (`both_ends`) even when lateral face is clicked -> ALWAYS hollows ["top", "bottom"] along the extrusion axis!
+  const capsFrontTube = resolveShellOpenCapsFromSelection3D([frontFace], "both_ends");
+  assert.deepEqual(capsFrontTube, ["top", "bottom"]);
+  const capsLeftTube = resolveShellOpenCapsFromSelection3D([leftFace], "both_ends");
+  assert.deepEqual(capsLeftTube, ["top", "bottom"]);
+  const capsTopTube = resolveShellOpenCapsFromSelection3D([topFace], "both_ends");
+  assert.deepEqual(capsTopTube, ["top", "bottom"]);
 
-  const entitiesFrontBox = applyDirectShell3DToEntities([base], [base.id], 5, capsFrontBox);
-  const sceneFrontBox = buildDirectTopology3DScene(entitiesFrontBox, 20);
-  const bodyFrontBox = sceneFrontBox.bodies[0]!;
-  assert.deepEqual(bodyFrontBox.shellOpenCaps, ["front"]);
-  // Top and Bottom must remain closed when only front is open
+  const entitiesTube = applyDirectShell3DToEntities(withFillet, [base.id], 4.75, capsFrontTube);
+  const sceneTube = buildDirectTopology3DScene(entitiesTube, 20);
+  const bodyTube = sceneTube.bodies[0]!;
+  assert.deepEqual(bodyTube.shellOpenCaps, ["top", "bottom"]);
+  // R_interno = max(0.5, R_externo - t) = 10 - 4.75 = 5.25 mm
+  assert.equal(bodyTube.innerFilletRadiusMm, 5.25);
   assert.ok(
-    bodyFrontBox.faces.some((f) => f.role === "top"),
-    "Top face remains closed when Caixa (1 Face) is applied on FRONT",
+    bodyTube.faces.some((f) => f.role === "inner_side"),
+    "Inner cavity walls must be generated along the tube",
   );
   assert.ok(
-    bodyFrontBox.faces.some((f) => f.role === "bottom"),
-    "Bottom face remains closed when Caixa (1 Face) is applied on FRONT",
-  );
-  // Inner cavity walls must be generated for the lateral shell
-  assert.ok(
-    bodyFrontBox.faces.some((f) => f.role === "inner_side"),
-    "Inner cavity faces are generated for FRONT shell",
+    bodyTube.edges.some((e) => e.role === "inner_top") &&
+      bodyTube.edges.some((e) => e.role === "inner_bottom"),
+    "Both top and bottom open mouth inner rings must exist",
   );
 
-  // 1B. Caixa (1 Face) on BOTTOM face -> opens ONLY ["bottom"], keeping TOP closed with inner ceiling cap
+  // 1B. Caixa (1 Face) (`top_only`) on TOP or lateral face -> opens ["top"], keeping bottom closed
+  const capsTopBox = resolveShellOpenCapsFromSelection3D([frontFace], "top_only");
+  assert.deepEqual(capsTopBox, ["top"]);
+  const entitiesTopBox = applyDirectShell3DToEntities(withFillet, [base.id], 3, capsTopBox);
+  const sceneTopBox = buildDirectTopology3DScene(entitiesTopBox, 20);
+  const bodyTopBox = sceneTopBox.bodies[0]!;
+  assert.deepEqual(bodyTopBox.shellOpenCaps, ["top"]);
+  assert.ok(
+    bodyTopBox.faces.some((f) => f.faceId.endsWith("_face_bottom")),
+    "Closed bottom face must exist when only top is open in Caixa (1 Face)",
+  );
+
+  // 1C. Caixa (1 Face) on BOTTOM face -> opens ONLY ["bottom"], keeping TOP closed
   const capsBottomBox = resolveShellOpenCapsFromSelection3D([bottomFace], "top_only");
   assert.deepEqual(capsBottomBox, ["bottom"]);
-  const entitiesBottomBox = applyDirectShell3DToEntities([base], [base.id], 5, capsBottomBox);
+  const entitiesBottomBox = applyDirectShell3DToEntities(withFillet, [base.id], 5, capsBottomBox);
   const sceneBottomBox = buildDirectTopology3DScene(entitiesBottomBox, 20);
   const bodyBottomBox = sceneBottomBox.bodies[0]!;
   assert.ok(
     bodyBottomBox.faces.some((f) => f.faceId.endsWith("_face_top")),
     "Outer top face stays closed when only bottom is opened",
   );
-
-  // 1C. Tubo (2 Faces) on LEFT face -> opens ["left", "right"] along X axis
-  const capsLeftTube = resolveShellOpenCapsFromSelection3D([leftFace], "both_ends");
-  assert.deepEqual(capsLeftTube, ["left", "right"]);
-
-  // 1D. Tubo (2 Faces) on FRONT or BACK face -> opens ["front", "back"] along Y axis
-  const capsFrontTube = resolveShellOpenCapsFromSelection3D([frontFace], "both_ends");
-  assert.deepEqual(capsFrontTube, ["front", "back"]);
-  const capsBackTube = resolveShellOpenCapsFromSelection3D([backFace], "both_ends");
-  assert.deepEqual(capsBackTube, ["front", "back"]);
-
-  // 1E. Tubo (2 Faces) on TOP face -> opens ["top", "bottom"] along Z axis
-  const capsTopTube = resolveShellOpenCapsFromSelection3D([topFace], "both_ends");
-  assert.deepEqual(capsTopTube, ["top", "bottom"]);
 });
 
 test("Item 2: Fillet 3D and Chamfer 3D apply in real time to vertical and horizontal edges", () => {
@@ -124,7 +127,7 @@ test("Item 2: Fillet 3D and Chamfer 3D apply in real time to vertical and horizo
   );
 });
 
-test("Item 3: Quadro 45° (Esquadria) calculates Inner, Midline, and Outer dimensions and generates 4 mitered members + divisions", () => {
+test("Item 3: Quadro 45° (Esquadria) calculates Inner, Midline, and Outer dimensions and generates 4 twist-free horizontal 45°-mitered tube bars", () => {
   const baseTube = makeBaseBoxEntity("tube_50", 50, 50, 500);
 
   // 3A. Medida Interna (Vão Livre): 1000 x 800 with d=50 -> Externa = 1100 x 900
@@ -184,6 +187,18 @@ test("Item 3: Quadro 45° (Esquadria) calculates Inner, Midline, and Outer dimen
   const genRes = generateSmartMiterFrameEntities3D([baseTube], baseTube.id, calcOuter);
   assert.equal(genRes.createdIds.length, 6); // 4 frame members + 2 internal tubes
   assert.equal(genRes.updatedEntities.length, 6);
+
+  // Build 3D topology scene from generated frame entities and verify all 4 frame bars are horizontal 45°-mitered bars
+  const frameScene = buildDirectTopology3DScene(genRes.updatedEntities, 20);
+  assert.equal(frameScene.bodies.length, 6);
+  for (const barBody of frameScene.bodies.slice(0, 4)) {
+    assert.equal(barBody.deltaZ, 50, "Each horizontal frame bar has profile height H_z = 50mm along Z");
+    assert.ok(
+      barBody.edges.some((e) => e.edgeId.includes("edge_miter_start_")) &&
+        barBody.edges.some((e) => e.edgeId.includes("edge_miter_end_")),
+      "Each frame bar includes explicit 45° miter cut edges at both ends",
+    );
+  }
 });
 
 test("Item 4: New Body + Offset Face workflow (extrude New Body on tube, close inner cavity, and expand 4 outer sides into Sapata)", () => {

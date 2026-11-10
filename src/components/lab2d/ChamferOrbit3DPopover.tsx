@@ -178,13 +178,13 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
         className={cn(
           "flex items-center rounded-lg border p-0.5 shadow-xs transition-colors",
           isOrbitToolActive
-            ? "border-cyan-500/70 bg-cyan-950/60 ring-1 ring-cyan-500/30"
+            ? "border-[#38BDF8] bg-[rgba(14,165,233,0.22)] ring-1 ring-[#38BDF8]/30"
             : isTilted
               ? isDark
-                ? "border-sky-500/45 bg-slate-900/95"
+                ? "border-[#38BDF8]/55 bg-[#232E45]"
                 : "border-sky-400/60 bg-sky-50"
               : isDark
-                ? "border-slate-800 bg-slate-900/90"
+                ? "border-[#334361] bg-[#232E45]"
                 : "border-slate-200 bg-slate-100",
         )}
       >
@@ -199,13 +199,13 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
           className={cn(
             "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap",
             isOrbitToolActive
-              ? "bg-cyan-600 text-white shadow-xs"
+              ? "bg-[rgba(14,165,233,0.22)] text-[#F8FAFC] shadow-xs"
               : isTilted
                 ? isDark
-                  ? "bg-sky-950/80 text-sky-300 hover:bg-sky-900/80 hover:text-white"
+                  ? "bg-[rgba(14,165,233,0.18)] text-[#7DD3FC] hover:bg-[rgba(14,165,233,0.28)] hover:text-white"
                   : "bg-sky-600 text-white"
                 : isDark
-                  ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  ? "text-[#E2E8F0] hover:bg-[#2D3B55] hover:text-white"
                   : "text-slate-700 hover:bg-slate-200 hover:text-slate-950",
           )}
         >
@@ -216,11 +216,11 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
             className={cn(
               "rounded px-1 py-0.2 font-mono text-[8.5px] font-extrabold tracking-tight",
               isOrbitToolActive
-                ? "bg-slate-950/45 text-cyan-100 border border-cyan-300/30"
+                ? "bg-[#162A42] text-[#7DD3FC] border border-[#38BDF8]/50"
                 : isTilted
                   ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/30"
                   : isDark
-                    ? "bg-slate-800 text-slate-400"
+                    ? "bg-[#1B2436] text-[#CBD5E1] border border-[#334361]"
                     : "bg-slate-200 text-slate-600",
             )}
           >
@@ -240,7 +240,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
             popoverOpen
               ? "bg-cyan-500/25 text-cyan-300"
               : isDark
-                ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                ? "text-[#CBD5E1] hover:bg-[#2D3B55] hover:text-white"
                 : "text-slate-600 hover:bg-slate-200 hover:text-slate-900",
           )}
         >

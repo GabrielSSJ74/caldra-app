@@ -215,9 +215,9 @@ export interface ChamferPortraitTopBarProps {
   onUndo: () => void;
   onRedo: () => void;
 
-  // Preferência de Layout Vertical (Compacto | Clássico)
-  layoutPreference?: "compact" | "classic";
-  onChangeLayoutPreference?: (pref: "compact" | "classic") => void;
+  // Preferência de Interface (Compacta | PRUMO)
+  layoutPreference?: "compact" | "prumo";
+  onChangeLayoutPreference?: (pref: "compact" | "prumo") => void;
 
   // Ações Globais no Menu ⋮
   onOpenVision: () => void;
@@ -1172,7 +1172,7 @@ export function ChamferPortraitTopBar({
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("selection");
-                onChangeLayoutPreference(layoutPreference === "compact" ? "classic" : "compact");
+                onChangeLayoutPreference(layoutPreference === "compact" ? "prumo" : "compact");
               }}
               style={{
                 backgroundColor: "var(--chamfer-surface-elevated)",
@@ -1180,9 +1180,9 @@ export function ChamferPortraitTopBar({
                 color: "var(--chamfer-text-primary)",
               }}
               className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold touch-pan-x cursor-pointer whitespace-nowrap"
-              title="Alternar Casca de Interface (Compacta / Clássica)"
+              title="Alternar Interface (Compacta / PRUMO)"
             >
-              <span>{layoutPreference === "compact" ? "Compacta" : "Clássica"}</span>
+              <span>📐 {layoutPreference === "compact" ? "PRUMO" : "Compacta"}</span>
             </button>
           )}
 
@@ -1723,7 +1723,7 @@ export function ChamferPortraitTopBar({
               className="my-1.5 h-px"
             />
 
-            {/* SELETOR DE INTERFACE DO CHAMFER: COMPACTA | CLÁSSICA */}
+            {/* SELETOR DE INTERFACE DO CHAMFER: COMPACTA | PRUMO */}
             {onChangeLayoutPreference && (
               <div
                 className={cn(
@@ -1757,23 +1757,23 @@ export function ChamferPortraitTopBar({
                   </button>
                   <button
                     type="button"
-                    data-testid="chamfer-shell-mode-classic-btn"
+                    data-testid="chamfer-shell-mode-prumo-btn"
                     data-cmd-id="ui.layout_mode_toggle"
                     onClick={() => {
                       triggerHaptic("selection");
-                      onChangeLayoutPreference("classic");
+                      onChangeLayoutPreference("prumo");
                       setMoreMenuOpen(false);
                     }}
                     className={cn(
                       "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
-                      layoutPreference === "classic"
+                      layoutPreference === "prumo"
                         ? "bg-[#E11D48] text-white"
                         : isDark
                           ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
                           : "bg-white text-[#475569] hover:text-[#0F172A]",
                     )}
                   >
-                    Clássica
+                    📐 PRUMO
                   </button>
                 </div>
               </div>

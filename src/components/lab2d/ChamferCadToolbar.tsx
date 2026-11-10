@@ -898,10 +898,14 @@ export function ChamferCadToolbar({
       data-testid="chamfer-left-rail"
       aria-label="Barra de ferramentas CAD"
       style={{
-        backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
-        borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
-        color: isDark ? "var(--chamfer-text-secondary)" : "#334155",
-        boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
+        backgroundColor: isDark ? "rgba(27, 36, 54, 0.92)" : "#FFFFFF",
+        backdropFilter: isDark ? "blur(14px)" : undefined,
+        WebkitBackdropFilter: isDark ? "blur(14px)" : undefined,
+        borderColor: isDark ? "#2D3B55" : "#E2E8F0",
+        color: isDark ? "#CBD5E1" : "#334155",
+        boxShadow: isDark
+          ? "0 4px 16px rgba(0, 0, 0, 0.28)"
+          : "0 2px 10px rgba(15, 23, 42, 0.04)",
         width: compactMode ? 40 : undefined,
       }}
       className={cn(
@@ -912,18 +916,24 @@ export function ChamferCadToolbar({
         className,
       )}
     >
-      {/* BOTÕES PRINCIPAIS DE FUNÇÃO — ROLÁVEL POR SWIPE VERTICAL / TOUCH / POINTER */}
+      {/* BOTÕES PRINCIPAIS DE FUNÇÃO (SEL, CRI, MOD, PRE, MED, CHP, EST, DET) — SUB-CONTAINER DE SCROLL VERTICAL DEDICADO ACIMA DE COR */}
       <div
         ref={scrollContainerRef}
+        data-testid="chamfer-left-rail-scroll-container"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         className={cn(
-          "flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none flex flex-col items-center",
-          compactMode ? "py-0.5 gap-1" : "py-1 gap-1.5",
+          "min-h-0 flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none flex flex-col items-center",
+          compactMode ? "py-1 gap-1" : "py-1 gap-1",
         )}
-        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        style={{
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+          WebkitOverflowScrolling: "touch",
+          touchAction: "pan-y",
+        }}
       >
         {categories.map((cat) => {
           const Icon = cat.icon;
@@ -953,9 +963,10 @@ export function ChamferCadToolbar({
                   isOpen
                     ? isDark
                       ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                          borderColor: "var(--chamfer-accent)",
+                          backgroundColor: "rgba(14, 165, 233, 0.22)",
+                          color: "#F8FAFC",
+                          borderColor: "#38BDF8",
+                          borderWidth: "1.5px",
                         }
                       : {
                           backgroundColor: "#FFE4E6",
@@ -966,9 +977,10 @@ export function ChamferCadToolbar({
                     : active
                       ? isDark
                         ? {
-                            backgroundColor: "var(--chamfer-accent-soft)",
-                            borderColor: "var(--chamfer-accent-border)",
-                            color: "var(--chamfer-accent)",
+                            backgroundColor: "rgba(14, 165, 233, 0.22)",
+                            borderColor: "#38BDF8",
+                            color: "#7DD3FC",
+                            borderWidth: "1.5px",
                           }
                         : {
                             backgroundColor: "#FFE4E6",
@@ -978,23 +990,27 @@ export function ChamferCadToolbar({
                           }
                       : {
                           borderColor: "transparent",
-                          color: isDark ? "var(--chamfer-text-secondary)" : "#334155",
+                          color: isDark ? "#CBD5E1" : "#334155",
                         }
                 }
                 className={cn(
-                  "group relative flex flex-col items-center justify-center border transition-all touch-manipulation cursor-pointer",
+                  "group relative flex flex-col items-center justify-center border transition-all touch-manipulation cursor-pointer shrink-0",
                   compactMode
-                    ? "min-h-[40px] w-[34px] h-[36px] rounded-full"
-                    : "min-h-[40px] size-10 w-full rounded-xl",
+                    ? "min-h-[34px] w-[34px] h-[34px] rounded-full"
+                    : "min-h-[36px] size-9 w-full rounded-xl",
                   isOpen && (isDark ? "shadow-md scale-[1.02]" : "shadow-xs scale-[1.02]"),
                 )}
               >
                 <Icon className={cn(compactMode ? "size-3.5" : "size-4", "transition-transform group-hover:scale-110")} />
                 <span
-                  style={!isDark && !isOpen && !active ? { color: "#475569" } : undefined}
+                  style={
+                    !isOpen && !active
+                      ? { color: isDark ? "#94A3B8" : "#475569" }
+                      : undefined
+                  }
                   className={cn(
                     "font-mono font-bold tracking-wider mt-0.5 leading-none uppercase",
-                    compactMode ? "text-[6.5px]" : "text-[7.5px]",
+                    compactMode ? "text-[6.5px]" : "text-[7px]",
                   )}
                 >
                   {cat.short}
@@ -1003,7 +1019,7 @@ export function ChamferCadToolbar({
                 {/* Indicador de ferramenta ativa no grupo */}
                 {active && !isOpen && (
                   <span
-                    style={{ backgroundColor: isDark ? "var(--chamfer-accent)" : "#E11D48" }}
+                    style={{ backgroundColor: isDark ? "#38BDF8" : "#E11D48" }}
                     className="absolute top-1 right-1 size-1.5 rounded-full shadow-xs animate-pulse"
                   />
                 )}
@@ -1013,10 +1029,10 @@ export function ChamferCadToolbar({
         })}
       </div>
 
-      {/* SELETOR RÁPIDO DE CAMADA & COR TÉCNICA ATIVA (COR) */}
+      {/* SELETOR RÁPIDO DE CAMADA & COR TÉCNICA ATIVA (COR — FIXO NO RODAPÉ DA CÁPSULA ESQUERDA) */}
       {setActiveLayer && (
         <div
-          style={{ borderColor: "var(--chamfer-border)" }}
+          style={{ borderColor: isDark ? "#2D3B55" : "var(--chamfer-border)" }}
           className="w-full pt-1 border-t flex flex-col items-center shrink-0"
         >
           <button
@@ -1029,13 +1045,32 @@ export function ChamferCadToolbar({
             title={`Cor & Camada ativa: ${activeLayer}. Toque para abrir paleta de cores e camadas.`}
             aria-label={`Cor e Camada: ${activeLayer}`}
             style={{
-              backgroundColor: openCat === "cor" ? "var(--chamfer-accent-soft)" : "var(--chamfer-surface-elevated)",
-              borderColor: openCat === "cor" ? "var(--chamfer-accent)" : "var(--chamfer-border)",
-              color: "var(--chamfer-text-secondary)",
+              backgroundColor:
+                openCat === "cor"
+                  ? isDark
+                    ? "rgba(14, 165, 233, 0.22)"
+                    : "var(--chamfer-accent-soft)"
+                  : isDark
+                    ? "#232E45"
+                    : "var(--chamfer-surface-elevated)",
+              borderColor:
+                openCat === "cor"
+                  ? isDark
+                    ? "#38BDF8"
+                    : "var(--chamfer-accent)"
+                  : isDark
+                    ? "#334361"
+                    : "var(--chamfer-border)",
+              color:
+                openCat === "cor" && isDark
+                  ? "#7DD3FC"
+                  : isDark
+                    ? "#CBD5E1"
+                    : "var(--chamfer-text-secondary)",
             }}
             className={cn(
-              "group relative flex flex-col items-center justify-center transition-all border cursor-pointer",
-              compactMode ? "min-h-[38px] w-[34px] h-[34px] rounded-full" : "size-9 w-full rounded-xl",
+              "group relative flex flex-col items-center justify-center transition-all border cursor-pointer shrink-0",
+              compactMode ? "min-h-[34px] w-[34px] h-[34px] rounded-full" : "size-9 w-full rounded-xl",
             )}
           >
             <span

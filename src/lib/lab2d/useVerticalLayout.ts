@@ -18,7 +18,7 @@ export const VERTICAL_LAYOUT_MAX_WIDTH = 640;
 export const COMPACT_HEIGHT_THRESHOLD = 700;
 const STORAGE_KEY = "caldra_chamfer_vertical_layout_pref_v1";
 
-export type VerticalLayoutPreference = "compact" | "classic";
+export type VerticalLayoutPreference = "compact" | "prumo";
 
 export interface TopBarCollapseState {
   /** P4: Mostrar o nome abreviado do projeto ao lado do ponto e da espessura (>= 382 px) */
@@ -77,7 +77,12 @@ export function loadVerticalLayoutPreference(): VerticalLayoutPreference {
   if (typeof window === "undefined") return "compact";
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === "classic" || raw === "compact") return raw;
+    if (raw === "prumo") return "prumo";
+    if (raw === "classic") {
+      window.localStorage.setItem(STORAGE_KEY, "compact");
+      return "compact";
+    }
+    if (raw === "compact") return "compact";
   } catch {
     // ignore storage errors
   }
@@ -87,7 +92,7 @@ export function loadVerticalLayoutPreference(): VerticalLayoutPreference {
 export function saveVerticalLayoutPreference(pref: VerticalLayoutPreference): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, pref);
+    window.localStorage.setItem(STORAGE_KEY, pref === "prumo" ? "prumo" : "compact");
   } catch {
     // ignore storage errors
   }
@@ -100,11 +105,11 @@ export interface UseVerticalLayoutResult {
   isVerticalViewport: boolean;
   /** Verdadeiro quando o layout vertical compacto estilo Lightroom deve ser exibido */
   isVerticalCompactActive: boolean;
-  /** Preferência atual do usuário ("compact" | "classic") */
+  /** Preferência atual do usuário ("compact" | "prumo") */
   layoutPreference: VerticalLayoutPreference;
-  /** Atualiza e persiste a preferência ("compact" | "classic") */
+  /** Atualiza e persiste a preferência ("compact" | "prumo") */
   setLayoutPreference: (pref: VerticalLayoutPreference) => void;
-  /** Alterna entre Compacto e Clássico */
+  /** Alterna entre Compacto e PRUMO */
   toggleLayoutPreference: () => void;
   /** Largura da viewport em px */
   viewportWidth: number;
@@ -172,7 +177,7 @@ export function useVerticalLayout(): UseVerticalLayoutResult {
 
   const toggleLayoutPreference = useCallback(() => {
     setLayoutPreferenceState((prev) => {
-      const next = prev === "compact" ? "classic" : "compact";
+      const next = prev === "compact" ? "prumo" : "compact";
       saveVerticalLayoutPreference(next);
       return next;
     });

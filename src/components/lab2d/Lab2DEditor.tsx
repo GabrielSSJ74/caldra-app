@@ -563,6 +563,16 @@ import {
   type LoftBodyMode,
   type LoftSurfaceMode,
 } from "@/lib/lab2d/cadLoft3DEngine";
+import {
+  UI_NAME,
+  loadPersistedUiShellMode,
+  savePersistedUiShellMode,
+  type ChamferUiShellMode,
+} from "@/lib/lab2d/prumoEngine";
+import {
+  ChamferPrumoSpatialUI,
+  PrumoErrorBoundary,
+} from "./ChamferPrumoSpatialUI";
 
 export type Tool =
   | "select"
@@ -7951,34 +7961,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const extMacOpacity = intMacOpacity * outerFactor;
 
     return {
-      secondaryStroke: isDark
-        ? `rgba(${minorParsed.rgb[0]}, ${minorParsed.rgb[1]}, ${minorParsed.rgb[2]}, ${intSecOpacity.toFixed(4)})`
-        : "#F1F5F9",
-      secondaryWidth: 0.75,
-      majorStroke: isDark
-        ? `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMajOpacity.toFixed(4)})`
-        : "#E2E8F0",
+      secondaryStroke: isDark ? "#233044" : "#F1F5F9",
+      secondaryWidth: isDark ? 0.5 : 0.75,
+      majorStroke: isDark ? "#29374F" : "#E2E8F0",
       majorWidth: 1.0,
-      macroStroke: isDark
-        ? `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMacOpacity.toFixed(4)})`
-        : "#CBD5E1",
+      macroStroke: isDark ? "#334361" : "#CBD5E1",
       macroWidth: 1.15,
-      extSecondaryStroke: isDark
-        ? `rgba(${outerMinorParsed.rgb[0]}, ${outerMinorParsed.rgb[1]}, ${outerMinorParsed.rgb[2]}, ${extSecOpacity.toFixed(4)})`
-        : "#D8E0EA",
-      extMajorStroke: isDark
-        ? `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMajOpacity.toFixed(4)})`
-        : "#CBD5E1",
-      extMacroStroke: isDark
-        ? `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMacOpacity.toFixed(4)})`
-        : "#B8C4D4",
-      axisX: isDark ? themeColors.axisX : "#E11D48",
-      axisY: isDark ? themeColors.axisY : "#16A34A",
-      axisInfinite: isDark ? "rgba(148, 163, 184, 0.11)" : "rgba(15, 23, 42, 0.10)",
+      extSecondaryStroke: isDark ? "#182030" : "#D8E0EA",
+      extMajorStroke: isDark ? "#1E283B" : "#CBD5E1",
+      extMacroStroke: isDark ? "#233044" : "#B8C4D4",
+      axisX: isDark ? "#F43F5E" : "#E11D48",
+      axisY: isDark ? "#10B981" : "#16A34A",
+      axisInfinite: isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(15, 23, 42, 0.10)",
       axisWidth: 1.75,
-      originFill: "#E11D48",
-      originRing: isDark ? "rgba(236, 239, 244, 0.92)" : "rgba(15, 23, 42, 0.88)",
-      originText: "#E11D48",
+      originFill: isDark ? "#F43F5E" : "#E11D48",
+      originRing: isDark ? "rgba(251, 113, 133, 0.92)" : "rgba(15, 23, 42, 0.88)",
+      originText: isDark ? "#FB7185" : "#E11D48",
     };
   }, [isDark, gridConfig, themeColors, themeVersion]);
 
@@ -7986,33 +7984,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const verticalLayout = useVerticalLayout();
   const isLandscape = !verticalLayout.isVerticalCompactActive;
 
-  // Modo de Casca da Interface do CHAMFER CAD: "compact" (Padrão Mobile-First) | "classic" (Layout Clássico)
-  const [uiShellMode, setUiShellMode] = useState<"compact" | "classic">(() => {
-    if (typeof window === "undefined") return "compact";
-    try {
-      const saved = window.localStorage.getItem("chamfer_ui_shell_mode");
-      if (saved === "classic" || saved === "compact") return saved;
-    } catch {
-      // ignore storage errors
-    }
-    return "compact";
-  });
+  // Modo de Casca da Interface do CHAMFER CAD: "compact" (Padrão Consolidado) | "prumo" (Interface Espacial Zero Barras)
+  const [uiShellMode, setUiShellMode] = useState<ChamferUiShellMode>(() =>
+    loadPersistedUiShellMode(),
+  );
 
   const handleSetUiShellMode = useCallback(
-    (nextMode: "compact" | "classic") => {
+    (nextMode: ChamferUiShellMode) => {
       setUiShellMode(nextMode);
-      try {
-        window.localStorage.setItem("chamfer_ui_shell_mode", nextMode);
-      } catch {
-        // ignore storage errors
-      }
+      savePersistedUiShellMode(nextMode);
       if (verticalLayout.isVerticalViewport) {
         verticalLayout.setLayoutPreference(nextMode);
       }
       toast.info(
-        nextMode === "compact"
-          ? "Interface Compacta ativada — área útil máxima do canvas."
-          : "Interface Clássica ativada.",
+        nextMode === "prumo"
+          ? `📐 Interface ${UI_NAME} ativada — Zero Barras de Ferramentas (100% Canvas + Instrumentos Suspensos).`
+          : "Interface Compacta ativada — padrão consolidado.",
       );
     },
     [verticalLayout],
@@ -8461,20 +8448,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ref={wrapRef}
       style={{
         ...cssVariables,
-        backgroundColor: isDark ? "var(--chamfer-bg-root)" : "#F1F5F9",
-        color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
+        backgroundColor: isDark ? "#111723" : "#F1F5F9",
+        color: isDark ? "#F1F5F9" : "#0F172A",
       }}
       className={cn(
         "chamfer-theme-fade-root chamfer-theme-fade-2s fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none select-none",
-        isLandscape ? (uiShellMode === "compact" ? "gap-0.5 p-0.5" : "gap-1 p-1") : "gap-0 p-0",
+        uiShellMode === "prumo" ? "gap-0 p-0" : isLandscape ? "gap-0.5 p-0.5" : "gap-0 p-0",
         isMestre && "glow-ring",
       )}
     >
-      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (EM MODO RETRATO: BARRA COMPACTA 38PX ESTILO LIGHTROOM) */}
-      {!focus && !isLandscape && (
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (OCULTO NO MODO PRUMO ZERO BARRAS) */}
+      {!focus && uiShellMode !== "prumo" && !isLandscape && (
         <ChamferPortraitTopBar
           isDark={isDark}
-          topBarHeightPx={uiShellMode === "compact" ? 38 : verticalLayout.chromeHeights.topBarPx}
+          topBarHeightPx={38}
           viewportWidth={verticalLayout.viewportWidth}
           projectName={project?.name ?? "Projeto 26"}
           thickness={thickness}
@@ -8642,7 +8629,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {!focus && isLandscape && (
+      {!focus && uiShellMode !== "prumo" && isLandscape && (
         <header
           ref={topBarRef}
           data-testid="chamfer-landscape-topbar"
@@ -8657,19 +8644,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onClickCapture={handleTopBarClickCapture}
           onWheel={handleTopBarWheel}
           style={{
-            backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
-            borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
-            color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
-            boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
+            backgroundColor: isDark ? "rgba(27, 36, 54, 0.92)" : "#FFFFFF",
+            backdropFilter: isDark ? "blur(14px)" : undefined,
+            WebkitBackdropFilter: isDark ? "blur(14px)" : undefined,
+            borderColor: isDark ? "#2D3B55" : "#E2E8F0",
+            color: isDark ? "#E2E8F0" : "#0F172A",
+            boxShadow: isDark
+              ? "0 4px 16px rgba(0, 0, 0, 0.28)"
+              : "0 2px 10px rgba(15, 23, 42, 0.04)",
           }}
           className={cn(
             "chamfer-theme-fade-2s flex shrink-0 w-full items-center justify-between border-b shadow-xs backdrop-blur-md select-none",
             "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing whitespace-nowrap",
-            uiShellMode === "compact" ? "h-9 px-2 gap-2" : "h-12 px-3 gap-3",
+            "h-9 px-2 gap-1.5",
           )}
         >
           {/* ZONA 1 (ESQUERDA — IDENTIDADE E ESTADO DO ARQUIVO): [ ← ] + [ NOME DO PROJETO ] + [ CHIP UNIFICADO ✓ Salvo ] */}
-          <div className="flex min-w-0 shrink-0 items-center gap-1.5">
+          <div className="flex min-w-0 shrink-0 items-center gap-1">
             <button
               onClick={() => {
                 if (
@@ -8688,22 +8679,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
                 color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
               }}
-              className={cn(
-                "flex shrink-0 items-center justify-center gap-1 rounded-lg border font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110",
-                uiShellMode === "compact" ? "h-7 min-w-[34px] px-2" : "px-2.5 py-1",
-              )}
+              className="flex h-7 min-w-[34px] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110"
             >
               <ArrowLeft className="size-3.5 shrink-0" />
-              <span className={uiShellMode === "compact" ? "hidden lg:inline" : ""}>SAIR</span>
+              <span className="hidden lg:inline">SAIR</span>
             </button>
 
-            <div className="flex items-center gap-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0 shrink-0">
               <span
                 style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }}
-                className={cn(
-                  "font-mono font-extrabold tracking-wider shrink-0",
-                  uiShellMode === "compact" ? "hidden md:inline text-[11px]" : "text-xs",
-                )}
+                className="hidden xl:inline font-mono text-[11px] font-extrabold tracking-wider shrink-0"
               >
                 CHAMFER
               </span>
@@ -8719,61 +8704,54 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     textOverflow: "ellipsis",
                     color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
                   }}
-                  className={cn(
-                    "inline-block font-mono font-bold transition-colors truncate whitespace-nowrap",
-                    uiShellMode === "compact"
-                      ? "text-[11px] max-w-[92px] sm:max-w-[130px] lg:max-w-[170px]"
-                      : "text-[11px] max-w-[160px] sm:max-w-[200px]",
-                  )}
+                  className="hidden lg:inline-block font-mono text-[11px] font-bold transition-colors truncate whitespace-nowrap max-w-[130px] xl:max-w-[170px]"
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
                   • {project.name}
                 </button>
               )}
 
-              {/* CHIP INTERATIVO UNIFICADO [ ✓ Salvo ] NA ZONA 1 (FUSÃO DE "✓ Salvar" + "● SALVO" EM 1 ÚNICO BOTÃO) */}
-              {uiShellMode === "compact" && (
-                <button
-                  type="button"
-                  data-testid="chamfer-landscape-unified-save-chip"
-                  data-cmd-id="doc.save"
-                  onClick={handleManualSave}
-                  title="Salvar documento agora (Ctrl+S)"
-                  className={cn(
-                    "flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 font-mono text-[9.5px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer",
-                    saveStatus === "salvo" &&
-                      (isDark
-                        ? "border-[#10B981]/40 bg-[#10B981]/12 text-[#34D399] hover:bg-[#10B981]/20"
-                        : "border-[#86EFAC] bg-[#DCFCE7] text-[#15803D] hover:bg-[#BBF7D0]"),
-                    saveStatus === "salvando" &&
-                      (isDark
-                        ? "border-[#F59E0B]/45 bg-[#F59E0B]/15 text-[#FBBF24]"
-                        : "border-[#FCD34D] bg-[#FEF3C7] text-[#D97706]"),
-                    saveStatus === "pendente" &&
-                      (isDark
-                        ? "border-[#F59E0B]/60 bg-[#F59E0B]/20 text-[#FBBF24] hover:bg-[#F59E0B]/30"
-                        : "border-[#F59E0B] bg-[#FEF3C7] text-[#D97706] hover:bg-[#FDE68A]"),
-                  )}
-                >
-                  {saveStatus === "salvando" ? (
-                    <>
-                      <Loader2 className="size-2.5 animate-spin text-[#F59E0B]" />
-                      <span>Salvando...</span>
-                    </>
-                  ) : saveStatus === "pendente" ? (
-                    <>
-                      <span className="size-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
-                      <span>Salvar</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="size-1.5 rounded-full bg-[#10B981]" />
-                      <Check className="size-2.5 shrink-0" />
-                      <span>Salvo</span>
-                    </>
-                  )}
-                </button>
-              )}
+              {/* CHIP INTERATIVO UNIFICADO [ ✓ Salvo ] NA ZONA 1 */}
+              <button
+                type="button"
+                data-testid="chamfer-landscape-unified-save-chip"
+                data-cmd-id="doc.save"
+                onClick={handleManualSave}
+                title="Salvar documento agora (Ctrl+S)"
+                className={cn(
+                  "flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 font-mono text-[9.5px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer",
+                  saveStatus === "salvo" &&
+                    (isDark
+                      ? "border-[#10B981]/40 bg-[#10B981]/12 text-[#34D399] hover:bg-[#10B981]/20"
+                      : "border-[#86EFAC] bg-[#DCFCE7] text-[#15803D] hover:bg-[#BBF7D0]"),
+                  saveStatus === "salvando" &&
+                    (isDark
+                      ? "border-[#F59E0B]/45 bg-[#F59E0B]/15 text-[#FBBF24]"
+                      : "border-[#FCD34D] bg-[#FEF3C7] text-[#D97706]"),
+                  saveStatus === "pendente" &&
+                    (isDark
+                      ? "border-[#F59E0B]/60 bg-[#F59E0B]/20 text-[#FBBF24] hover:bg-[#F59E0B]/30"
+                      : "border-[#F59E0B] bg-[#FEF3C7] text-[#D97706] hover:bg-[#FDE68A]"),
+                )}
+              >
+                {saveStatus === "salvando" ? (
+                  <>
+                    <Loader2 className="size-2.5 animate-spin text-[#F59E0B]" />
+                    <span>Salvando...</span>
+                  </>
+                ) : saveStatus === "pendente" ? (
+                  <>
+                    <span className="size-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
+                    <span>Salvar</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="size-1.5 rounded-full bg-[#10B981]" />
+                    <Check className="size-2.5 shrink-0" />
+                    <span>Salvo</span>
+                  </>
+                )}
+              </button>
 
               {dossier && (
                 <button
@@ -8812,7 +8790,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
                 borderColor: isDark ? "var(--chamfer-border-strong)" : "#E2E8F0",
               }}
-              className="flex h-7 items-center rounded-lg border p-0.5 shadow-xs"
+              className="flex h-7 shrink-0 items-center rounded-lg border p-0.5 shadow-xs"
             >
               <button
                 type="button"
@@ -8829,9 +8807,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }
                     : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                 }
-                className="flex h-6 items-center rounded-md px-2.5 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
+                className="flex h-6 shrink-0 items-center rounded-md px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
               >
-                2D SKETCH
+                {verticalLayout.viewportWidth < 900 ? "2D" : "2D SKETCH"}
               </button>
               <button
                 type="button"
@@ -8848,9 +8826,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }
                     : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                 }
-                className="flex h-6 items-center rounded-md px-2.5 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
+                className="flex h-6 shrink-0 items-center rounded-md px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
               >
-                CAD 3D
+                {verticalLayout.viewportWidth < 900 ? "3D" : "CAD 3D"}
               </button>
             </div>
 
@@ -8880,10 +8858,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                   }
-                  className="flex h-6 items-center rounded-md px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
+                  className="flex h-6 shrink-0 items-center rounded-md px-1.5 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
-                  ORTO 2D
+                  {verticalLayout.viewportWidth < 900 ? "ORTO" : "ORTO 2D"}
                 </button>
               </div>
             )}
@@ -9033,7 +9011,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             )}
           </div>
 
-          {/* ZONA 3 (DIREITA — AÇÕES RÁPIDAS, IA, BOM, FOCO, SHELL E MAIS OPÇÕES) */}
+          {/* ZONA 3 (DIREITA — AÇÕES RÁPIDAS, IA, BOM, FOCO, PRUMO E MAIS OPÇÕES) */}
           <div className="flex shrink-0 items-center gap-1">
             {/* HISTÓRICO SEMPRE VISÍVEL (FORA DE QUALQUER OVERFLOW): [ ↶ ] [ ↷ ] */}
             <div
@@ -9041,7 +9019,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 backgroundColor: "var(--chamfer-surface-elevated)",
                 borderColor: "var(--chamfer-border-strong)",
               }}
-              className="flex h-7 items-center rounded-lg border p-0.5"
+              className="flex h-7 shrink-0 items-center rounded-lg border p-0.5"
             >
               <button
                 type="button"
@@ -9058,14 +9036,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : "var(--chamfer-text-muted)",
                 }}
                 className={cn(
-                  "flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
+                  "flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canUndo || pending.length > 0
                     ? "hover:brightness-110 cursor-pointer"
                     : "opacity-35 cursor-not-allowed",
                 )}
               >
                 <Undo2 className="size-3.5" />
-                {uiShellMode === "classic" && <span className="hidden xl:inline">Desfazer</span>}
               </button>
               <button
                 type="button"
@@ -9081,160 +9058,205 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     : "var(--chamfer-text-muted)",
                 }}
                 className={cn(
-                  "flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
+                  "flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canRedo
                     ? "hover:brightness-110 cursor-pointer"
                     : "opacity-35 cursor-not-allowed",
                 )}
               >
                 <Redo2 className="size-3.5" />
-                {uiShellMode === "classic" && <span className="hidden xl:inline">Refazer</span>}
               </button>
             </div>
 
-            {/* MODO CLÁSSICO: BOTÃO SALVAR + BADGE SALVO SEPARADOS NA ZONA 3 */}
-            {uiShellMode === "classic" && (
-              <div className="flex items-center gap-1">
+            {/* AGRUPAMENTO INTELIGENTE EM TELAS ESTREITAS (< 900px): [ ✨ IA & BOM ▾ ] + PÍLULAS DIRETAS COM ZERO CORTE */}
+            {verticalLayout.viewportWidth < 900 ? (
+              <div className="relative shrink-0">
                 <button
                   type="button"
-                  onClick={handleManualSave}
-                  title="Salvar documento agora (Ctrl+S)"
+                  data-testid="chamfer-ai-bom-popover-trigger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic("tap");
+                    setAiBomPopoverOpen((v) => !v);
+                  }}
                   style={
-                    saveStatus !== "pendente"
-                      ? isDark
-                        ? {
-                            backgroundColor: "var(--chamfer-surface-elevated)",
-                            borderColor: "var(--chamfer-border-strong)",
-                            color: "var(--chamfer-text-primary)",
-                          }
-                        : {
-                            backgroundColor: "#FFFFFF",
-                            borderColor: "#CBD5E1",
-                            color: "#1E293B",
-                          }
-                      : undefined
+                    isDark
+                      ? {
+                          backgroundColor: "rgba(14, 165, 233, 0.22)",
+                          borderColor: "#38BDF8",
+                          borderWidth: "1.5px",
+                          color: "#7DD3FC",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                      : {
+                          backgroundColor: "#E0F2FE",
+                          borderColor: "#7DD3FC",
+                          color: "#0284C7",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
                   }
-                  className={cn(
-                    "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
-                    saveStatus === "pendente"
-                      ? isDark
-                        ? "border-[#F59E0B]/60 bg-[#F59E0B]/15 text-[#FBBF24] hover:bg-[#F59E0B]/25"
-                        : "border-[#D97706]/50 bg-[#D97706]/10 text-[#D97706] hover:bg-[#D97706]/20"
-                      : "hover:brightness-110",
-                  )}
+                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 cursor-pointer touch-pan-x"
+                  title="Abrir menu rápido de IA (VISION, INTENT) e Produção (CORTE/BOM)"
                 >
-                  {saveStatus === "salvando" ? (
-                    <Loader2 className="size-3 animate-spin text-[#F59E0B]" />
-                  ) : (
-                    <Check className={cn("size-3", isDark ? "text-[#34D399]" : "text-[#16A34A]")} />
-                  )}
-                  <span>Salvar</span>
+                  <Sparkles className="size-3.5 shrink-0" />
+                  <span>IA &amp; BOM ▾</span>
                 </button>
-                <span
-                  className={cn(
-                    "hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-mono border font-semibold uppercase tracking-wider transition-colors",
-                    saveStatus === "salvo" &&
-                      (isDark
-                        ? "text-[#34D399] bg-[#34D399]/10 border-[#34D399]/30"
-                        : "text-[#15803D] bg-[#DCFCE7] border-[#86EFAC] font-bold"),
-                    saveStatus === "salvando" &&
-                      (isDark
-                        ? "text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30"
-                        : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
-                    saveStatus === "pendente" &&
-                      (isDark
-                        ? "text-[#FBBF24] bg-[#F59E0B]/15 border-[#F59E0B]/50 animate-pulse"
-                        : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
-                  )}
-                >
-                  {saveStatus === "salvo" ? "Salvo" : saveStatus === "salvando" ? "Salvando..." : "Não salvo"}
-                </span>
-              </div>
-            )}
-
-            {/* BOTÕES DIRETOS DE IA E PRODUÇÃO SEMPRE DISPONÍVEIS NO DESLIZE DA BARRA SUPERIOR: [ VISION ], [ INTENT ] E [ CORTE/BOM ] */}
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                data-cmd-id="ai.vision"
-                onClick={() => {
-                  triggerHaptic("action");
-                  setVisionOpen(true);
-                }}
-                title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
-                aria-label="Abrir CHAMFER VISION"
-                style={
-                  isDark
-                    ? {
-                        backgroundColor: "var(--chamfer-accent-soft)",
-                        borderColor: "var(--chamfer-accent-border)",
-                        color: "var(--chamfer-accent)",
-                      }
-                    : {
-                        backgroundColor: "#FFE4E6",
-                        borderColor: "#FDA4AF",
-                        color: "#E11D48",
-                      }
-                }
-                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
-              >
-                <ScanEye className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }} />
-                <span>VISION</span>
-              </button>
-              <button
-                type="button"
-                data-cmd-id="ai.intent"
-                onClick={() => {
-                  triggerHaptic("action");
-                  setQuickCommandOpen(true);
-                }}
-                title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
-                aria-label="Abrir CHAMFER INTENT"
-                style={
-                  isDark
-                    ? {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
-                        borderColor: "var(--chamfer-accent-border)",
-                        color: "var(--chamfer-accent)",
-                      }
-                    : {
-                        backgroundColor: "#E0F2FE",
-                        borderColor: "#7DD3FC",
-                        color: "#0284C7",
-                      }
-                }
-                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
-              >
-                <Sparkles className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0284C7" }} />
-                <span>INTENT</span>
-              </button>
-              <button
-                type="button"
-                data-cmd-id="prod.workshop_bom"
-                onClick={() => {
-                  triggerHaptic("action");
-                  setIntegratedWorkshopOpen(true);
-                }}
-                title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
-                style={
-                  isDark
-                    ? {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
+                {aiBomPopoverOpen &&
+                  typeof document !== "undefined" &&
+                  document.body &&
+                  createPortal(
+                    <div
+                      data-testid="chamfer-ai-bom-popover-portal"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        position: "fixed",
+                        top: 42,
+                        right: 12,
+                        zIndex: 9999,
+                        backgroundColor: "var(--chamfer-popover-bg)",
                         borderColor: "var(--chamfer-border-strong)",
                         color: "var(--chamfer-text-primary)",
-                      }
-                    : {
-                        backgroundColor: "#FFFFFF",
-                        borderColor: "#CBD5E1",
-                        color: "#1E293B",
-                      }
-                }
-                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
-              >
-                <Boxes className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0F766E" }} />
-                <span>CORTE/BOM</span>
-              </button>
-            </div>
+                      }}
+                      className="flex flex-col gap-1 rounded-2xl border p-2 shadow-2xl backdrop-blur-xl w-56 font-mono text-[10px]"
+                    >
+                      <button
+                        type="button"
+                        data-cmd-id="ai.vision"
+                        onClick={() => {
+                          setAiBomPopoverOpen(false);
+                          setVisionOpen(true);
+                        }}
+                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left font-bold hover:bg-sky-500/15 text-sky-400 cursor-pointer"
+                      >
+                        <ScanEye className="size-4 shrink-0" />
+                        <span>VISION (Engenharia Reversa)</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-cmd-id="ai.intent"
+                        onClick={() => {
+                          setAiBomPopoverOpen(false);
+                          setQuickCommandOpen(true);
+                        }}
+                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left font-bold hover:bg-amber-500/15 text-amber-400 cursor-pointer"
+                      >
+                        <Sparkles className="size-4 shrink-0" />
+                        <span>INTENT (Compilador IA)</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-cmd-id="prod.workshop_bom"
+                        onClick={() => {
+                          setAiBomPopoverOpen(false);
+                          setIntegratedWorkshopOpen(true);
+                        }}
+                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left font-bold hover:bg-emerald-500/15 text-emerald-400 cursor-pointer"
+                      >
+                        <Boxes className="size-4 shrink-0" />
+                        <span>CORTE / BOM (Oficina)</span>
+                      </button>
+                    </div>,
+                    document.body,
+                  )}
+              </div>
+            ) : (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  data-cmd-id="ai.vision"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    setVisionOpen(true);
+                  }}
+                  title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
+                  aria-label="Abrir CHAMFER VISION"
+                  style={
+                    isDark
+                      ? {
+                          backgroundColor: "var(--chamfer-accent-soft)",
+                          borderColor: "var(--chamfer-accent-border)",
+                          color: "var(--chamfer-accent)",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                      : {
+                          backgroundColor: "#FFE4E6",
+                          borderColor: "#FDA4AF",
+                          color: "#E11D48",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                  }
+                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
+                >
+                  <ScanEye className="size-3.5 shrink-0" style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }} />
+                  <span>VISION</span>
+                </button>
+                <button
+                  type="button"
+                  data-cmd-id="ai.intent"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    setQuickCommandOpen(true);
+                  }}
+                  title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
+                  aria-label="Abrir CHAMFER INTENT"
+                  style={
+                    isDark
+                      ? {
+                          backgroundColor: "var(--chamfer-surface-elevated)",
+                          borderColor: "var(--chamfer-accent-border)",
+                          color: "var(--chamfer-accent)",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                      : {
+                          backgroundColor: "#E0F2FE",
+                          borderColor: "#7DD3FC",
+                          color: "#0284C7",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                  }
+                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
+                >
+                  <Sparkles className="size-3.5 shrink-0" style={{ color: isDark ? "var(--chamfer-accent)" : "#0284C7" }} />
+                  <span>INTENT</span>
+                </button>
+                <button
+                  type="button"
+                  data-cmd-id="prod.workshop_bom"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    setIntegratedWorkshopOpen(true);
+                  }}
+                  title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
+                  style={
+                    isDark
+                      ? {
+                          backgroundColor: "var(--chamfer-surface-elevated)",
+                          borderColor: "var(--chamfer-border-strong)",
+                          color: "var(--chamfer-text-primary)",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                      : {
+                          backgroundColor: "#FFFFFF",
+                          borderColor: "#CBD5E1",
+                          color: "#1E293B",
+                          padding: "0 7px",
+                          gap: "4px",
+                        }
+                  }
+                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
+                >
+                  <Boxes className="size-3.5 shrink-0" style={{ color: isDark ? "var(--chamfer-accent)" : "#0F766E" }} />
+                  <span>CORTE/BOM</span>
+                </button>
+              </div>
+            )}
 
             {/* BOTÃO DE MODO FOCO RÁPIDO [ ⛶ Foco ] */}
             <button
@@ -9247,22 +9269,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
                 borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
                 color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
+                padding: "0 7px",
+                gap: "4px",
               }}
-              className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
+              className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
             >
-              <Maximize className="size-3 text-[#38BDF8]" />
+              <Maximize className="size-3 text-[#38BDF8] shrink-0" />
               <span>Foco</span>
             </button>
 
-            {/* ALTERNADOR RÁPIDO NÃO-DESTRUTIVO DE CASCA: [ Compacta | Clássica ] */}
+            {/* ALTERNADOR RÁPIDO NÃO-DESTRUTIVO DE CASCA: [ Compacta | 📐 PRUMO ] */}
             <div
               data-testid="chamfer-header-shell-toggle"
               style={{
-                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
-                borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
+                backgroundColor: isDark ? "#232E45" : "#F1F5F9",
+                borderColor: isDark ? "#334361" : "#CBD5E1",
               }}
               className="flex shrink-0 h-7 items-center rounded-lg border p-0.5 text-[9px] font-mono font-bold touch-pan-x"
-              title="Alternar instantaneamente entre Interface Compacta e Clássica sem perder o desenho"
+              title="Alternar instantaneamente entre Interface Compacta e Interface Espacial PRUMO (Zero Barras) sem perder o desenho"
             >
               <button
                 type="button"
@@ -9270,11 +9294,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => handleSetUiShellMode("compact")}
                 style={
                   uiShellMode === "compact"
-                    ? {
-                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#0284C7",
-                        color: "#FFFFFF",
-                      }
-                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
+                    ? isDark
+                      ? {
+                          backgroundColor: "rgba(14, 165, 233, 0.22)",
+                          border: "1.5px solid #38BDF8",
+                          color: "#F8FAFC",
+                        }
+                      : {
+                          backgroundColor: "#0284C7",
+                          color: "#FFFFFF",
+                        }
+                    : { color: isDark ? "#CBD5E1" : "#475569" }
                 }
                 className="flex h-5.5 items-center rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
               >
@@ -9282,19 +9312,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
               <button
                 type="button"
-                data-testid="chamfer-header-shell-classic-btn"
-                onClick={() => handleSetUiShellMode("classic")}
+                data-testid="chamfer-header-shell-prumo-btn"
+                onClick={() => handleSetUiShellMode("prumo")}
                 style={
-                  uiShellMode === "classic"
-                    ? {
-                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#0284C7",
-                        color: "#FFFFFF",
-                      }
-                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
+                  uiShellMode === "prumo"
+                    ? isDark
+                      ? {
+                          backgroundColor: "rgba(14, 165, 233, 0.22)",
+                          border: "1.5px solid #38BDF8",
+                          color: "#F8FAFC",
+                        }
+                      : {
+                          backgroundColor: "#0284C7",
+                          color: "#FFFFFF",
+                        }
+                    : { color: isDark ? "#CBD5E1" : "#475569" }
                 }
-                className="flex h-5.5 items-center rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
+                className="flex h-5.5 items-center gap-1 rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
               >
-                Clássica
+                <span>📐</span>
+                <span>{UI_NAME}</span>
               </button>
             </div>
 
@@ -9384,7 +9421,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     }}
                     className="chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
                   >
-                    {/* ALTERNADOR DE CASCA NO TOPO DO MENU ⋯: Interface do CHAMFER: [ Compacta | Clássica ] */}
+                    {/* ALTERNADOR DE CASCA NO TOPO DO MENU ⋯: Interface do CHAMFER: [ Compacta | 📐 PRUMO ] */}
                     <div
                       className={cn(
                         "mb-1.5 flex items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 font-mono text-[10px]",
@@ -9411,19 +9448,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         </button>
                         <button
                           type="button"
-                          data-testid="landscape-menu-shell-classic-btn"
+                          data-testid="landscape-menu-shell-prumo-btn"
                           onClick={() => {
-                            handleSetUiShellMode("classic");
+                            handleSetUiShellMode("prumo");
                             setMoreOpen(false);
                           }}
                           className={cn(
                             "rounded-md px-2 py-0.5 font-bold transition-colors cursor-pointer",
-                            uiShellMode === "classic"
+                            uiShellMode === "prumo"
                               ? "bg-[#38BDF8] text-[#0B0F14]"
                               : "opacity-70 hover:opacity-100",
                           )}
                         >
-                          Clássica
+                          📐 {UI_NAME}
                         </button>
                       </div>
                     </div>
@@ -9710,19 +9747,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </header>
       )}
 
-      {/* CORPO DO WORKSPACE CAD: EM MODO CAD 3D A BARRA ESQUERDA FICA VISÍVEL E O CANVAS OCUPA 100% DA DIREITA E BASE */}
+      {/* CORPO DO WORKSPACE CAD: NO MODO PRUMO, O CANVAS OCUPA 100% DE PONTA A PONTA SEM BARRAS FIXAS */}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-1",
-          isLandscape || activeMode === "3d"
-            ? uiShellMode === "compact"
+          uiShellMode === "prumo"
+            ? "gap-0 p-0"
+            : isLandscape || activeMode === "3d"
               ? "gap-0.5 p-0.5 pt-0"
-              : "gap-1.5 p-1 pt-0"
-            : "gap-0 p-0",
+              : "gap-0 p-0",
         )}
       >
-        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (VISÍVEL NO MODO PAISAGEM OU SEMPRE QUE CAD 3D ESTIVER ATIVO) */}
-        {!focus && (isLandscape || activeMode === "3d") && (
+        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (OCULTA NO MODO PRUMO ZERO BARRAS) */}
+        {!focus && uiShellMode !== "prumo" && (isLandscape || activeMode === "3d") && (
           <ChamferCadToolbar
             tool={tool}
             onPickTool={pickTool}
@@ -9905,13 +9942,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }}
             onReturnToSketch2D={transitionTo2D}
             isDark={isDark}
-            compactMode={uiShellMode === "compact"}
+            compactMode={true}
             activeStrokeColor={activeStrokeColor}
             onSelectStrokeColor={handleSelectColorAndLayer}
           />
         )}
 
-        {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM MODO RETRATO) */}
+        {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM RETRATO E NO MODO PRUMO) */}
         <div
           ref={canvasViewportRef}
           data-chamfer-workspace="true"
@@ -9921,7 +9958,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }}
           className={cn(
             "relative min-h-0 min-w-0 flex-1 overflow-hidden",
-            isLandscape ? "rounded-xl border shadow-inner" : "rounded-none border-0",
+            uiShellMode === "prumo"
+              ? "rounded-none border-0"
+              : isLandscape
+                ? "rounded-xl border shadow-inner"
+                : "rounded-none border-0",
           )}
         >
           {bgStyle === "fluido" && (
@@ -10491,16 +10532,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                   const cornerLen = Math.max(12 / safeK, Math.min(frame.w, frame.h) * 0.035);
                   const marginInset = Math.min(20, Math.min(frame.w, frame.h) * 0.025);
-                  const borderColor = isDark ? themeColors.workAreaStroke : "#0284C7";
+                  const borderColor = isDark ? "#38BDF8" : "#0284C7";
                   const cornerColor = borderColor;
-                  const dashedMarginColor = isDark ? borderColor : "#38BDF8";
-                  const dimLineColor = isDark ? borderColor : "#38BDF8";
-                  const dimPillBg = isDark ? themeColors.surfaceElevated : "#FFFFFF";
-                  const dimPillBorder = isDark ? themeColors.borderStrong : "#7DD3FC";
-                  const dimPillText = isDark ? themeColors.textSecondary : "#0284C7";
-                  const headerPillBg = isDark ? themeColors.surfaceElevated : "#FFFFFF";
-                  const headerPillBorder = isDark ? themeColors.borderStrong : "#E2E8F0";
-                  const headerPillText = isDark ? themeColors.textPrimary : "#1E293B";
+                  const dashedMarginColor = "#38BDF8";
+                  const dimLineColor = "#38BDF8";
+                  const dimPillBg = isDark ? "#162A42" : "#FFFFFF";
+                  const dimPillBorder = isDark ? "#38BDF8" : "#7DD3FC";
+                  const dimPillText = isDark ? "#7DD3FC" : "#0284C7";
+                  const headerPillBg = isDark ? "#222E44" : "#FFFFFF";
+                  const headerPillBorder = isDark ? "#384B6B" : "#E2E8F0";
+                  const headerPillText = isDark ? "#F1F5F9" : "#1E293B";
                   const dimOffsetPx = 18 / safeK;
                   const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
                   const rawHeaderPx = headerBadgeText.length * 5.8 + 14;
@@ -10533,8 +10574,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         height={frame.h}
                         fill="none"
                         stroke={borderColor}
-                        strokeOpacity={isDark ? 0.92 : 1}
-                        strokeWidth={(isDark ? 1.6 : 2.0) / safeK}
+                        strokeOpacity={1}
+                        strokeWidth={2.0 / safeK}
                         pointerEvents="none"
                       />
 
@@ -10547,7 +10588,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           height={frame.h - marginInset * 2}
                           fill="none"
                           stroke={dashedMarginColor}
-                          strokeOpacity={isDark ? 0.24 : 0.75}
+                          strokeOpacity={isDark ? 0.45 : 0.75}
                           strokeWidth={1 / safeK}
                           strokeDasharray={`${6 / safeK} ${4 / safeK}`}
                           pointerEvents="none"
@@ -10619,7 +10660,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             x2={frame.w}
                             y2={-dimOffsetPx}
                             stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.55 : 0.85}
+                            strokeOpacity={isDark ? 0.75 : 0.85}
                             strokeWidth={1 / safeK}
                             strokeDasharray={`${4 / safeK} ${3 / safeK}`}
                           />
@@ -10629,7 +10670,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             x2={0}
                             y2={-dimOffsetPx - 4 / safeK}
                             stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.7 : 0.9}
+                            strokeOpacity={isDark ? 0.85 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <line
@@ -10638,7 +10679,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             x2={frame.w}
                             y2={-dimOffsetPx - 4 / safeK}
                             stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.7 : 0.9}
+                            strokeOpacity={isDark ? 0.85 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <rect
@@ -10649,7 +10690,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             rx={4 / safeK}
                             fill={dimPillBg}
                             stroke={dimPillBorder}
-                            strokeOpacity={isDark ? 0.85 : 1}
+                            strokeOpacity={1}
                             strokeWidth={1 / safeK}
                           />
                           <text
@@ -10670,7 +10711,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             x2={-dimOffsetPx}
                             y2={frame.h}
                             stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.5 : 0.85}
+                            strokeOpacity={isDark ? 0.75 : 0.85}
                             strokeWidth={1 / safeK}
                             strokeDasharray={`${4 / safeK} ${3 / safeK}`}
                           />
@@ -10680,7 +10721,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             x2={-dimOffsetPx - 4 / safeK}
                             y2={0}
                             stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.65 : 0.9}
+                            strokeOpacity={isDark ? 0.85 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <line
@@ -10689,7 +10730,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             x2={-dimOffsetPx - 4 / safeK}
                             y2={frame.h}
                             stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.65 : 0.9}
+                            strokeOpacity={isDark ? 0.85 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <g transform={`translate(${-dimOffsetPx} ${frame.h / 2}) rotate(-90)`}>
@@ -10701,7 +10742,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               rx={4 / safeK}
                               fill={dimPillBg}
                               stroke={dimPillBorder}
-                              strokeOpacity={isDark ? 0.85 : 1}
+                              strokeOpacity={1}
                               strokeWidth={1 / safeK}
                             />
                             <text
@@ -10841,21 +10882,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   )}
 
-                  {/* Marcador Circular Pequeno e Nítido de Origem (0,0) em Vermelho Carmesim (#E11D48) */}
+                  {/* Marcador Circular Pequeno e Nítido de Origem (0,0) em Vermelho Carmesim Coral (#F43F5E / #E11D48) */}
                   <circle
                     cx={0}
                     cy={0}
                     r={4.5 / view.k}
                     fill="none"
-                    stroke="#E11D48"
-                    strokeOpacity={0.88}
+                    stroke={isDark ? "#F43F5E" : "#E11D48"}
+                    strokeOpacity={0.92}
                     strokeWidth={1.3 / view.k}
                   />
                   <circle
                     cx={0}
                     cy={0}
                     r={2.1 / view.k}
-                    fill="#E11D48"
+                    fill={isDark ? "#F43F5E" : "#E11D48"}
                   />
                   <text
                     x={8 / view.k}
@@ -10863,7 +10904,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     fontSize={9 / view.k}
                     fontFamily='"JetBrains Mono", ui-monospace, monospace'
                     fontWeight="700"
-                    fill="#E11D48"
+                    fill={isDark ? "#FB7185" : "#E11D48"}
                   >
                     {drawingProjection === "isometric" ? "(0,0,0) ISO" : "(0,0)"}
                   </text>
@@ -12569,6 +12610,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               frame={frame}
               compactPortrait={!isLandscape}
               slimMode={uiShellMode === "compact"}
+              prumoMode={uiShellMode === "prumo"}
               rulersVisible={rulersVisible}
               onToggleRulersVisible={handleToggleRulersVisible}
               onCenterWorkspace={() => {
@@ -12589,8 +12631,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }
           />
 
-          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (OCULTA NO MODO CAD 3D) */}
-          {!isLandscape && !focus && !solidOpen && activeMode !== "3d" && (
+          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (OCULTA NO MODO PRUMO E CAD 3D) */}
+          {!isLandscape && uiShellMode !== "prumo" && !focus && !solidOpen && activeMode !== "3d" && (
             <ChamferPortraitCanvasMicroPill
               isDark={isDark}
               planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
@@ -13632,6 +13674,324 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </div>
             )}
 
+          {/* INTERFACE ESPACIAL "PRUMO" (ZERO BARRAS DE FERRAMENTAS — 5 INSTRUMENTOS SUSPENSOS + RESPIRO) */}
+          {uiShellMode === "prumo" && !solidOpen && (
+            <PrumoErrorBoundary onFallbackToCompact={() => handleSetUiShellMode("compact")}>
+              <ChamferPrumoSpatialUI
+                isDark={isDark}
+                viewportWidth={canvasSize.w || verticalLayout.viewportWidth}
+                viewportHeight={canvasSize.h || verticalLayout.viewportHeight}
+                isLandscape={isLandscape}
+                uiShellMode={uiShellMode}
+                onChangeUiShellMode={handleSetUiShellMode}
+                projectName={project?.name ?? "Projeto 26"}
+                saveStatus={saveStatus}
+                onManualSave={handleManualSave}
+                onLeaveEditor={() => {
+                  if (
+                    saveStatus === "pendente" &&
+                    (chamferSettings.autoSave || chamferSettings.recoveryEnabled)
+                  ) {
+                    performSave();
+                  }
+                  leaveEditor();
+                }}
+                activeMode={activeMode}
+                onSelect2D={() => transitionTo2D()}
+                onSelect3D={() => transitionTo3D("3d")}
+                drawingProjection={drawingProjection}
+                onSetDrawingProjection={(mode) => {
+                  setDrawingProjection(mode);
+                  if (mode === "orthographic") transitionTo2D();
+                }}
+                isOrbitToolActive={isOrbitToolActive}
+                isOrbitTilted={orbitProjection2D.isTilted}
+                onToggleOrbitTool={(next) => {
+                  const target = typeof next === "boolean" ? next : !isOrbitToolActive;
+                  setIsOrbitToolActive(target);
+                  if (target && isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                    animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                  }
+                }}
+                onSelectViewPreset={(preset) => {
+                  handleSelectOrbitPreset(preset === "iso" ? "iso_se" : preset);
+                }}
+                renderStyle3D={renderStyle3D}
+                onChangeRenderStyle3D={(style) => {
+                  setRenderStyle3D(style);
+                  if (style !== "wireframe" && isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                    setIsOrbitToolActive(true);
+                    animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                  }
+                }}
+                onFitView={() => centerPiece(false)}
+                onFitWorkspace={() => fitFrame()}
+                tool={tool}
+                onPickTool={pickTool}
+                canUndo={historyState.canUndo || pending.length > 0}
+                canRedo={historyState.canRedo}
+                onUndo={undo}
+                onRedo={redo}
+                selectedEntities={selected}
+                onClearSelection={() => setSelection([])}
+                onDeleteSelection={() => {
+                  if (selection.length === 0) return;
+                  commit((list) => list.filter((e) => !selection.includes(e.id)));
+                  setSelection([]);
+                  toast.success("Seleção removida.");
+                }}
+                onMoveSelection={handleMoveSelection}
+                onCopySelection={handleCopySelection}
+                onRotateSelection={handleRotateSelection}
+                onMirrorSelection={handleMirrorSelection}
+                onScaleSelection={handleScaleSelection}
+                onStretchSelection={handleStretchSelection}
+                onBreakSelection={handleBreakSelection}
+                onJoinSelection={handleJoinSelection}
+                onExplodeSelection={handleExplodeSelection}
+                onDivideSelection={() => handleOpenDivide()}
+                onCenterSelection={handleOpenCenterDialog}
+                onArrayLinear={handleArrayLinear}
+                onArrayPolar={handleArrayPolar}
+                onOverkillClean={handleOverkillClean}
+                onBoolean2D={handleBoolean2D}
+                onCreateHatch={handleCreateHatch}
+                cursor={cursor}
+                basePoint={pending.length > 0 ? pending[pending.length - 1]! : null}
+                pendingCount={pending.length}
+                snapOn={snapOn}
+                onToggleSnap={() => setSnapOn((s) => !s)}
+                orthoOn={orthoOn}
+                onToggleOrtho={() => setOrthoOn((o) => !o)}
+                showGrid={showGrid}
+                onToggleGrid={() => setShowGrid((g) => !g)}
+                grid={grid}
+                onChangeGrid={(mm) => {
+                  setGrid(mm);
+                  setShowGrid(() => true);
+                }}
+                thickness={thickness}
+                onChangeThickness={(mm) => {
+                  setThickness(mm);
+                  toast.success(`Espessura da chapa: ${mm.toFixed(1)} mm`);
+                }}
+                cursorOffsetMode={cursorOffsetMode}
+                onToggleCursorOffsetMode={toggleCursorOffsetMode}
+                loupeMode={loupeMode}
+                onCycleLoupeMode={handleCycleLoupeMode}
+                interactionGuideMode={interactionGuideMode}
+                onToggleAnchorReferenceMode={() => {
+                  if (interactionGuideMode === "purple_ref") {
+                    handleSetInteractionGuideMode("off");
+                  } else {
+                    handleSetInteractionGuideMode("purple_ref");
+                    setIsSettingReferencePoint(true);
+                  }
+                }}
+                temporaryOrigin={temporaryOrigin}
+                onSetDatumAtCursor={() => {
+                  setTemporaryOrigin({
+                    id: uid(),
+                    p: cursor,
+                    label: "DATUM",
+                    kind: "origin",
+                    timestamp: Date.now(),
+                  });
+                  triggerHaptic("success");
+                  toast.success(`⌖ DATUM fixado em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
+                }}
+                onClearDatum={() => {
+                  setTemporaryOrigin(null);
+                  setPinnedMeetingPoints([]);
+                  setLockedConstraints({});
+                  toast.success("⌖ DATUM limpo");
+                }}
+                onCreateDatumLineDelta={(axis) => {
+                  const originPt = temporaryOrigin?.p ?? { x: 0, y: 0 };
+                  const targetPt =
+                    axis === "dx"
+                      ? { x: cursor.x, y: originPt.y }
+                      : { x: originPt.x, y: cursor.y };
+                  if (dist(originPt, targetPt) < 0.1) return;
+                  commit((list) => [
+                    ...list,
+                    {
+                      id: uid(),
+                      type: "line",
+                      layer: activeLayer,
+                      x1: Number(originPt.x.toFixed(3)),
+                      y1: Number(originPt.y.toFixed(3)),
+                      x2: Number(targetPt.x.toFixed(3)),
+                      y2: Number(targetPt.y.toFixed(3)),
+                    },
+                  ]);
+                  toast.success(`Linha ${axis.toUpperCase()} criada a partir do DATUM.`);
+                }}
+                dimKind={dimKind}
+                onPickDimKind={(k) => {
+                  setDimKind(k);
+                  setTool("dim");
+                }}
+                onConvertToBend={handleConvertToBend}
+                onAddHole={handleAddHole}
+                onPlanificar={handlePlanificar}
+                onOpenFlanges={handleOpenFlanges}
+                onApplyRelief={handleApplyRelief}
+                onUnfold={handleUnfold}
+                onFold={handleFold}
+                onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
+                activeLayer={activeLayer}
+                activeStrokeColor={activeStrokeColor}
+                onSelectColorAndLayer={(hex, layerId) => {
+                  if (layerId) setActiveLayer(layerId as Layer);
+                  setActiveStrokeColor(hex);
+                  activeStrokeColorRef.current = hex;
+                }}
+                onOpenVision={() => setVisionOpen(true)}
+                onOpenIntent={() => {
+                  setQuickCommandOpen(true);
+                }}
+                onOpenBom={() => setIntegratedWorkshopOpen(true)}
+                onOpenExport={() => setExportOpen(true)}
+                onOpenLayers={() => {
+                  setActiveSidebarTab("camadas");
+                  if (isLandscape) {
+                    setRightSidebarOpen(true);
+                  } else {
+                    setPortraitDrawerOpen(true);
+                  }
+                }}
+                onOpenInspector={() => {
+                  setActiveSidebarTab("propriedades");
+                  if (isLandscape) {
+                    setRightSidebarOpen(true);
+                  } else {
+                    setPortraitDrawerOpen(true);
+                  }
+                }}
+                onToggleTheme={toggleTheme}
+                focus={focus}
+                onToggleFocus={() => setFocus((f) => !f)}
+                activeDirect3DTool={activeDirect3DTool}
+                onSelectDirect3DTool={(next3DTool) => {
+                  setActiveDirect3DTool(next3DTool);
+                  if (next3DTool === "loft_3d") {
+                    setTool("loft_3d");
+                  } else if (tool === "loft_3d") {
+                    setTool("select");
+                  }
+                }}
+                view={view}
+                isDrawingOrGesturing={gesturing || pending.length > 0}
+                onCommitNumericInput={({
+                  lengthMm,
+                  angleDeg,
+                  widthMm,
+                  heightMm,
+                  radiusMm,
+                  diameterMm,
+                  editSelectedEntity,
+                }) => {
+                  const effRadius =
+                    typeof radiusMm === "number" && Number.isFinite(radiusMm) && radiusMm > 0
+                      ? radiusMm
+                      : typeof diameterMm === "number" && Number.isFinite(diameterMm) && diameterMm > 0
+                        ? diameterMm / 2
+                        : undefined;
+                  const effLen =
+                    typeof lengthMm === "number" && Number.isFinite(lengthMm) && lengthMm > 0
+                      ? lengthMm
+                      : typeof widthMm === "number" && Number.isFinite(widthMm) && widthMm > 0
+                        ? widthMm
+                        : typeof heightMm === "number" && Number.isFinite(heightMm) && heightMm > 0
+                          ? heightMm
+                          : effRadius;
+
+                  if (editSelectedEntity && selected.length === 1) {
+                    const sel = selected[0]!;
+                    if ((sel.type === "circle" || sel.type === "arc") && typeof effRadius === "number" && effRadius > 0) {
+                      commit((list) =>
+                        list.map((e) =>
+                          e.id === sel.id && (e.type === "circle" || e.type === "arc")
+                            ? { ...e, r: Number(effRadius.toFixed(3)) }
+                            : e,
+                        ),
+                      );
+                      toast.success(`Raio atualizado para ${effRadius.toFixed(2)} mm`);
+                      return;
+                    }
+                    if (sel.type === "line" && typeof effLen === "number" && effLen > 0) {
+                      const ang =
+                        typeof angleDeg === "number" && Number.isFinite(angleDeg)
+                          ? (angleDeg * Math.PI) / 180
+                          : Math.atan2(sel.y2 - sel.y1, sel.x2 - sel.x1);
+                      commit((list) =>
+                        list.map((e) =>
+                          e.id === sel.id && e.type === "line"
+                            ? {
+                                ...e,
+                                x2: Number((sel.x1 + Math.cos(ang) * effLen).toFixed(3)),
+                                y2: Number((sel.y1 + Math.sin(ang) * effLen).toFixed(3)),
+                              }
+                            : e,
+                        ),
+                      );
+                      toast.success(`Comprimento atualizado para ${effLen.toFixed(2)} mm`);
+                      return;
+                    }
+                  }
+
+                  const base = pending.length > 0 ? pending[pending.length - 1]! : cursor;
+                  const curAngRad =
+                    typeof angleDeg === "number" && Number.isFinite(angleDeg)
+                      ? (angleDeg * Math.PI) / 180
+                      : Math.atan2(cursor.y - base.y, cursor.x - base.x);
+                  const stepLen =
+                    typeof effLen === "number" && Number.isFinite(effLen) && effLen > 0
+                      ? effLen
+                      : dist(base, cursor);
+                  const targetPt: Vec2 = {
+                    x: base.x + Math.cos(curAngRad) * stepLen,
+                    y: base.y + Math.sin(curAngRad) * stepLen,
+                  };
+                  if (tool === "polyline" || tool === "spline") {
+                    if (pending.length > 0) {
+                      polylineSegModesRef.current.push(polylineSegMode);
+                    }
+                    setPending((q) => [...q, targetPt]);
+                  } else if (pending.length === 1) {
+                    const lockedRad = effRadius ?? effLen;
+                    const finalDraft = buildDraft(
+                      tool,
+                      pending[0]!,
+                      targetPt,
+                      activeLayer,
+                      filletR,
+                      drawingProjection,
+                      isoPlane,
+                      {
+                        rectMode,
+                        circleMode,
+                        polygonMode,
+                        polygonSides,
+                        polygonAcrossFlatsMm,
+                        slotMode,
+                        slotWidthMm,
+                        ...(typeof lockedRad === "number" ? { lockedRadiusMm: lockedRad } : {}),
+                      },
+                    );
+                    if (finalDraft) {
+                      commit((list) => [...list, { ...finalDraft, id: uid() }]);
+                    }
+                    setDraft(null);
+                    setPending([]);
+                    setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+                  }
+                }}
+              />
+            </PrumoErrorBoundary>
+          )}
+
           {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (OCULTO NO MODO CAD 3D) */}
           {mobileEditorOpen && activeArrayType === null && activeMode !== "3d" && (
             <div
@@ -13722,7 +14082,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               isDark={isDark}
               enclosedAssemblyCount={arraySourceAssembly.length}
             />
-          ) : (uiShellMode === "classic" || rightSidebarOpen) ? (
+          ) : rightSidebarOpen ? (
             <ChamferRightSidebar
               open={rightSidebarOpen}
               onToggleOpen={() => setRightSidebarOpen((v) => !v)}
@@ -13893,8 +14253,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         )}
       </div>
 
-      {/* REGIÃO E — EM MODO RETRATO: BARRAS INFERIORES 2D (OCULTAS COMPLETAMENTE NO MODO CAD 3D) */}
-      {!focus && !isLandscape && activeMode !== "3d" && (
+      {/* REGIÃO E — EM MODO RETRATO: BARRAS INFERIORES 2D (OCULTAS COMPLETAMENTE NO MODO PRUMO E NO MODO CAD 3D) */}
+      {!focus && uiShellMode !== "prumo" && !isLandscape && activeMode !== "3d" && (
         <ChamferPortraitBottomBars
           isDark={isDark}
           stripHeightPx={verticalLayout.chromeHeights.stripPx}
@@ -14101,18 +14461,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* REGIÃO E — STATUS BAR EM 2 NÍVEIS (28px EM MODO COMPACTO / 32px EM CLÁSSICO) — MODO PAISAGEM */}
-      {!focus && isLandscape && activeMode !== "3d" && (
+      {/* REGIÃO E — STATUS BAR EM 2 NÍVEIS (28px EM MODO COMPACTO; OCULTA NO MODO PRUMO ZERO BARRAS) */}
+      {!focus && uiShellMode !== "prumo" && isLandscape && activeMode !== "3d" && (
         <footer
           aria-label="Barra de status do CHAMFER"
           style={{
-            backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
-            borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
-            color: isDark ? "var(--chamfer-text-secondary)" : "#475569",
+            backgroundColor: isDark ? "rgba(27, 36, 54, 0.92)" : "#FFFFFF",
+            backdropFilter: isDark ? "blur(14px)" : undefined,
+            WebkitBackdropFilter: isDark ? "blur(14px)" : undefined,
+            borderColor: isDark ? "#2D3B55" : "#E2E8F0",
+            color: isDark ? "#E2E8F0" : "#475569",
+            boxShadow: isDark ? "0 4px 16px rgba(0, 0, 0, 0.28)" : undefined,
           }}
           className={cn(
             "relative flex shrink-0 items-center justify-between gap-2 border-t px-2 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
-            uiShellMode === "compact" ? "h-7" : "h-8 px-2.5",
+            "h-7",
           )}
         >
           {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE */}
@@ -14163,16 +14526,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     pl.id === planId
                       ? isDark
                         ? {
-                            backgroundColor: "var(--chamfer-accent-soft)",
-                            borderColor: "var(--chamfer-accent-border)",
-                            color: "var(--chamfer-accent)",
+                            backgroundColor: "rgba(244, 63, 94, 0.18)",
+                            borderColor: "rgba(251, 113, 133, 0.40)",
+                            color: "#FDA4AF",
                           }
                         : {
                             backgroundColor: "#FFF1F2",
                             borderColor: "#FECDD3",
                             color: "#E11D48",
                           }
-                      : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
+                      : { color: isDark ? "#CBD5E1" : "#475569" }
                   }
                   className={cn(
                     "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
@@ -14217,7 +14580,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   }}
                   className={cn(
                     "shrink-0 rounded px-1.5 py-0.5 font-bold transition-colors",
-                    isDark ? "text-[#94A3B8] hover:text-[#E6EDF5]" : "text-[#64748B] hover:text-[#1E293B]",
+                    isDark ? "text-[#CBD5E1] hover:text-[#F1F5F9]" : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                   title="Adicionar novo plano de corte ao projeto"
                 >
@@ -14225,14 +14588,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </button>
               )}
 
-              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-[#2D3B55]" : "bg-[#CBD5E1]")} />
 
               {/* UNIDADE DE MEDIDA CANÔNICA */}
               <span
                 className={cn(
                   "flex shrink-0 items-center px-1.5 py-0.2 rounded border font-mono font-bold text-[9px] tracking-wider",
                   isDark
-                    ? "border-[#293444] bg-[#151C27] text-[#E6EDF5]"
+                    ? "border-[#334361] bg-[#232E45] text-[#E2E8F0]"
                     : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B]",
                 )}
                 title="Unidade de medida: Milímetros (mm)"
@@ -14250,14 +14613,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 style={
                   mobileEditorOpenManual
                     ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        borderColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
+                        backgroundColor: isDark ? "rgba(14, 165, 233, 0.22)" : "var(--chamfer-accent)",
+                        borderColor: isDark ? "#38BDF8" : "var(--chamfer-accent)",
+                        color: isDark ? "#7DD3FC" : "var(--chamfer-accent-contrast)",
                       }
                     : {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
-                        borderColor: "var(--chamfer-border-strong)",
-                        color: "var(--chamfer-text-primary)",
+                        backgroundColor: isDark ? "#232E45" : "var(--chamfer-surface-elevated)",
+                        borderColor: isDark ? "#334361" : "var(--chamfer-border-strong)",
+                        color: isDark ? "#E2E8F0" : "var(--chamfer-text-primary)",
                       }
                 }
                 className="flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer"
@@ -14740,10 +15103,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         : "hover:bg-white/5",
                     )}
                   >
-                    <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>X:</span>
-                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.x.toFixed(2)}</strong>
-                    <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>Y:</span>
-                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.y.toFixed(2)}</strong>
+                    <span className={isDark ? "text-[#CBD5E1]" : "text-[#64748B]"}>X:</span>
+                    <strong className={isDark ? "text-[#F1F5F9]" : "text-[#1E293B]"}>{cursor.x.toFixed(2)}</strong>
+                    <span className={isDark ? "text-[#CBD5E1]" : "text-[#64748B]"}>Y:</span>
+                    <strong className={isDark ? "text-[#F1F5F9]" : "text-[#1E293B]"}>{cursor.y.toFixed(2)}</strong>
                   </button>
 
                   <button
@@ -14770,7 +15133,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       isSettingReferencePoint
                         ? "bg-[#DC143C]/20 border-[#DC143C] text-[#DC143C]"
                         : isDark
-                          ? "bg-[#1E293B] hover:bg-[#F59E0B]/15 border-[#F59E0B]/45 text-[#F59E0B]"
+                          ? "bg-[rgba(245,158,11,0.18)] hover:bg-[rgba(245,158,11,0.28)] border-[rgba(251,191,36,0.45)] text-[#FCD34D]"
                           : "bg-[#FEF3C7] hover:bg-[#FDE68A] border-[#FCD34D] text-[#D97706]",
                     )}
                   >
@@ -14915,10 +15278,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   snapOn
                     ? isDark
-                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
+                      ? "text-[#7DD3FC] bg-[rgba(14,165,233,0.22)] border-[#38BDF8]"
                       : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC]"
                     : isDark
-                      ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                      ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:text-white"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Alternar Snap Geométrico"
@@ -14933,10 +15296,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   orthoOn
                     ? isDark
-                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
+                      ? "text-[#7DD3FC] bg-[rgba(14,165,233,0.22)] border-[#38BDF8]"
                       : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC]"
                     : isDark
-                      ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                      ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:text-white"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Modo Ortogonal (0°, 90°, 180°, 270°)"
@@ -14951,10 +15314,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   showGrid
                     ? isDark
-                      ? "bg-[#1E293B] border-[#334155] text-[#E2E8F0] hover:border-[#38BDF8]/50"
+                      ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:border-[#38BDF8]/50"
                       : "bg-[#FFFFFF] border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]/50"
                     : isDark
-                      ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                      ? "border-[#2D3B55] text-[#94A3B8] hover:text-[#E2E8F0]"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Alternar visibilidade da grade"
@@ -14976,14 +15339,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded px-1.5 py-0.5 font-mono text-[9px] uppercase font-bold whitespace-nowrap transition-colors border cursor-pointer",
                   statusWorkspaceMenuOpen || workspaceKeypadEditor !== null
                     ? isDark
-                      ? "text-[#38BDF8] bg-[#38BDF8]/20 border-[#38BDF8]/65 shadow-xs"
+                      ? "text-[#7DD3FC] bg-[rgba(14,165,233,0.22)] border-[#38BDF8] shadow-xs"
                       : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC] shadow-xs"
                     : frame.visible
                       ? isDark
-                        ? "bg-[#1E293B] border-[#334155] text-[#E2E8F0] hover:border-[#38BDF8]/50"
+                        ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:border-[#38BDF8]/50"
                         : "bg-[#FFFFFF] border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]/50"
                       : isDark
-                        ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                        ? "border-[#2D3B55] text-[#94A3B8] hover:text-[#E2E8F0]"
                         : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Personalizar Área de Trabalho (Chapa / Mesa CAD)"
@@ -14993,7 +15356,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   : "⬚ ÁREA: OFF"}
               </button>
 
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#2D3B55]" : "bg-[#CBD5E1]")} />
 
               {/* GRUPO 2 — BOTÃO DE ABERTURA DO POPOVER PRECISÃO */}
               <button
@@ -15007,10 +15370,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
                   statusPrecisionMenuOpen || nudgeHudVisible || cursorOffsetMode === "offset"
                     ? isDark
-                      ? "border-[#38BDF8]/45 bg-[#38BDF8]/15 text-[#38BDF8]"
+                      ? "border-[#38BDF8] bg-[rgba(14,165,233,0.22)] text-[#7DD3FC]"
                       : "border-[#7DD3FC] bg-[#E0F2FE] text-[#0284C7]"
                     : isDark
-                      ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white"
+                      ? "border-[#334361] bg-[#232E45] text-[#E2E8F0] hover:text-white"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Controles de Precisão: Mira, Lupa, Ajuste Fino e Quadro"
@@ -15031,10 +15394,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
                   statusCncMenuOpen || showArrows || showOrder || simOn
                     ? isDark
-                      ? "border-[#E11D48]/50 bg-[#E11D48]/18 text-[#FB7185]"
+                      ? "border-[#FB7185]/50 bg-[#F43F5E]/20 text-[#FDA4AF]"
                       : "border-[#FECDD3] bg-[#FFF1F2] text-[#E11D48]"
                     : isDark
-                      ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white"
+                      ? "border-[#334361] bg-[#232E45] text-[#E2E8F0] hover:text-white"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Fabricação e Apresentação: Fluxo, Ordem de Corte e Prévia CNC"
@@ -15749,8 +16112,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* BARRA CONTEXTUAL MINIMALISTA DE SELEÇÃO 2D (FIXA NO RODAPÉ CENTRAL DO CANVAS, SEM BOTÃO ISO) */}
-      {selection.length > 0 && !solidOpen && activeMode !== "3d" && tool === "select" && activeArrayType === null && (
+      {/* BARRA CONTEXTUAL MINIMALISTA DE SELEÇÃO 2D (FIXA NO RODAPÉ CENTRAL DO CANVAS NA COMPACTA; NO PRUMO USA O MENU CONTEXTUAL DO PRUMO) */}
+      {uiShellMode !== "prumo" && selection.length > 0 && !solidOpen && activeMode !== "3d" && tool === "select" && activeArrayType === null && (
         <div
           data-testid="chamfer-selection-action-bar"
           style={{
@@ -17012,28 +17375,28 @@ const IconBtn = React.memo(function IconBtn({
       style={{
         backgroundColor: active
           ? isDark
-            ? "var(--chamfer-accent)"
+            ? "rgba(14, 165, 233, 0.22)"
             : "#DBEAFE"
           : flat
             ? "transparent"
             : isDark
-              ? "var(--chamfer-surface-elevated)"
+              ? "#232E45"
               : "#FFFFFF",
         borderColor: active
           ? isDark
-            ? "var(--chamfer-accent)"
+            ? "#38BDF8"
             : "#93C5FD"
           : flat
             ? "transparent"
             : isDark
-              ? "var(--chamfer-border)"
+              ? "#334361"
               : "#CBD5E1",
         color: active
           ? isDark
-            ? "var(--chamfer-accent-contrast)"
+            ? "#7DD3FC"
             : "#1D4ED8"
           : isDark
-            ? "var(--chamfer-text-primary)"
+            ? "#E2E8F0"
             : "#334155",
       }}
       className="grid size-8 shrink-0 place-items-center rounded-lg border touch-pan-x cursor-pointer active:scale-95 hover:brightness-110 transition-all"
@@ -17452,6 +17815,7 @@ const Rulers = React.memo(function Rulers({
   frame,
   compactPortrait = false,
   slimMode = false,
+  prumoMode = false,
   rulersVisible = true,
   onToggleRulersVisible,
   onCenterWorkspace,
@@ -17467,6 +17831,7 @@ const Rulers = React.memo(function Rulers({
   frame?: WorkspaceFrame;
   compactPortrait?: boolean;
   slimMode?: boolean;
+  prumoMode?: boolean;
   rulersVisible?: boolean;
   onToggleRulersVisible?: () => void;
   onCenterWorkspace?: () => void;
@@ -17498,9 +17863,9 @@ const Rulers = React.memo(function Rulers({
       return;
     }
 
-    const isSlim = slimMode || compactPortrait;
-    const V_RULER_W = slimMode ? 18 : compactPortrait ? 20 : 30;
-    const H_RULER_H = slimMode ? 18 : compactPortrait ? 20 : 26;
+    const isSlim = prumoMode || slimMode || compactPortrait;
+    const V_RULER_W = prumoMode ? 16 : slimMode ? 18 : compactPortrait ? 20 : 30;
+    const H_RULER_H = prumoMode ? 16 : slimMode ? 18 : compactPortrait ? 20 : 26;
     const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
 
     // Seleção de passo principal técnico (1, 2, 5 × 10^n) garantindo espaçamento >= 76px
@@ -17522,31 +17887,17 @@ const Rulers = React.memo(function Rulers({
     const minorDivisions = labelStep * safeK >= 140 ? 10 : 5;
     const minorStep = labelStep / minorDivisions;
 
-    const bgColor = isDark
-      ? (themeColors?.rulerBg ?? "rgba(17, 20, 26, 0.90)")
-      : "#F1F5F9";
-    const borderColor = isDark
-      ? (themeColors?.border ?? "#232A35")
-      : "#CBD5E1";
-    const majorTickColor = isDark
-      ? (themeColors?.textSecondary ?? "#9AA4B2")
-      : "#1E293B";
-    const midTickColor = isDark
-      ? (themeColors?.textMuted ?? "#647080")
-      : "#475569";
-    const minorTickColor = isDark
-      ? (themeColors?.borderStrong ?? "#2F3847")
-      : "#94A3B8";
-    const textColor = isDark
-      ? (themeColors?.textPrimary ?? "#ECEFF4")
-      : "#1E293B";
-    const zeroColor = "#E11D48";
+    const bgColor = isDark ? "#182132" : "#F1F5F9";
+    const borderColor = isDark ? "#2A3952" : "#CBD5E1";
+    const majorTickColor = isDark ? "#475569" : "#1E293B";
+    const midTickColor = isDark ? "#334361" : "#475569";
+    const minorTickColor = isDark ? "#2A3952" : "#94A3B8";
+    const textColor = isDark ? "#CBD5E1" : "#1E293B";
+    const zeroColor = isDark ? "#FB7185" : "#E11D48";
     const workspaceBandFill = isDark
-      ? (themeColors?.accentSoft ?? "rgba(0, 102, 255, 0.14)")
+      ? "rgba(56, 189, 248, 0.20)"
       : "rgba(14, 165, 233, 0.14)";
-    const workspaceBandEdge = isDark
-      ? (themeColors?.accent ?? "#0066FF")
-      : "#0284C7";
+    const workspaceBandEdge = isDark ? "#38BDF8" : "#0284C7";
 
     /* =====================================================================
      * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 18px em modo slim / 26px em clássico)
@@ -17599,9 +17950,17 @@ const Rulers = React.memo(function Rulers({
 
       const isMajor = Math.abs(worldX / labelStep - Math.round(worldX / labelStep)) < 1e-4;
       const isMid = !isMajor && Math.abs(worldX / midStep - Math.round(worldX / midStep)) < 1e-4;
+      const val = Math.round(worldX);
 
       const tickLen = isMajor ? (isSlim ? 8 : 12) : isMid ? (isSlim ? 5 : 7) : 3;
-      ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
+      ctx.strokeStyle =
+        isMajor && val === 0
+          ? zeroColor
+          : isMajor
+            ? majorTickColor
+            : isMid
+              ? midTickColor
+              : minorTickColor;
       ctx.lineWidth = isMajor ? 1.2 : 1;
       ctx.beginPath();
       ctx.moveTo(screenX, H_RULER_H - tickLen);
@@ -17609,7 +17968,6 @@ const Rulers = React.memo(function Rulers({
       ctx.stroke();
 
       if (isMajor) {
-        const val = Math.round(worldX);
         ctx.fillStyle = val === 0 ? zeroColor : textColor;
         ctx.fillText(String(val), screenX + (isSlim ? 3.5 : 5), isSlim ? 2 : 4);
       }
@@ -17687,9 +18045,17 @@ const Rulers = React.memo(function Rulers({
 
       const isMajor = Math.abs(worldY / labelStep - Math.round(worldY / labelStep)) < 1e-4;
       const isMid = !isMajor && Math.abs(worldY / midStep - Math.round(worldY / midStep)) < 1e-4;
+      const val = Math.round(worldY);
 
       const tickLen = isMajor ? (isSlim ? 8 : 12) : isMid ? (isSlim ? 5 : 7) : 3;
-      ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
+      ctx.strokeStyle =
+        isMajor && val === 0
+          ? zeroColor
+          : isMajor
+            ? majorTickColor
+            : isMid
+              ? midTickColor
+              : minorTickColor;
       ctx.lineWidth = isMajor ? 1.2 : 1;
       ctx.beginPath();
       ctx.moveTo(V_RULER_W - tickLen, screenY);
@@ -17697,7 +18063,6 @@ const Rulers = React.memo(function Rulers({
       ctx.stroke();
 
       if (isMajor) {
-        const val = Math.round(worldY);
         ctx.save();
         ctx.translate(isSlim ? 6.5 : 10, screenY - (isSlim ? 3.5 : 5));
         ctx.rotate(-Math.PI / 2);
@@ -17748,6 +18113,7 @@ const Rulers = React.memo(function Rulers({
     frame?.h,
     compactPortrait,
     slimMode,
+    prumoMode,
     rulersVisible,
   ]);
 
@@ -17755,17 +18121,17 @@ const Rulers = React.memo(function Rulers({
     <div
       aria-hidden
       data-rulers-visible={rulersVisible ? "true" : "false"}
-      data-ruler-thickness={rulersVisible ? (slimMode ? 18 : compactPortrait ? 20 : 26) : 0}
+      data-ruler-thickness={rulersVisible ? (prumoMode ? 16 : slimMode ? 18 : compactPortrait ? 20 : 26) : 0}
       className="pointer-events-none absolute inset-0 overflow-hidden z-10"
     >
-      {/* Canvas de Alta Precisão para as Réguas Horizontal (18px slim / 26px clássico) e Vertical (18px slim / 30px clássico) */}
+      {/* Canvas de Alta Precisão para as Réguas Horizontal (16px PRUMO / 18px Compacta) e Vertical */}
       <canvas
         ref={canvasRef}
         style={{ width: `${vw}px`, height: `${vh}px` }}
         className="pointer-events-none absolute inset-0"
       />
 
-      {/* Bloco de Canto Interativo [ MM ]: alterna entre Réguas Visíveis (18px) e Réguas Ocultas (0px) */}
+      {/* Bloco de Canto Interativo [ MM ]: alterna entre Réguas Visíveis (16px/18px) e Réguas Ocultas (0px) */}
       <button
         type="button"
         data-testid="chamfer-ruler-mm-toggle"
@@ -17784,24 +18150,26 @@ const Rulers = React.memo(function Rulers({
         title={
           rulersVisible
             ? "Toque para ocultar as réguas técnicas (0px) • Duplo-clique para enquadrar a Área de Trabalho"
-            : "Toque para exibir as réguas técnicas (18px)"
+            : "Toque para exibir as réguas técnicas"
         }
         style={{
-          backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#F1F5F9",
-          borderColor: isDark ? "var(--chamfer-border)" : "#CBD5E1",
+          backgroundColor: isDark ? "#182132" : "#F1F5F9",
+          borderColor: isDark ? "#2A3952" : "#CBD5E1",
           color: rulersVisible
             ? isDark
-              ? "var(--chamfer-text-secondary)"
+              ? "#94A3B8"
               : "#64748B"
             : "#38BDF8",
         }}
         className={cn(
           "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95 hover:brightness-110",
-          slimMode
-            ? "w-[18px] h-[18px] text-[7.5px]"
-            : compactPortrait
-              ? "w-[20px] h-[20px] text-[7.5px]"
-              : "w-[30px] h-[26px] text-[8.5px]",
+          prumoMode
+            ? "w-[16px] h-[16px] text-[7px]"
+            : slimMode
+              ? "w-[18px] h-[18px] text-[7.5px]"
+              : compactPortrait
+                ? "w-[20px] h-[20px] text-[7.5px]"
+                : "w-[30px] h-[26px] text-[8.5px]",
         )}
       >
         {unit}

@@ -169,46 +169,46 @@ export const FALLBACK_DARK_TOKENS: Omit<
   IntentThemeTokens,
   "mode" | "isDark" | "prefersReducedMotion" | "prefersHighContrast"
 > = {
-  background: "#0B0D11",
-  canvas: "#0E1116",
-  panel: "#11141A",
-  panelElevated: "#161A22",
-  border: "#232A35",
-  textPrimary: "#ECEFF4",
-  textSecondary: "#9AA4B2",
-  accent: "#0066FF",
-  selection: "#0066FF",
-  axisX: "#D97706",
-  axisY: "#059669",
+  background: "#111723",
+  canvas: "#141B29",
+  panel: "#1B2436",
+  panelElevated: "#232E45",
+  border: "#2D3B55",
+  textPrimary: "#F1F5F9",
+  textSecondary: "#CBD5E1",
+  accent: "#38BDF8",
+  selection: "#38BDF8",
+  axisX: "#F43F5E",
+  axisY: "#10B981",
   snap: "#38BDF8",
-  dimension: "#10B981",
+  dimension: "#7DD3FC",
   warning: "#F59E0B",
-  error: "#EF4444",
+  error: "#F43F5E",
   confirm: "#10B981",
-  ciBg: "#0B0D11",
-  ciSurface: "#11141A",
-  ciSurface2: "#161A22",
-  ciBorder: "#232A35",
-  ciText: "#ECEFF4",
-  ciTextMuted: "#9AA4B2",
+  ciBg: "#111723",
+  ciSurface: "#1B2436",
+  ciSurface2: "#232E45",
+  ciBorder: "#2D3B55",
+  ciText: "#F1F5F9",
+  ciTextMuted: "#94A3B8",
   ciAccent: "#38BDF8",
   ciAccentContrast: "#FFFFFF",
   ciSuccess: "#10B981",
   ciWarning: "#F59E0B",
-  ciDanger: "#EF4444",
-  cadCanvas: "#0E1116",
-  cadGridMinor: "rgba(148, 163, 184, 0.035)",
-  cadGridMajor: "rgba(148, 163, 184, 0.08)",
-  cadAxisX: "#D97706",
-  cadAxisY: "#059669",
-  cadCenter: "#64748B",
-  cadHidden: "#64748B",
-  cadDim: "#10B981",
-  cadText: "#ECEFF4",
+  ciDanger: "#F43F5E",
+  cadCanvas: "#141B29",
+  cadGridMinor: "#233044",
+  cadGridMajor: "#29374F",
+  cadAxisX: "#F43F5E",
+  cadAxisY: "#10B981",
+  cadCenter: "#94A3B8",
+  cadHidden: "#94A3B8",
+  cadDim: "#7DD3FC",
+  cadText: "#F1F5F9",
   cadSelection: "#38BDF8",
   cadProvisional: "#F59E0B",
-  cadSheet: "#F8FAFC",
-  cadSheetInk: "#1E293B",
+  cadSheet: "#1E293B",
+  cadSheetInk: "#F1F5F9",
 };
 
 export const FALLBACK_LIGHT_TOKENS: Omit<
@@ -632,40 +632,39 @@ export function buildChamferThemeColors(
     statusError = "#EF4444";
     statusInfo = "#3B82F6";
   } else if (isDark) {
-    // 6.1 Paleta Graphite Titanium / Liquid Silk & Fluid Aurora (Tema Escuro)
+    // 6.1 Paleta Ardósia Titânio & Prancheta Noturna (Tema Escuro Ergonômico)
     canvasBg =
       bgStyle === "suave"
-        ? "#0A0F1A"
+        ? "#151D2C"
         : bgStyle === "fluido"
-          ? "#0D1420"
-          : "#0B0D11";
+          ? "#131A28"
+          : "#141B29";
     rawWorkAreaFill =
       bgStyle === "suave"
-        ? "#0F1624"
+        ? "#1F2A3D"
         : bgStyle === "fluido"
-          ? "#111927"
-          : "#0E1116";
-    workAreaStroke = "#2B3442";
-    barBgSolid = "#11141A";
-    surfaceElevatedSolid = "#161A22";
-    popoverBgSolid = "#1A1F29";
-    border = "#232A35";
-    borderStrong = "#2F3847";
-    borderSubtle = "rgba(255, 255, 255, 0.07)";
+          ? "#1D283A"
+          : "#1E293B";
+    workAreaStroke = "#38BDF8";
+    barBgSolid = "#1B2436";
+    surfaceElevatedSolid = "#232E45";
+    popoverBgSolid = "#1B2436";
+    border = "#2D3B55";
+    borderStrong = "#334361";
+    borderSubtle = "rgba(148, 163, 184, 0.14)";
     textPrimary = "#ECEFF4";
-    textSecondary = "#9AA4B2";
-    textMuted = "#647080";
-    gridMajor = "rgba(148, 163, 184, 0.08)";
-    gridMinor = "rgba(148, 163, 184, 0.035)";
-    // 65% da opacidade da grade interna (0.08 * 0.65 = 0.052; 0.035 * 0.65 = 0.023)
-    gridOuterMajor = "rgba(148, 163, 184, 0.052)";
-    gridOuterMinor = "rgba(148, 163, 184, 0.023)";
-    axisX = "#D97706";
-    axisY = "#059669";
+    textSecondary = "#CBD5E1";
+    textMuted = "#94A3B8";
+    gridMajor = "#29374F";
+    gridMinor = "#233044";
+    gridOuterMajor = "#1E283B";
+    gridOuterMinor = "#182030";
+    axisX = "#F43F5E";
+    axisY = "#10B981";
     statusSuccess = "#10B981";
     statusWarning = "#F59E0B";
-    statusError = "#EF4444";
-    statusInfo = "#3B82F6";
+    statusError = "#F43F5E";
+    statusInfo = "#38BDF8";
   } else {
     // 6.2 Tema Claro (Alabastro Luminoso #F6F8FC em Fluid Aurora / Pérola #F2F6FC em Fluid)
     canvasBg =
@@ -707,11 +706,11 @@ export function buildChamferThemeColors(
   const guarded = enforceWorkspaceLuminanceGuard(canvasBg, rawWorkAreaFill, isDark);
   const workAreaFill = guarded.workAreaFill;
   const luminanceStepRatio = guarded.ratio;
-  const bgRoot = canvasBg;
+  const bgRoot = isDark && !isAmoled ? "#111723" : canvasBg;
 
-  const workAreaBadgeBg = hexWithAlpha(surfaceElevatedSolid, panelOpacity);
-  const workAreaBadgeBorder = borderStrong;
-  const workAreaBadgeText = textPrimary;
+  const workAreaBadgeBg = isDark && !isAmoled ? "#222E44" : hexWithAlpha(surfaceElevatedSolid, panelOpacity);
+  const workAreaBadgeBorder = isDark && !isAmoled ? "#384B6B" : borderStrong;
+  const workAreaBadgeText = isDark && !isAmoled ? "#F1F5F9" : textPrimary;
 
   // Curva Senoidal de 10 Paradas (Ease-Out Scrim) para eliminar totalmente color banding e anéis:
   // 0% (1.00), 15% (0.92), 30% (0.78), 45% (0.58), 60% (0.38), 75% (0.20), 88% (0.07), 95% (0.02), 100% (0.00)
@@ -812,15 +811,15 @@ export function buildChamferThemeColors(
     gridMinorColor: gridMinor,
     gridMajorColor: gridMajor,
     gridOuterOpacityFactor: 0.65,
-    rulerBg: barBg,
-    rulerBorder: border,
-    rulerText: textPrimary,
-    rulerTickMajor: textSecondary,
-    rulerTickMinor: borderStrong,
+    rulerBg: isDark && !isAmoled ? "#182132" : barBg,
+    rulerBorder: isDark && !isAmoled ? "#2A3952" : border,
+    rulerText: isDark && !isAmoled ? "#CBD5E1" : textPrimary,
+    rulerTickMajor: isDark && !isAmoled ? "#475569" : textSecondary,
+    rulerTickMinor: isDark && !isAmoled ? "#2A3952" : borderStrong,
     defaultCutStroke: isDark ? "#ECEFF4" : "#0F141A",
     axisX,
     axisY,
-    originFill: "#DC143C",
+    originFill: isDark ? "#F43F5E" : "#DC143C",
     statusSuccess,
     statusWarning,
     statusError,

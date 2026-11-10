@@ -115,9 +115,11 @@ import {
   type RotationSnapResult,
 } from "@/lib/lab2d/chamfer3DRotationCompass";
 import {
+  buildHorizontalMiterBar3DPolygons,
   computeSmartGrilleArray3D,
   computeSmartMiterFrame3D,
   detectInternalSpan3D,
+  extractTubeCrossSectionFromBody3D,
   generateSmartGrilleArrayEntities3D,
   generateSmartMiterFrameEntities3D,
   getBodyIntervalAlongAxis,
@@ -972,10 +974,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     height,
   ]);
 
-  // Projeção da Seta Normal Bidirecional da Face Selecionada (EXCLUSIVA QUANDO FACE É CLICADA)
+  // Projeção da Seta Normal Bidirecional da Face Selecionada (EXCLUSIVA QUANDO FACE É CLICADA, OCULTA EM SHELL E ARRAY 3D)
   const faceNormalGizmo = useMemo(() => {
     if (!primaryFace || (!isTilted3D && activeMode !== "3d")) return null;
     if (selectionKind3D !== "face") return null;
+    if (directTool === "shell_3d" || directTool === "array_3d") return null;
     const originScreen = toScreen(primaryFace.centroid);
     const stepMm = Math.max(10, 60 / Math.max(0.1, view.k));
     const normal = primaryFace.normal;
@@ -1701,19 +1704,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   const smartArrayMinusHold = useExponentialHold((mult) => handleSmartArrayStep(-1, mult));
   const smartArrayPlusHold = useExponentialHold((mult) => handleSmartArrayStep(1, mult));
 
-  // Cálculo em tempo real do Gerador de Quadro em 45° (Esquadria Fechada)
-  const smartFrameProfileCrossMm = useMemo(() => {
-    if (!smartArraySourceBody) return 50;
-    const w =
-      smartArraySourceBody.deltaX ||
-      smartArraySourceBody.bbox3D.maxX - smartArraySourceBody.bbox3D.minX ||
-      50;
-    const h =
-      smartArraySourceBody.deltaY ||
-      smartArraySourceBody.bbox3D.maxY - smartArraySourceBody.bbox3D.minY ||
-      50;
-    return Math.max(10, Math.round(Math.min(w, h) * 100) / 100);
-  }, [smartArraySourceBody]);
+  // Extração fiel da seção transversal (W x H_z), espessura de parede e raio de canto do tubo base para o Quadro 45°
+  const smartFrameExtractedProfile = useMemo(
+    () =>
+      extractTubeCrossSectionFromBody3D(
+        smartArraySourceBody,
+        Math.min(smartFrameWidthMm, smartFrameHeightMm),
+      ),
+    [smartArraySourceBody, smartFrameWidthMm, smartFrameHeightMm],
+  );
+
+  const smartFrameProfileCrossMm = smartFrameExtractedProfile.profileWidthMm;
 
   const smartMiterFrameCalc = useMemo(
     () =>
@@ -1721,23 +1722,70 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         measureRef: smartFrameMeasureRef,
         inputWidthMm: smartFrameWidthMm,
         inputHeightMm: smartFrameHeightMm,
-        profileCrossSectionMm: smartFrameProfileCrossMm,
+        profileWidthMm: smartFrameExtractedProfile.profileWidthMm,
+        profileCrossSectionMm: smartFrameExtractedProfile.profileWidthMm,
+        profileDepthMm: smartFrameExtractedProfile.profileDepthMm,
+        wallThicknessMm: smartFrameExtractedProfile.wallThicknessMm,
+        isHollowTube: smartFrameExtractedProfile.isHollowTube,
+        cornerFilletRadiusMm: smartFrameExtractedProfile.cornerFilletRadiusMm,
         plane: smartFramePlane,
         jointMode: smartFrameJointMode,
         innerDivisionsCount: smartFrameInnerDivisions,
-        origin3D: smartArraySourceBody?.pivot3D ?? { x: 0, y: 0, z: 0 },
+        center3D: smartArraySourceBody
+          ? { x: smartArraySourceBody.pivot3D.x, y: smartArraySourceBody.pivot3D.y, z: 0 }
+          : { x: 0, y: 0, z: 0 },
       }),
     [
       smartFrameMeasureRef,
       smartFrameWidthMm,
       smartFrameHeightMm,
-      smartFrameProfileCrossMm,
+      smartFrameExtractedProfile,
       smartFramePlane,
       smartFrameJointMode,
       smartFrameInnerDivisions,
       smartArraySourceBody,
     ],
   );
+
+  // Ao ativar a ferramenta SHELL (`shell_3d`), se a peça selecionada ainda estiver maciça (espessura 0)
+  // ou tinha apenas tampa lateral antiga, aplica imediatamente a cavidade vazada padrão (4.75mm)
+  // para exibir a prévia 3D real da parede e do interior vazado instantaneamente.
+  useEffect(() => {
+    if (directTool !== "shell_3d" || !onCommitEntities) return;
+    const targetBody = primaryBody ?? scene.bodies[0] ?? null;
+    if (!targetBody) return;
+    const targetIds =
+      activeTargetEntityIds.length > 0 ? activeTargetEntityIds : [targetBody.entityId];
+    const currentT = targetBody.shellWallThicknessMm || targetBody.shellThicknessMm || 0;
+    const hasValidTopBottomCap =
+      targetBody.shellOpenCaps.includes("top") || targetBody.shellOpenCaps.includes("bottom");
+    if (currentT <= 0.1 || !hasValidTopBottomCap) {
+      const nextT = currentT > 0.1 ? currentT : 4.75;
+      const nextCaps = resolveShellOpenCapsFromSelection3D(
+        selectedFacesList,
+        shellOpenCapsMode,
+      );
+      onCommitEntities(
+        (prev) => applyDirectShell3DToEntities(prev, targetIds, nextT, nextCaps),
+        targetIds,
+      );
+    }
+    if (subSel.faceIds.length > 0) {
+      setSubSel((prev) => ({
+        ...prev,
+        faceIds: [],
+        bodyIds: prev.bodyIds.length > 0 ? prev.bodyIds : [targetBody.bodyId],
+      }));
+    }
+  }, [
+    directTool,
+    primaryBody,
+    scene.bodies,
+    activeTargetEntityIds,
+    selectedFacesList,
+    shellOpenCapsMode,
+    onCommitEntities,
+  ]);
 
   const smartFrameWMinusHold = useExponentialHold((mult) =>
     setSmartFrameWidthMm((prev) => Math.max(100, Math.min(12000, Math.round(prev - 10 * mult)))),
@@ -3253,7 +3301,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         return {
           icon: Layers,
           label: "Shell / Casca 3D",
-          valueText: `${wVal.toFixed(2).replace(/\.00$/, "")} mm`,
+          valueText: `${(primaryBody?.shellThicknessMm || primaryBody?.shellWallThicknessMm || 4.75).toFixed(2).replace(/\.00$/, "")} mm`,
         };
       case "offset_face_3d":
         return {
@@ -3286,11 +3334,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           valueText: "Eixo X/Y/Z",
         };
       case "array_3d":
-        return {
-          icon: Layers,
-          label: "Array 3D / Grade",
-          valueText: `${smartArrayCount} Tubos`,
-        };
+        return smartArrayPanelTab === "miter_frame"
+          ? {
+              icon: Layers,
+              label: "Array 3D / Quadro 45°",
+              valueText: `${smartMiterFrameCalc.members.length} Peças (${smartFrameWidthMm} × ${smartFrameHeightMm})`,
+            }
+          : {
+              icon: Layers,
+              label: "Array 3D / Grade",
+              valueText: `${smartArrayCount} Tubos`,
+            };
       case "scale_3d":
       case "align_3d":
         return {
@@ -3364,6 +3418,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     sectionPlaneState.offsetMm,
     scene.bodies.length,
     lastCompletedDrag,
+    smartArrayPanelTab,
+    smartMiterFrameCalc.members.length,
+    smartFrameWidthMm,
+    smartFrameHeightMm,
+    smartArrayCount,
   ]);
 
   // Estilos adaptados 100% ao Tema Ativo (Claro #FFFFFF / Escuro #0B1220 / AMOLED #05080F)
@@ -4102,84 +4161,93 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </>
           )}
 
-          {primaryBody && directTool === "shell_3d" && (
-            <>
-              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
-              <button
-                type="button"
-                data-testid="chamfer-3d-shell-mode-tube"
-                onClick={() => {
-                  setShellOpenCapsMode("both_ends");
-                  const nextCaps = resolveShellOpenCapsFromSelection3D(
-                    selectedFacesList,
-                    "both_ends",
-                  );
-                  onCommitEntities?.(
-                    (prev) =>
-                      applyDirectShell3DToEntities(
-                        prev,
-                        activeTargetEntityIds,
-                        primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                        nextCaps,
-                      ),
-                    activeTargetEntityIds,
-                  );
-                }}
-                className={pillBtnClass(shellOpenCapsMode === "both_ends")}
-              >
-                Tubo (2 Faces)
-              </button>
-              <button
-                type="button"
-                data-testid="chamfer-3d-shell-mode-box"
-                onClick={() => {
-                  setShellOpenCapsMode("top_only");
-                  const nextCaps = resolveShellOpenCapsFromSelection3D(
-                    selectedFacesList,
-                    "top_only",
-                  );
-                  onCommitEntities?.(
-                    (prev) =>
-                      applyDirectShell3DToEntities(
-                        prev,
-                        activeTargetEntityIds,
-                        primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                        nextCaps,
-                      ),
-                    activeTargetEntityIds,
-                  );
-                }}
-                className={pillBtnClass(shellOpenCapsMode === "top_only")}
-              >
-                Caixa (1 Face)
-              </button>
-              {[2, 3, 4.75, 6].map((wVal) => (
+          {(primaryBody ?? scene.bodies[0]) && directTool === "shell_3d" && (() => {
+            const shellBody = (primaryBody ?? scene.bodies[0])!;
+            const shellTargetIds =
+              activeTargetEntityIds.length > 0 ? activeTargetEntityIds : [shellBody.entityId];
+            const currentShellT =
+              shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
+            return (
+              <>
+                <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
                 <button
-                  key={wVal}
                   type="button"
-                  data-testid={`chamfer-3d-shell-thickness-${wVal}`}
+                  data-testid="chamfer-3d-shell-mode-tube"
                   onClick={() => {
                     triggerHaptic("action");
+                    setShellOpenCapsMode("both_ends");
+                    const nextCaps = resolveShellOpenCapsFromSelection3D(
+                      selectedFacesList,
+                      "both_ends",
+                    );
                     onCommitEntities?.(
                       (prev) =>
                         applyDirectShell3DToEntities(
                           prev,
-                          activeTargetEntityIds,
-                          wVal,
-                          resolvedShellOpenCaps,
+                          shellTargetIds,
+                          currentShellT,
+                          nextCaps,
                         ),
-                      activeTargetEntityIds,
+                      shellTargetIds,
                     );
                   }}
-                  className={pillBtnClass(
-                    Math.abs(
-                      (primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 0) - wVal,
-                    ) < 0.2,
-                  )}
+                  className={pillBtnClass(shellOpenCapsMode === "both_ends")}
                 >
-                  {wVal}mm
+                  Tubo (2 Faces)
                 </button>
-              ))}
+                <button
+                  type="button"
+                  data-testid="chamfer-3d-shell-mode-box"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    setShellOpenCapsMode("top_only");
+                    const nextCaps = resolveShellOpenCapsFromSelection3D(
+                      selectedFacesList,
+                      "top_only",
+                    );
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectShell3DToEntities(
+                          prev,
+                          shellTargetIds,
+                          currentShellT,
+                          nextCaps,
+                        ),
+                      shellTargetIds,
+                    );
+                  }}
+                  className={pillBtnClass(shellOpenCapsMode === "top_only")}
+                >
+                  Caixa (1 Face)
+                </button>
+                {[2, 3, 4.75, 6].map((wVal) => (
+                  <button
+                    key={wVal}
+                    type="button"
+                    data-testid={`chamfer-3d-shell-thickness-${wVal}`}
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.(
+                        (prev) =>
+                          applyDirectShell3DToEntities(
+                            prev,
+                            shellTargetIds,
+                            wVal,
+                            resolvedShellOpenCaps,
+                          ),
+                        shellTargetIds,
+                      );
+                    }}
+                    className={pillBtnClass(Math.abs(currentShellT - wVal) < 0.2)}
+                  >
+                    {wVal}mm
+                  </button>
+                ))}
+              </>
+            );
+          })()}
+          {(primaryBody ?? scene.bodies[0]) && directTool === "shell_3d" && (
+            <>
               <button
                 type="button"
                 data-testid="chamfer-3d-edge-flange-btn"
@@ -4882,8 +4950,78 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
           <button
             type="button"
+            data-testid="chamfer-3d-active-pill-confirm-btn"
             onClick={() => {
               triggerHaptic("action");
+              if (directTool === "array_3d") {
+                if (smartArrayPanelTab === "miter_frame" && smartMiterFrameCalc.valid) {
+                  let createdIds: string[] = [];
+                  onCommitEntities?.(
+                    (prev) => {
+                      const res = generateSmartMiterFrameEntities3D(
+                        prev,
+                        smartArraySourceBody?.entityId ?? null,
+                        smartArraySourceBody,
+                        smartMiterFrameCalc,
+                      );
+                      createdIds = res.createdIds;
+                      return res.updatedEntities;
+                    },
+                    createdIds,
+                  );
+                  if (createdIds.length > 0) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: createdIds.map((id) => `body_${id}`),
+                      selectionScope: "body",
+                      activePivot3D: { x: 0, y: 0, z: 0 },
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.(createdIds);
+                  }
+                } else if (
+                  smartArrayPanelTab === "grille_span" &&
+                  smartArraySourceBody &&
+                  smartArrayCalc.valid
+                ) {
+                  let createdIds: string[] = [];
+                  onCommitEntities?.(
+                    (prev) => {
+                      const res = generateSmartGrilleArrayEntities3D(
+                        prev,
+                        smartArraySourceBody.entityId,
+                        smartArraySourceBody,
+                        smartArrayCalc,
+                      );
+                      createdIds = res.createdIds;
+                      return res.updatedEntities;
+                    },
+                    createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId],
+                  );
+                }
+              } else if (directTool === "shell_3d") {
+                const shellBody = primaryBody ?? scene.bodies[0] ?? null;
+                if (shellBody) {
+                  const shellTargetIds =
+                    activeTargetEntityIds.length > 0
+                      ? activeTargetEntityIds
+                      : [shellBody.entityId];
+                  const tVal =
+                    shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
+                  onCommitEntities?.(
+                    (prev) =>
+                      applyDirectShell3DToEntities(
+                        prev,
+                        shellTargetIds,
+                        tVal,
+                        resolvedShellOpenCaps,
+                      ),
+                    shellTargetIds,
+                  );
+                }
+              }
               setDirectTool("select_3d");
               setNumpadSession(null);
             }}
@@ -5074,17 +5212,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   })
                   .join(" ");
 
+                const showFaceSelectionHighlight =
+                  isSelected && directTool !== "shell_3d" && directTool !== "array_3d";
                 return (
                   <polygon
                     key={face.faceId}
                     points={ptsStr}
                     fill={
-                      isSelected
+                      showFaceSelectionHighlight
                         ? "rgba(0, 180, 216, 0.30)"
                         : "rgba(0, 180, 216, 0.001)"
                     }
-                    stroke={isSelected ? "#00B4D8" : "none"}
-                    strokeWidth={isSelected ? 2.5 : 0}
+                    stroke={showFaceSelectionHighlight ? "#00B4D8" : "none"}
+                    strokeWidth={showFaceSelectionHighlight ? 2.5 : 0}
                     className="pointer-events-auto cursor-pointer transition-colors"
                     style={{ pointerEvents: "fill", touchAction: "none" }}
                     onPointerDown={(ev) => {
@@ -6241,7 +6381,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           {/* G. GIZMO DO CORPO (TRÍADE X/Y/Z + ROTAÇÃO + PIVÔ + BOTÃO COPY)    */}
           {/* Exibido EXCLUSIVAMENTE quando um CORPO está selecionado           */}
           {/* ================================================================= */}
-          {gizmoScreen && selectionKind3D === "body" && (
+          {gizmoScreen &&
+            selectionKind3D === "body" &&
+            directTool !== "shell_3d" &&
+            directTool !== "array_3d" && (
               <g data-testid="chamfer-gizmo-body-manipulator">
                 {/* Linha Tracejada de Deslocamento + Pílula Clicável de Distância em Tempo Real */}
                 {(() => {
@@ -7181,9 +7324,132 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             })()}
 
           {/* ================================================================= */}
+          {/* H2. PREVIEW 3D EM TEMPO REAL DA PAREDE DO SHELL / TUBO VAZADO     */}
+          {/* ================================================================= */}
+          {directTool === "shell_3d" &&
+            (() => {
+              const shellBody = primaryBody ?? scene.bodies[0] ?? null;
+              if (!shellBody) return null;
+              const wallT =
+                shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
+              const openTop = shellBody.shellOpenCaps.includes("top") || shellOpenCapsMode === "both_ends";
+              const openBottom =
+                shellBody.shellOpenCaps.includes("bottom") || shellOpenCapsMode === "both_ends";
+              const ringFaces = shellBody.faces.filter(
+                (f) =>
+                  (openTop && (f.role === "top" || f.role === "miter")) ||
+                  (openBottom && f.role === "bottom"),
+              );
+              const innerMouthEdges = shellBody.edges.filter(
+                (e) =>
+                  (openTop && e.role === "inner_top") ||
+                  (openBottom && e.role === "inner_bottom"),
+              );
+              const outerMouthEdges = shellBody.edges.filter(
+                (e) =>
+                  (openTop && e.role === "top_perimeter") ||
+                  (openBottom && e.role === "bottom_perimeter"),
+              );
+              const topCenterSc = toScreen({
+                x: shellBody.pivot3D.x,
+                y: shellBody.pivot3D.y,
+                z: shellBody.bbox3D.maxZ,
+              });
+
+              return (
+                <g
+                  data-testid="chamfer-3d-shell-live-preview"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {/* Destaque ciano translúcido nas faces de parede de espessura t nas bocas abertas */}
+                  {ringFaces.map((rf) => {
+                    if (!rf.polygon3D || rf.polygon3D.length < 3) return null;
+                    const pts = rf.polygon3D
+                      .map((p) => {
+                        const sc = toScreen(p);
+                        return `${sc.x.toFixed(1)},${sc.y.toFixed(1)}`;
+                      })
+                      .join(" ");
+                    return (
+                      <polygon
+                        key={`shell_ring_face_${rf.faceId}`}
+                        points={pts}
+                        fill="rgba(0, 229, 255, 0.24)"
+                        stroke="none"
+                      />
+                    );
+                  })}
+
+                  {/* Contorno externo e anel interno da parede t em ciano técnico nítido */}
+                  {outerMouthEdges.map((oe) => {
+                    const pts = oe.polyline3D
+                      .map((p) => {
+                        const sc = toScreen(p);
+                        return `${sc.x.toFixed(1)},${sc.y.toFixed(1)}`;
+                      })
+                      .join(" ");
+                    return (
+                      <polyline
+                        key={`shell_outer_mouth_${oe.edgeId}`}
+                        points={pts}
+                        fill="none"
+                        stroke="#38BDF8"
+                        strokeWidth={1.8}
+                      />
+                    );
+                  })}
+                  {innerMouthEdges.map((ie) => {
+                    const pts = ie.polyline3D
+                      .map((p) => {
+                        const sc = toScreen(p);
+                        return `${sc.x.toFixed(1)},${sc.y.toFixed(1)}`;
+                      })
+                      .join(" ");
+                    return (
+                      <polyline
+                        key={`shell_inner_mouth_${ie.edgeId}`}
+                        points={pts}
+                        fill="rgba(2, 6, 23, 0.55)"
+                        stroke="#00E5FF"
+                        strokeWidth={2.4}
+                      />
+                    );
+                  })}
+
+                  {/* Etiqueta técnica da espessura da parede na boca superior */}
+                  <g transform={`translate(${topCenterSc.x}, ${topCenterSc.y - 24})`}>
+                    <rect
+                      x={-98}
+                      y={-11}
+                      width={196}
+                      height={20}
+                      rx={6}
+                      fill={isDark ? "rgba(8, 47, 73, 0.92)" : "rgba(224, 242, 254, 0.96)"}
+                      stroke="#00E5FF"
+                      strokeWidth={1.2}
+                    />
+                    <text
+                      x={0}
+                      y={1}
+                      fill={isDark ? "#67E8F9" : "#0369A1"}
+                      fontSize="9.5"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                    >
+                      {`Parede t = ${wallT} mm • ${shellOpenCapsMode === "both_ends" ? "Tubo Vazado" : "Caixa Cega"}`}
+                    </text>
+                  </g>
+                </g>
+              );
+            })()}
+
+          {/* ================================================================= */}
           {/* I. PREVIEW 3D AO VIVO DO ARRAY INTELIGENTE / GRADE (TUBOS GHOST)  */}
           {/* ================================================================= */}
           {directTool === "array_3d" &&
+            smartArrayPanelTab === "grille_span" &&
             smartArraySourceBody &&
             smartArrayCalc.centerCoordsMm.length > 0 &&
             (() => {
@@ -7304,6 +7570,124 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 </g>
               );
             })()}
+
+          {/* ================================================================= */}
+          {/* I2. PREVIEW 3D EM TEMPO REAL DO QUADRO EM 45° (ESQUADRIA FECHADA) */}
+          {/* ================================================================= */}
+          {directTool === "array_3d" &&
+            smartArrayPanelTab === "miter_frame" &&
+            smartMiterFrameCalc.members.length > 0 &&
+            (() => {
+              const yawRad = ((orbitProjection?.yawDeg ?? 45) * Math.PI) / 180;
+              const pitchRad = ((orbitProjection?.pitchDeg ?? 35.264) * Math.PI) / 180;
+              const camDir = {
+                x: Math.cos(pitchRad) * Math.sin(yawRad),
+                y: -Math.cos(pitchRad) * Math.cos(yawRad),
+                z: Math.sin(pitchRad),
+              };
+
+              const barMeshes = smartMiterFrameCalc.members.map((member, mIdx) => {
+                const poly = buildHorizontalMiterBar3DPolygons(member);
+                const sortedQuads = [...poly.quads3D].sort((qa, qb) => {
+                  const ca = qa.vertices3D.reduce(
+                    (acc, v) => ({ x: acc.x + v.x * 0.25, y: acc.y + v.y * 0.25, z: acc.z + v.z * 0.25 }),
+                    { x: 0, y: 0, z: 0 },
+                  );
+                  const cb = qb.vertices3D.reduce(
+                    (acc, v) => ({ x: acc.x + v.x * 0.25, y: acc.y + v.y * 0.25, z: acc.z + v.z * 0.25 }),
+                    { x: 0, y: 0, z: 0 },
+                  );
+                  const da = ca.x * camDir.x + ca.y * camDir.y + ca.z * camDir.z;
+                  const db = cb.x * camDir.x + cb.y * camDir.y + cb.z * camDir.z;
+                  return da - db;
+                });
+                return { member, mIdx, sortedQuads, featureLines3D: poly.featureLines3D };
+              });
+
+              const bb = smartMiterFrameCalc.bbox3D;
+              const topMidSc = toScreen({
+                x: (bb.minX + bb.maxX) * 0.5,
+                y: bb.maxY,
+                z: bb.maxZ,
+              });
+
+              return (
+                <g
+                  data-testid="chamfer-3d-miter-frame-preview"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {barMeshes.map(({ mIdx, sortedQuads, featureLines3D }) => (
+                    <g key={`miter_frame_bar_preview_${mIdx}`}>
+                      {sortedQuads.map((q) => {
+                        if (q.kind === "inner_wall") return null;
+                        const pts = q.vertices3D
+                          .map((v) => {
+                            const sc = toScreen(v);
+                            return `${sc.x.toFixed(1)},${sc.y.toFixed(1)}`;
+                          })
+                          .join(" ");
+                        const fill =
+                          q.kind === "top"
+                            ? "rgba(16, 185, 129, 0.34)"
+                            : q.kind === "miter_cap"
+                              ? "rgba(56, 189, 248, 0.38)"
+                              : "rgba(5, 150, 105, 0.24)";
+                        return (
+                          <polygon
+                            key={`mf_q_${mIdx}_${q.id}`}
+                            points={pts}
+                            fill={fill}
+                            stroke="none"
+                          />
+                        );
+                      })}
+                      {featureLines3D.map(([p0, p1], lIdx) => {
+                        const s0 = toScreen(p0);
+                        const s1 = toScreen(p1);
+                        const isMiterDiagonal = lIdx % 3 !== 0;
+                        return (
+                          <line
+                            key={`mf_line_${mIdx}_${lIdx}`}
+                            x1={s0.x}
+                            y1={s0.y}
+                            x2={s1.x}
+                            y2={s1.y}
+                            stroke={isMiterDiagonal ? "#38BDF8" : "#10B981"}
+                            strokeWidth={isMiterDiagonal ? 2.1 : 1.5}
+                          />
+                        );
+                      })}
+                    </g>
+                  ))}
+
+                  {/* Etiqueta técnica flutuante do Quadro 45° */}
+                  <g transform={`translate(${topMidSc.x}, ${topMidSc.y - 22})`}>
+                    <rect
+                      x={-148}
+                      y={-11}
+                      width={296}
+                      height={20}
+                      rx={6}
+                      fill={isDark ? "rgba(6, 78, 59, 0.94)" : "rgba(236, 253, 245, 0.96)"}
+                      stroke="#10B981"
+                      strokeWidth={1.2}
+                    />
+                    <text
+                      x={0}
+                      y={1}
+                      fill={isDark ? "#A7F3D0" : "#065F46"}
+                      fontSize="9.2"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                    >
+                      {`Quadro 45° • Ext: ${smartMiterFrameCalc.outerWidthMm}×${smartMiterFrameCalc.outerHeightMm}mm • Vão: ${smartMiterFrameCalc.innerWidthMm}×${smartMiterFrameCalc.innerHeightMm}mm`}
+                    </text>
+                  </g>
+                </g>
+              );
+            })()}
         </svg>
       )}
 
@@ -7329,6 +7713,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         primaryBody &&
         !numpadSession &&
         selectionKind3D === "body" &&
+        directTool !== "shell_3d" &&
+        directTool !== "array_3d" &&
         activeAxis !== "rot_x" &&
         activeAxis !== "rot_y" &&
         activeAxis !== "rot_z" &&
@@ -8581,7 +8967,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 {/* Altura / Comprimento do Quadro (A) */}
                 <div className="flex items-center justify-between gap-1.5 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2 py-1.5">
                   <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
-                    Altura (A):
+                    Altura / Comp. (A):
                   </span>
                   <div className="flex items-center gap-1">
                     <button
@@ -8598,7 +8984,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       type="number"
                       inputMode="decimal"
                       data-testid="chamfer-3d-frame-height-input"
-                      aria-label="Altura do quadro em milímetros"
+                      aria-label="Altura ou comprimento do quadro em milímetros"
                       value={smartFrameHeightMm}
                       onChange={(ev) => {
                         const v = Number(ev.target.value);
@@ -8749,9 +9135,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Perfil (d) / Peças:</span>
+                    <span className="text-slate-400">Perfil (W×H) / Peças:</span>
                     <span className="font-bold">
-                      {smartMiterFrameCalc.profileCrossSectionMm} mm • {smartMiterFrameCalc.members.length} pçs
+                      {smartMiterFrameCalc.profileWidthMm}×{smartMiterFrameCalc.profileDepthMm} mm • {smartMiterFrameCalc.members.length} pçs
                     </span>
                   </div>
                   {smartFrameInnerDivisions > 0 && (
@@ -8809,12 +9195,21 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       createdIds = res.createdIds;
                       return res.updatedEntities;
                     },
-                    createdIds.length > 0
-                      ? createdIds
-                      : smartArraySourceBody
-                        ? [smartArraySourceBody.entityId]
-                        : [],
+                    createdIds,
                   );
+                  if (createdIds.length > 0) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: createdIds.map((id) => `body_${id}`),
+                      selectionScope: "body",
+                      activePivot3D: { x: 0, y: 0, z: 0 },
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.(createdIds);
+                  }
+                  setDirectTool("select_3d");
                 } else {
                   if (!smartArraySourceBody || !smartArrayCalc.valid) return;
                   let createdIds: string[] = [];
@@ -8828,6 +9223,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     createdIds = res.createdIds;
                     return res.updatedEntities;
                   }, createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId]);
+                  setDirectTool("select_3d");
                 }
               }}
               className={cn(

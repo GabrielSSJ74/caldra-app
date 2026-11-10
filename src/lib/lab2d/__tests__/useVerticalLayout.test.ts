@@ -355,10 +355,10 @@ describe("FASE G — Acessibilidade WCAG AA (>= 4.5:1), Alvos de Toque (>= 44px)
 });
 
 describe("FASE H — Validação End-to-End (T1 a T15), Fluxo Real de Engenharia e Isolamento Estrito de Escopo", () => {
-  it("T1/T13: ativa layout vertical apenas em retrato <= 640px e preserva 100% do layout clássico em paisagem ou preferência Clássico", () => {
+  it("T1/T13: ativa layout vertical apenas em retrato <= 640px e preserva o modo PRUMO quando selecionado", () => {
     expect(VERTICAL_LAYOUT_MAX_WIDTH).toBe(640);
 
-    const portraitCheck = (w: number, h: number, pref: "compact" | "classic") =>
+    const portraitCheck = (w: number, h: number, pref: "compact" | "prumo") =>
       w < h && w <= VERTICAL_LAYOUT_MAX_WIDTH && pref === "compact";
 
     // Retrato mobile padrão -> ativa layout Lightroom compacto
@@ -366,10 +366,10 @@ describe("FASE H — Validação End-to-End (T1 a T15), Fluxo Real de Engenharia
     expect(portraitCheck(390, 844, "compact")).toBe(true);
     expect(portraitCheck(412, 915, "compact")).toBe(true);
 
-    // Válvula de segurança Clássico -> desativa layout compacto imediatamente
-    expect(portraitCheck(390, 844, "classic")).toBe(false);
+    // Preferência PRUMO -> desativa barras verticais para usar a interface espacial PRUMO
+    expect(portraitCheck(390, 844, "prumo")).toBe(false);
 
-    // Paisagem / Desktop (1280×800, 1920×1080) -> preserva layout clássico intacto
+    // Paisagem / Desktop (1280×800, 1920×1080) -> preserva layout paisagem compacto
     expect(portraitCheck(1280, 800, "compact")).toBe(false);
     expect(portraitCheck(1920, 1080, "compact")).toBe(false);
   });
