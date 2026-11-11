@@ -24,6 +24,7 @@ import {
   type Entity,
   type Vec2,
 } from "./core";
+import { execute2DBoolean } from "./cadBooleans2D";
 import {
   createLoft3DEntity,
   setEntityElevationZ,
@@ -771,20 +772,93 @@ export function applyDirectBoolean3DBetweenBodies(
     resultingVolumeMm3 = overlapVol;
   }
 
-  const updatedEntities = entities.map((ent) => {
-    if (ent.id === targetId) {
-      return setEntityDirect3DParams(ent, {
-        booleanMode3D: operation,
-      });
+  let updatedEntities: Entity[];
+  if (operation === "union") {
+    const baseTarget = entities.find((e) => e.id === targetId);
+    const toolEnts = entities.filter((e) => toolIds.has(e.id));
+    if (baseTarget && toolEnts.length > 0) {
+      let unifiedMinZ = tb.minZ;
+      let unifiedMaxZ = tb.maxZ;
+      let unifiedMinX = tb.minX;
+      let unifiedMaxX = tb.maxX;
+      let unifiedMinY = tb.minY;
+      let unifiedMaxY = tb.maxY;
+      for (const qBody of toolBodies) {
+        unifiedMinZ = Math.min(unifiedMinZ, qBody.bbox3D.minZ);
+        unifiedMaxZ = Math.max(unifiedMaxZ, qBody.bbox3D.maxZ);
+        unifiedMinX = Math.min(unifiedMinX, qBody.bbox3D.minX);
+        unifiedMaxX = Math.max(unifiedMaxX, qBody.bbox3D.maxX);
+        unifiedMinY = Math.min(unifiedMinY, qBody.bbox3D.minY);
+        unifiedMaxY = Math.max(unifiedMaxY, qBody.bbox3D.maxY);
+      }
+      const unifiedHeightMm = Math.max(1, Number((unifiedMaxZ - unifiedMinZ).toFixed(3)));
+
+      let mergedGeom: Entity = baseTarget;
+      let allFused2D = true;
+      for (const tEnt of toolEnts) {
+        const res2D = execute2DBoolean(mergedGeom, tEnt, "union", baseTarget.layer);
+        if (res2D.length === 1 && res2D[0]) {
+          mergedGeom = res2D[0];
+        } else {
+          allFused2D = false;
+        }
+      }
+      if (!allFused2D) {
+        mergedGeom = rectPolyline(
+          { x: unifiedMinX, y: unifiedMinY },
+          { x: unifiedMaxX, y: unifiedMaxY },
+          baseTarget.layer,
+        );
+      }
+
+      const fusedEntity = setEntityDirect3DParams(
+        {
+          ...mergedGeom,
+          id: targetId,
+          layer: baseTarget.layer,
+          elevationZ: unifiedMinZ,
+          params: {
+            ...(baseTarget.params ?? {}),
+            isIndependentBody3D: true,
+            elevationZ: unifiedMinZ,
+            extrudeHeightMm: unifiedHeightMm,
+            extrudeHeight: unifiedHeightMm,
+            fusedVolumeOverrideMm3: Number(resultingVolumeMm3.toFixed(2)),
+          },
+        },
+        {
+          booleanMode3D: "union",
+          elevationZ: unifiedMinZ,
+          extrudeHeightMm: unifiedHeightMm,
+        },
+      );
+
+      updatedEntities = entities
+        .filter((ent) => !toolIds.has(ent.id))
+        .map((ent) => (ent.id === targetId ? fusedEntity : ent));
+    } else {
+      updatedEntities = entities.map((ent) =>
+        ent.id === targetId
+          ? setEntityDirect3DParams(ent, { booleanMode3D: operation })
+          : ent,
+      );
     }
-    if (toolIds.has(ent.id) && operation === "subtract") {
-      return {
-        ...ent,
-        layer: "recorte",
-      };
-    }
-    return ent;
-  });
+  } else {
+    updatedEntities = entities.map((ent) => {
+      if (ent.id === targetId) {
+        return setEntityDirect3DParams(ent, {
+          booleanMode3D: operation,
+        });
+      }
+      if (toolIds.has(ent.id) && operation === "subtract") {
+        return {
+          ...ent,
+          layer: "recorte",
+        };
+      }
+      return ent;
+    });
+  }
 
   return {
     updatedEntities,

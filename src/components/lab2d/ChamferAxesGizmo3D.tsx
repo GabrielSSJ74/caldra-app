@@ -13,7 +13,7 @@
  *   ÓRBITA 3D não estiver ativo na barra superior.
  */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   computeGizmoAxesProjection,
   getOrbitPresetDefinition,
@@ -56,6 +56,18 @@ export const ChamferAxesGizmo3D = React.memo(function ChamferAxesGizmo3D({
     moved: boolean;
   } | null>(null);
   const [isDraggingGizmo, setIsDraggingGizmo] = useState(false);
+  const [isFluxHidden, setIsFluxHidden] = useState(false);
+
+  useEffect(() => {
+    const onFluxDrag = (ev: Event) => {
+      const active = Boolean(
+        (ev as CustomEvent<{ isManipulating?: boolean }>).detail?.isManipulating,
+      );
+      setIsFluxHidden(active);
+    };
+    window.addEventListener("chamfer-flux-drag-state", onFluxDrag);
+    return () => window.removeEventListener("chamfer-flux-drag-state", onFluxDrag);
+  }, []);
 
   const axes = useMemo(
     () => computeGizmoAxesProjection(azimuthDeg, elevationDeg),
@@ -172,7 +184,10 @@ export const ChamferAxesGizmo3D = React.memo(function ChamferAxesGizmo3D({
         borderRadius: "12px",
       }}
       className={cn(
-        "pointer-events-auto select-none touch-none flex flex-col items-center p-1.5 shadow-xl transition-shadow",
+        "select-none touch-none flex flex-col items-center p-1.5 shadow-xl transition-all duration-150 ease-out",
+        isFluxHidden
+          ? "pointer-events-none opacity-0 scale-95"
+          : "pointer-events-auto opacity-100 scale-100",
         isDraggingGizmo ? "cursor-grabbing ring-1 ring-cyan-400/60" : "cursor-grab",
         className,
       )}

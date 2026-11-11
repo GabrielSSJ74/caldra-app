@@ -131,6 +131,29 @@ import {
   type SmartFrameMeasureRef3D,
   type SmartFramePlane3D,
 } from "@/lib/lab2d/chamfer3DSmartArray";
+import {
+  applyAssemblyGroupToEntities3D,
+  applyDropBodiesToBaseZ0,
+  applyMultiBodyRigidTransform3D,
+  applyUniformMaterialToEntities3D,
+  computeMultiBodyInspectorSummary3D,
+  computeMultiBodySetPivot3D,
+  createInitialBaseEcholocationState3D,
+  evaluateBaseSurfaceSnap3D,
+  evaluateMarqueeBoxSelection3D,
+  expandBodyIdsWithAssemblyGroup3D,
+  findBodyFaceByReferenceFrame3D,
+  getBodyLocalAxesInWCS,
+  getEntityAssemblyGroupId,
+  resolveFluxViewportVisibility3D,
+  selectBodiesWithSameProfile3D,
+  stepBaseEcholocationState3D,
+  ungroupAssemblyEntities3D,
+  type BaseEcholocationPulse3D,
+  type BaseSurfaceSnapEvaluation3D,
+  type CoordinateReferenceFrame3D,
+  type MultiSelectionPivotMode3D,
+} from "@/lib/lab2d/chamfer3DFluxWcsSnapMulti";
 import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -406,6 +429,47 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   const [isPickingPivotSnap, setIsPickingPivotSnap] = useState<boolean>(false);
   const [snappedPivotLabel, setSnappedPivotLabel] = useState<string | null>(null);
 
+  // Estados Unificados FLUX + WCS/OCS + Snap Base (Z=0) + Multi-Seleção Inteligente
+  const [referenceFrame3D, setReferenceFrame3D] = useState<CoordinateReferenceFrame3D>("wcs");
+  const [multiSelectAddMode, setMultiSelectAddMode] = useState<boolean>(false);
+  const [marqueeModeActive, setMarqueeModeActive] = useState<boolean>(false);
+  const [marqueeRectState, setMarqueeRectState] = useState<{
+    start: Vec2;
+    current: Vec2;
+    additive: boolean;
+  } | null>(null);
+  const [multiPivotMode, setMultiPivotMode] = useState<MultiSelectionPivotMode3D>("bbox_center");
+  const [customPivot3D, setCustomPivot3D] = useState<Vec3Mm | null>(null);
+  const [activeBaseSnapEval, setActiveBaseSnapEval] = useState<BaseSurfaceSnapEvaluation3D | null>(
+    null,
+  );
+  const baseSnapLatchedRef = useRef<boolean>(false);
+  const echolocationStateRef = useRef(createInitialBaseEcholocationState3D());
+  const [activeEcholocationPulse, setActiveEcholocationPulse] =
+    useState<BaseEcholocationPulse3D | null>(null);
+  const echolocationCleanupTimerRef = useRef<number | null>(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mq.matches);
+    const onChange = (ev: MediaQueryListEvent) => setPrefersReducedMotion(ev.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
+  const triggerEcholocationWavePulse = useCallback((pulse: BaseEcholocationPulse3D) => {
+    setActiveEcholocationPulse(pulse);
+    if (echolocationCleanupTimerRef.current !== null) {
+      window.clearTimeout(echolocationCleanupTimerRef.current);
+    }
+    echolocationCleanupTimerRef.current = window.setTimeout(() => {
+      setActiveEcholocationPulse(null);
+      echolocationCleanupTimerRef.current = null;
+    }, 820);
+  }, []);
+
   // Estados P1–P7 (CHAMFER 3D 2.0 Master Suite)
   const [revolveAngleDeg, setRevolveAngleDeg] = useState<number>(360);
   const [revolveAxis, setRevolveAxis] = useState<"x" | "y" | "z">("y");
@@ -538,10 +602,26 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   }, [subSel.faceIds.length, subSel.edgeIds.length, subSel.bodyIds.length, vertexIds.length]);
 
   useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("chamfer-flux-drag-state", {
+        detail: { isManipulating: activeAxis !== null, activeAxis },
+      }),
+    );
+  }, [activeAxis]);
+
+  useEffect(() => {
     return () => {
       if (compassFadeTimerRef.current !== null) {
         window.clearTimeout(compassFadeTimerRef.current);
       }
+      if (echolocationCleanupTimerRef.current !== null) {
+        window.clearTimeout(echolocationCleanupTimerRef.current);
+      }
+      window.dispatchEvent(
+        new CustomEvent("chamfer-flux-drag-state", {
+          detail: { isManipulating: false, activeAxis: null },
+        }),
+      );
     };
   }, []);
 
@@ -552,6 +632,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     startClientY: number;
     screenDirX: number;
     screenDirY: number;
+    axisVec3D?: Vec3Mm;
     pixelsPerMm: number;
     totalDeltaMm: number;
     lastAppliedDeltaMm: number;
@@ -564,6 +645,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     compassRadiusPx?: number;
     startEntities: Entity[];
     startBody: DirectBody3D | null;
+    startBodies: DirectBody3D[];
     startFace: DirectFace3D | null;
     startEdge: DirectEdge3D | null;
     startVertex: DirectVertex3D | null;
@@ -667,14 +749,31 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     return Array.from(ids);
   }, [subSel.bodyIds, subSel.faceIds, subSel.edgeIds, vertexIds, scene, selection]);
 
-  const primaryBody: DirectBody3D | null = useMemo(() => {
-    if (activeTargetEntityIds.length === 0) return null;
+  // Lista ordenada de corpos selecionados (Corpo Principal = índice 0, Corpos Adicionais = índices >= 1)
+  const selectedBodiesList = useMemo<DirectBody3D[]>(() => {
+    const ordered: DirectBody3D[] = [];
+    const seen = new Set<string>();
+    for (const bId of subSel.bodyIds) {
+      const b = scene.bodiesById.get(bId);
+      if (b && !seen.has(b.bodyId)) {
+        seen.add(b.bodyId);
+        ordered.push(b);
+      }
+    }
     for (const id of activeTargetEntityIds) {
       const b = scene.bodies.find((x) => x.entityId === id);
-      if (b) return b;
+      if (b && !seen.has(b.bodyId)) {
+        seen.add(b.bodyId);
+        ordered.push(b);
+      }
     }
-    return null;
-  }, [activeTargetEntityIds, scene.bodies]);
+    return ordered;
+  }, [subSel.bodyIds, activeTargetEntityIds, scene.bodiesById, scene.bodies]);
+
+  const primaryBody: DirectBody3D | null = useMemo(
+    () => selectedBodiesList[0] ?? null,
+    [selectedBodiesList],
+  );
 
   const primaryFace: DirectFace3D | null = useMemo(() => {
     if (subSel.faceIds.length > 0) {
@@ -704,10 +803,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   // Sincroniza a face-alvo do Shell sempre que o usuário seleciona uma face 3D
   useEffect(() => {
     if (selectedFacesList.length > 0) {
-      const detectedCap = resolveFaceShellCapDirection3D(selectedFacesList[0]!);
+      const detectedCap = resolveFaceShellCapDirection3D(
+        selectedFacesList[0]!,
+        referenceFrame3D,
+        primaryBody?.rotation3D,
+      );
       setShellTargetFaceCap(detectedCap);
     }
-  }, [selectedFacesList]);
+  }, [selectedFacesList, referenceFrame3D, primaryBody?.rotation3D]);
 
   const resolvedShellOpenCaps = useMemo<ShellOpenCap3D[]>(
     () =>
@@ -715,8 +818,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         selectedFacesList,
         shellOpenCapsMode,
         shellTargetFaceCap,
+        referenceFrame3D,
+        primaryBody?.rotation3D,
       ),
-    [selectedFacesList, shellOpenCapsMode, shellTargetFaceCap],
+    [
+      selectedFacesList,
+      shellOpenCapsMode,
+      shellTargetFaceCap,
+      referenceFrame3D,
+      primaryBody?.rotation3D,
+    ],
   );
 
   const primaryEdge: DirectEdge3D | null = useMemo(() => {
@@ -855,24 +966,59 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     [orbitProjection, view.k, view.tx, view.ty],
   );
 
-  // Calcula o centro 3D do Gizmo (respeitando pivô móvel ou sub-elemento selecionado; retorna null quando nada está selecionado!)
+  // Calcula o centro 3D do Gizmo (respeitando os 5 modos de Pivô da Multi-Seleção, pivô móvel ou sub-elemento)
   const selectionCenter3D = useMemo<Vec3Mm | null>(() => {
     if (selectionKind3D === "none") return null;
-    if (subSel.activePivot3D) return subSel.activePivot3D;
-    if (vertexIds.length > 0 && primaryVertex) return primaryVertex.point3D;
-    if (subSel.faceIds.length > 0 && primaryFace) return primaryFace.centroid;
-    if (subSel.edgeIds.length > 0 && primaryEdge) return primaryEdge.midpoint;
-    if (primaryBody) {
+    if (selectionKind3D === "vertex" && primaryVertex) return primaryVertex.point3D;
+    if (selectionKind3D === "face" && primaryFace) return primaryFace.centroid;
+    if (selectionKind3D === "edge" && primaryEdge) return primaryEdge.midpoint;
+
+    if (selectionKind3D === "body" && selectedBodiesList.length > 0) {
       if (
-        directTool === "extrude_3d" ||
-        directTool === "offset_face_3d" ||
-        directTool === "rotate_axis_3d"
+        selectedBodiesList.length === 1 &&
+        primaryBody &&
+        (directTool === "extrude_3d" ||
+          directTool === "offset_face_3d" ||
+          directTool === "rotate_axis_3d")
       ) {
-        const topF = primaryBody.faces.find((f) => f.role === "top" || f.role === "miter");
+        const topF =
+          findBodyFaceByReferenceFrame3D(primaryBody, "top", referenceFrame3D) ??
+          primaryBody.faces.find((f) => f.role === "top" || f.role === "miter");
         if (topF) return topF.centroid;
       }
-      return primaryBody.pivot3D;
+
+      if (multiPivotMode === "custom_draggable" && customPivot3D) {
+        return customPivot3D;
+      }
+      if (subSel.activePivot3D && (multiPivotMode === "snap_point" || selectedBodiesList.length === 1)) {
+        // Quando há apenas 1 peça e o usuário escolheu explicitamente um ponto de snap diferente do centroide
+        if (
+          multiPivotMode === "snap_point" ||
+          (primaryBody &&
+            Math.hypot(
+              subSel.activePivot3D.x - primaryBody.pivot3D.x,
+              subSel.activePivot3D.y - primaryBody.pivot3D.y,
+              subSel.activePivot3D.z - primaryBody.pivot3D.z,
+            ) > 0.25 &&
+            snappedPivotLabel !== null)
+        ) {
+          return subSel.activePivot3D;
+        }
+      }
+
+      const computedSetPivot = computeMultiBodySetPivot3D(
+        selectedBodiesList,
+        multiPivotMode,
+        {
+          primaryBody,
+          snapPoint3D: subSel.activePivot3D,
+          customPivot3D,
+        },
+      );
+      if (computedSetPivot) return computedSetPivot;
     }
+
+    if (subSel.activePivot3D) return subSel.activePivot3D;
     if (selected.length === 0) return null;
     const b = bbox(selected);
     if (!b) return null;
@@ -885,10 +1031,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     };
   }, [
     selectionKind3D,
+    selectedBodiesList,
+    multiPivotMode,
+    customPivot3D,
+    snappedPivotLabel,
+    referenceFrame3D,
     subSel.activePivot3D,
-    subSel.faceIds.length,
-    subSel.edgeIds.length,
-    vertexIds.length,
     primaryVertex,
     primaryFace,
     primaryEdge,
@@ -897,7 +1045,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     selected,
   ]);
 
-  // Projeção dos eixos X, Y, Z na tela
+  // Projeção dos eixos X, Y, Z na tela (suporta `🌐 Global WCS` e `📦 Local OCS` da peça rotacionada!)
   const gizmoScreen = useMemo(() => {
     if (!selectionCenter3D || (!isTilted3D && activeMode !== "3d")) return null;
 
@@ -905,11 +1053,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     const axisLenPx = 64;
     const stepMm = Math.max(10, 60 / Math.max(0.1, view.k));
 
-    const projectAxisTip = (dx: number, dy: number, dz: number) => {
+    const localAxes =
+      referenceFrame3D === "ocs" && primaryBody
+        ? getBodyLocalAxesInWCS(primaryBody.rotation3D)
+        : {
+            axisX: { x: 1, y: 0, z: 0 },
+            axisY: { x: 0, y: 1, z: 0 },
+            axisZ: { x: 0, y: 0, z: 1 },
+          };
+
+    const projectAxisTip = (axisVec3D: Vec3Mm) => {
       const tipScreen = toScreen({
-        x: selectionCenter3D.x + dx * stepMm,
-        y: selectionCenter3D.y + dy * stepMm,
-        z: selectionCenter3D.z + dz * stepMm,
+        x: selectionCenter3D.x + axisVec3D.x * stepMm,
+        y: selectionCenter3D.y + axisVec3D.y * stepMm,
+        z: selectionCenter3D.z + axisVec3D.z * stepMm,
       });
       const vx = tipScreen.x - originScreen.x;
       const vy = tipScreen.y - originScreen.y;
@@ -923,12 +1080,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         ux,
         uy,
         pixelsPerMm,
+        axisVec3D,
       };
     };
 
-    const xAx = projectAxisTip(1, 0, 0);
-    const yAx = projectAxisTip(0, 1, 0);
-    const zAx = projectAxisTip(0, 0, 1);
+    const xAx = projectAxisTip(localAxes.axisX);
+    const yAx = projectAxisTip(localAxes.axisY);
+    const zAx = projectAxisTip(localAxes.axisZ);
 
     // Alça planar (quad entre os eixos X e Y)
     const pSize = 22;
@@ -942,11 +1100,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       p3: { x: originScreen.x + yAx.ux * pSize, y: originScreen.y + yAx.uy * pSize },
     };
 
-    // Calcula o Bounding Sphere / Bounding Box projetado da peça na tela para a Bússola Externa
+    // Calcula o Bounding Sphere / Bounding Box projetado da peça(s) na tela para a Bússola Externa
     const partPointsScreen: Vec2[] = [];
     const targetBodies =
-      activeTargetEntityIds.length > 0
-        ? scene.bodies.filter((b) => activeTargetEntityIds.includes(b.entityId))
+      selectedBodiesList.length > 0
+        ? selectedBodiesList
         : primaryBody
           ? [primaryBody]
           : [];
@@ -983,9 +1141,129 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     activeMode,
     toScreen,
     view.k,
-    activeTargetEntityIds,
-    scene.bodies,
+    referenceFrame3D,
+    selectedBodiesList,
     primaryBody,
+    width,
+    height,
+  ]);
+
+  // Vão Livre em tempo real ao longo do eixo ativo (para o HUD Consolidado FLUX Linha 1)
+  const liveClearanceGapMm = useMemo<number | null>(() => {
+    if (
+      !activeAxis ||
+      (activeAxis !== "x" && activeAxis !== "y" && activeAxis !== "z") ||
+      selectedBodiesList.length === 0
+    ) {
+      return null;
+    }
+    const movingIds = new Set(selectedBodiesList.map((b) => b.bodyId));
+    const others = scene.bodies.filter((b) => !movingIds.has(b.bodyId));
+    if (others.length === 0) {
+      if (activeAxis === "z") {
+        let minZ = Infinity;
+        for (const mb of selectedBodiesList) {
+          if (mb.bbox3D.minZ < minZ) minZ = mb.bbox3D.minZ;
+        }
+        return Number.isFinite(minZ) ? Math.max(0, Number(minZ.toFixed(1))) : null;
+      }
+      return null;
+    }
+
+    let mMin = Infinity;
+    let mMax = -Infinity;
+    for (const mb of selectedBodiesList) {
+      const lo =
+        activeAxis === "x"
+          ? mb.bbox3D.minX
+          : activeAxis === "y"
+            ? mb.bbox3D.minY
+            : mb.bbox3D.minZ;
+      const hi =
+        activeAxis === "x"
+          ? mb.bbox3D.maxX
+          : activeAxis === "y"
+            ? mb.bbox3D.maxY
+            : mb.bbox3D.maxZ;
+      if (lo < mMin) mMin = lo;
+      if (hi > mMax) mMax = hi;
+    }
+
+    let nearestGap = Infinity;
+    for (const ob of others) {
+      const oLo =
+        activeAxis === "x"
+          ? ob.bbox3D.minX
+          : activeAxis === "y"
+            ? ob.bbox3D.minY
+            : ob.bbox3D.minZ;
+      const oHi =
+        activeAxis === "x"
+          ? ob.bbox3D.maxX
+          : activeAxis === "y"
+            ? ob.bbox3D.maxY
+            : ob.bbox3D.maxZ;
+      const gap =
+        oLo >= mMax ? oLo - mMax : mMin >= oHi ? mMin - oHi : 0;
+      if (gap < nearestGap) nearestGap = gap;
+    }
+    return Number.isFinite(nearestGap) ? Number(nearestGap.toFixed(1)) : null;
+  }, [activeAxis, selectedBodiesList, scene.bodies]);
+
+  // Gerenciador de Contexto de Interação "FLUX" (4 Níveis Anti-Colisão)
+  const fluxState = useMemo(() => {
+    const baseLabel = activeBaseSnapEval?.snapped ? activeBaseSnapEval.hudBadgeLabel : null;
+    const contactLabel = activeContactSnap?.snapBadgeLabel
+      ? `🎯 ${activeContactSnap.snapBadgeLabel}`
+      : snappedPivotLabel
+        ? `🎯 ${snappedPivotLabel}`
+        : null;
+    const combinedSnapLabel = baseLabel || contactLabel;
+
+    const anchorScreen =
+      activeAxis === "face_normal" && primaryFace
+        ? toScreen(primaryFace.centroid)
+        : gizmoScreen?.origin ?? null;
+
+    return resolveFluxViewportVisibility3D({
+      activeAxis,
+      directTool,
+      selectionKind3D,
+      hasActiveSnap: Boolean(
+        activeBaseSnapEval?.snapped ||
+          activeContactSnap?.hasContactSnap ||
+          activeContactSnap?.hasAlignmentSnap ||
+          (activeAxis === "pivot" && snappedPivotLabel),
+      ),
+      snapSummaryLabel: combinedSnapLabel,
+      clearanceGapMm: liveClearanceGapMm,
+      copyMode: copyOnTransform,
+      dragDeltaValue:
+        activeAxis === "rot_x" || activeAxis === "rot_y" || activeAxis === "rot_z"
+          ? (rotationSnapState?.snapResult.angleDeg ?? dragDeltaMm)
+          : dragDeltaMm,
+      elevationZMm: primaryBody?.elevationZ ?? 0,
+      selectedBodyCount: selectedBodiesList.length,
+      gizmoOriginScreen: anchorScreen,
+      viewportWidth: width,
+      viewportHeight: height,
+    });
+  }, [
+    activeAxis,
+    directTool,
+    selectionKind3D,
+    activeBaseSnapEval,
+    activeContactSnap,
+    snappedPivotLabel,
+    liveClearanceGapMm,
+    copyOnTransform,
+    rotationSnapState,
+    dragDeltaMm,
+    primaryBody?.elevationZ,
+    selectedBodiesList.length,
+    primaryFace,
+    toScreen,
+    gizmoScreen?.origin,
     width,
     height,
   ]);
@@ -1497,6 +1775,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               faceT,
               parsed,
               primaryFace?.normal ?? null,
+              referenceFrame3D,
             ),
           resolvedIds,
         );
@@ -1506,14 +1785,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         const rotAxisKey =
           subTarget === "rx" ? "rot_x" : subTarget === "ry" ? "rot_y" : "rot_z";
         if (lastCompletedDrag && lastCompletedDrag.axis === rotAxisKey) {
-          const res = applyDirectTransform3DToEntities(
+          const startScene = buildDirectTopology3DScene(
+            lastCompletedDrag.startEntities,
+            sheetThickness,
+          );
+          const res = applyMultiBodyRigidTransform3D(
             lastCompletedDrag.startEntities,
             lastCompletedDrag.targetIds,
+            startScene,
             {
               rxDeg: subTarget === "rx" ? parsed : 0,
               ryDeg: subTarget === "ry" ? parsed : 0,
               rzDeg: subTarget === "rz" ? parsed : 0,
             },
+            lastCompletedDrag.startPoint3D,
             lastCompletedDrag.copyMode,
             lastCompletedDrag.copyIdMap,
           );
@@ -1523,14 +1808,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           );
         } else {
           onCommitEntities((prev) => {
-            const res = applyDirectTransform3DToEntities(
+            const curScene = buildDirectTopology3DScene(prev, sheetThickness);
+            const res = applyMultiBodyRigidTransform3D(
               prev,
               resolvedIds,
+              curScene,
               {
                 rxDeg: subTarget === "rx" ? parsed : 0,
                 ryDeg: subTarget === "ry" ? parsed : 0,
                 rzDeg: subTarget === "rz" ? parsed : 0,
               },
+              selectionCenter3D,
               Boolean(copyMode),
             );
             return res.updatedEntities;
@@ -1545,18 +1833,39 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       }
     } else if (param === "moveX" || param === "moveY" || param === "moveZ") {
       const axisKey = param === "moveX" ? "x" : param === "moveY" ? "y" : "z";
-      // Se veio de um arraste (ou Copy+Drag) recém-concluído, posiciona na distância EXATA a partir da peça de origem!
-      if (lastCompletedDrag && lastCompletedDrag.axis === axisKey) {
-        const deltaObj =
-          axisKey === "x"
-            ? { dx: parsed }
+      const localAxes =
+        referenceFrame3D === "ocs" && primaryBody
+          ? getBodyLocalAxesInWCS(primaryBody.rotation3D)
+          : null;
+      const axVec =
+        localAxes
+          ? axisKey === "x"
+            ? localAxes.axisX
             : axisKey === "y"
-              ? { dy: parsed }
-              : { dz: parsed };
-        const res = applyDirectTransform3DToEntities(
+              ? localAxes.axisY
+              : localAxes.axisZ
+          : axisKey === "x"
+            ? { x: 1, y: 0, z: 0 }
+            : axisKey === "y"
+              ? { x: 0, y: 1, z: 0 }
+              : { x: 0, y: 0, z: 1 };
+      const deltaObj = {
+        dx: Number((axVec.x * parsed).toFixed(3)),
+        dy: Number((axVec.y * parsed).toFixed(3)),
+        dz: Number((axVec.z * parsed).toFixed(3)),
+      };
+
+      if (lastCompletedDrag && lastCompletedDrag.axis === axisKey) {
+        const startScene = buildDirectTopology3DScene(
+          lastCompletedDrag.startEntities,
+          sheetThickness,
+        );
+        const res = applyMultiBodyRigidTransform3D(
           lastCompletedDrag.startEntities,
           lastCompletedDrag.targetIds,
+          startScene,
           deltaObj,
+          lastCompletedDrag.startPoint3D,
           lastCompletedDrag.copyMode,
           lastCompletedDrag.copyIdMap,
         );
@@ -1572,9 +1881,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 deltaMm: parsed,
                 activeResultIds: res.activeIds,
                 endPoint3D: {
-                  x: prev.startPoint3D.x + (axisKey === "x" ? parsed : 0),
-                  y: prev.startPoint3D.y + (axisKey === "y" ? parsed : 0),
-                  z: prev.startPoint3D.z + (axisKey === "z" ? parsed : 0),
+                  x: prev.startPoint3D.x + deltaObj.dx,
+                  y: prev.startPoint3D.y + deltaObj.dy,
+                  z: prev.startPoint3D.z + deltaObj.dz,
                 },
               }
             : null,
@@ -1582,16 +1891,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       } else {
         let finalActiveIds = resolvedIds;
         onCommitEntities((prev) => {
-          const deltaObj =
-            axisKey === "x"
-              ? { dx: parsed }
-              : axisKey === "y"
-                 ? { dy: parsed }
-                 : { dz: parsed };
-          const res = applyDirectTransform3DToEntities(
+          const curScene = buildDirectTopology3DScene(prev, sheetThickness);
+          const res = applyMultiBodyRigidTransform3D(
             prev,
             resolvedIds,
+            curScene,
             deltaObj,
+            selectionCenter3D,
             Boolean(copyMode),
           );
           finalActiveIds = res.activeIds;
@@ -1611,7 +1917,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             prev,
             resolvedIds,
             parsed,
-            subSel.activePivot3D ?? primaryBody?.pivot3D ?? null,
+            selectionCenter3D ?? subSel.activePivot3D ?? primaryBody?.pivot3D ?? null,
           ),
         resolvedIds,
       );
@@ -1628,13 +1934,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     selectedVerticalEdgeIndices,
     selectedBevelKeys,
     booleanMode,
-    shellOpenCapsMode,
     resolvedShellOpenCaps,
     selectedSideFacesCount,
     offsetFaceTarget,
     miterEndTarget,
     miterAxis,
     subSel.activePivot3D,
+    selectionCenter3D,
+    referenceFrame3D,
+    sheetThickness,
     lastCompletedDrag,
     setSubSel,
   ]);
@@ -2380,6 +2688,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     booleanMode,
     openFloatingNumpad,
     primaryBody,
+    selectedBodiesList,
     primaryFace,
     primaryEdge,
     primaryVertex,
@@ -2400,6 +2709,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     resolvedShellOpenCaps,
     selectedSideFacesCount,
     offsetFaceTarget,
+    referenceFrame3D,
+    triggerEcholocationWavePulse,
   });
 
   latestDragContextRef.current = {
@@ -2413,6 +2724,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     booleanMode,
     openFloatingNumpad,
     primaryBody,
+    selectedBodiesList,
     primaryFace,
     primaryEdge,
     primaryVertex,
@@ -2433,6 +2745,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     resolvedShellOpenCaps,
     selectedSideFacesCount,
     offsetFaceTarget,
+    referenceFrame3D,
+    triggerEcholocationWavePulse,
   };
 
   const handleAxisPointerDown = (
@@ -2441,6 +2755,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     uy: number,
     pixelsPerMm: number,
     ev: React.PointerEvent,
+    axisVec3D?: Vec3Mm,
   ) => {
     ev.stopPropagation();
     ev.preventDefault();
@@ -2513,6 +2828,30 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       setRotationSnapState(null);
     }
 
+    const startBodies =
+      selectedBodiesList.length > 0
+        ? selectedBodiesList
+        : primaryBody
+          ? [primaryBody]
+          : [];
+
+    // Inicializa estado de histerese do Snap Base Z=0 no início do arraste
+    const initEntitiesById = new Map(entities.map((e) => [e.id, e]));
+    const initBaseSnap = evaluateBaseSurfaceSnap3D(
+      startBodies,
+      0,
+      false,
+      0,
+      initEntitiesById,
+    );
+    baseSnapLatchedRef.current = initBaseSnap.snapped;
+    echolocationStateRef.current = {
+      ...echolocationStateRef.current,
+      isInBaseContact: initBaseSnap.snapped,
+      armed: !initBaseSnap.snapped,
+    };
+    setActiveBaseSnapEval(null);
+
     dragSessionRef.current = {
       axis,
       pointerId: ev.pointerId,
@@ -2520,6 +2859,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       startClientY: ev.clientY,
       screenDirX: ux,
       screenDirY: uy,
+      axisVec3D,
       pixelsPerMm: Math.max(0.08, pixelsPerMm),
       totalDeltaMm: 0,
       lastAppliedDeltaMm: 0,
@@ -2532,6 +2872,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       compassRadiusPx,
       startEntities: entities,
       startBody: primaryBody,
+      startBodies,
       startFace: primaryFace,
       startEdge: primaryEdge,
       startVertex: primaryVertex,
@@ -2567,22 +2908,38 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       const localY = rect ? ev.clientY - rect.top : ev.clientY;
 
       if (session.axis === "pivot") {
-        const bodyForPivot = session.startBody ?? ctx.primaryBody;
-        if (bodyForPivot && bodyForPivot.snapCandidates.length > 0) {
-          let closestCand = bodyForPivot.snapCandidates[0];
-          let closestDistPx = Infinity;
-          for (const cand of bodyForPivot.snapCandidates) {
-            const sp = ctx.toScreen(cand.point3D);
-            const d = Math.hypot(localX - sp.x, localY - sp.y);
-            if (d < closestDistPx) {
-              closestDistPx = d;
-              closestCand = cand;
-            }
+        const allCands = (session.startBodies.length > 0
+          ? session.startBodies
+          : session.startBody
+            ? [session.startBody]
+            : []
+        ).flatMap((b) => b.snapCandidates);
+        let closestCand = allCands[0];
+        let closestDistPx = Infinity;
+        for (const cand of allCands) {
+          const sp = ctx.toScreen(cand.point3D);
+          const d = Math.hypot(localX - sp.x, localY - sp.y);
+          if (d < closestDistPx) {
+            closestDistPx = d;
+            closestCand = cand;
           }
-          if (closestDistPx < 48 && closestCand) {
-            ctx.setSubSel((prev) => ({ ...prev, activePivot3D: closestCand.point3D }));
-            setSnappedPivotLabel(closestCand.label);
-          }
+        }
+        if (closestDistPx < 30 && closestCand) {
+          setMultiPivotMode("snap_point");
+          ctx.setSubSel((prev) => ({ ...prev, activePivot3D: closestCand.point3D }));
+          setSnappedPivotLabel(closestCand.label);
+        } else if (session.startCenter3D) {
+          const freePivot: Vec3Mm = {
+            x: Number((session.startCenter3D.x + dxPx / session.pixelsPerMm).toFixed(2)),
+            y: Number((session.startCenter3D.y - dyPx / session.pixelsPerMm).toFixed(2)),
+            z: session.startCenter3D.z,
+          };
+          setMultiPivotMode("custom_draggable");
+          setCustomPivot3D(freePivot);
+          ctx.setSubSel((prev) => ({ ...prev, activePivot3D: freePivot }));
+          setSnappedPivotLabel(
+            `Pivô (${freePivot.x.toFixed(0)}, ${freePivot.y.toFixed(0)}, ${freePivot.z.toFixed(0)})`,
+          );
         }
         return;
       }
@@ -2659,14 +3016,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           session.totalDeltaMm = deltaDeg;
           setDragDeltaMm(deltaDeg);
 
-          const res = applyDirectTransform3DToEntities(
+          const res = applyMultiBodyRigidTransform3D(
             session.startEntities,
             session.targetIds,
+            ctx.scene,
             {
               rxDeg: session.axis === "rot_x" ? deltaDeg : 0,
               ryDeg: session.axis === "rot_y" ? deltaDeg : 0,
               rzDeg: session.axis === "rot_z" ? deltaDeg : 0,
             },
+            session.startCenter3D ?? null,
             ctx.copyOnTransform,
             session.copyIdMap,
           );
@@ -2682,9 +3041,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         let effDelta: Vec3Mm = { x: rawDeltaX, y: rawDeltaY, z: 0 };
 
         const refBody = session.startBody ?? ctx.primaryBody;
+        const movingSet = new Set(session.targetIds);
         if (refBody) {
           const otherBodies = ctx.scene.bodies.filter(
-            (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
+            (b) => !movingSet.has(b.entityId) && !session.copyIdMap.has(b.entityId),
           );
           const snapRes = resolveContactAndAlignmentSnaps3D(
             refBody,
@@ -2724,16 +3084,42 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           }
         }
 
+        // Verifica deslize horizontal mantendo contato com Z=0 (Edge-Triggered: NÃO re-dispara ecolocalização!)
+        if (session.startBodies.length > 0) {
+          const entById = new Map(session.startEntities.map((e) => [e.id, e]));
+          const baseEvalXY = evaluateBaseSurfaceSnap3D(
+            session.startBodies,
+            0,
+            baseSnapLatchedRef.current,
+            0,
+            entById,
+            { dx: effDelta.x, dy: effDelta.y },
+          );
+          const echoStep = stepBaseEcholocationState3D(
+            echolocationStateRef.current,
+            baseEvalXY,
+            performance.now(),
+            0,
+          );
+          echolocationStateRef.current = echoStep.nextState;
+          if (echoStep.triggeredNewPulse && echoStep.nextState.activePulse) {
+            ctx.triggerEcholocationWavePulse(echoStep.nextState.activePulse);
+          }
+          setActiveBaseSnapEval(baseEvalXY.snapped ? baseEvalXY : null);
+        }
+
         if (effDelta.x !== session.lastAppliedDeltaMm || effDelta.y !== session.totalDeltaMm) {
           session.lastAppliedDeltaMm = effDelta.x;
           session.totalDeltaMm = effDelta.y;
           setDragDeltaMm(Math.round(Math.hypot(effDelta.x, effDelta.y)));
 
           if (ctx.onPreviewEntities || ctx.onCommitEntities) {
-            const res = applyDirectTransform3DToEntities(
+            const res = applyMultiBodyRigidTransform3D(
               session.startEntities,
               session.targetIds,
+              ctx.scene,
               { dx: effDelta.x, dy: effDelta.y },
+              session.startCenter3D ?? null,
               ctx.copyOnTransform,
               session.copyIdMap,
             );
@@ -2763,6 +3149,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       const rawMm = projectedPx / session.pixelsPerMm;
       let currentDeltaMm = Math.round(rawMm);
 
+      // Vetor 3D real do eixo ativo (WCS padrão ou OCS local quando `📦 Local` está selecionado!)
+      const activeAxisVec3D: Vec3Mm =
+        session.axisVec3D ??
+        (session.axis === "x"
+          ? { x: 1, y: 0, z: 0 }
+          : session.axis === "y"
+            ? { x: 0, y: 1, z: 0 }
+            : { x: 0, y: 0, z: 1 });
+      const isWorldAlignedAxis =
+        (session.axis === "x" && Math.abs(activeAxisVec3D.x - 1) < 1e-3) ||
+        (session.axis === "y" && Math.abs(activeAxisVec3D.y - 1) < 1e-3) ||
+        (session.axis === "z" && Math.abs(activeAxisVec3D.z - 1) < 1e-3);
+
       if (session.axis === "face_normal") {
         const refFace = session.startFace ?? ctx.primaryFace;
         if (refFace) {
@@ -2791,14 +3190,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             setActiveContactSnap(null);
           }
         }
-      } else if (session.axis === "x" || session.axis === "y") {
+      } else if ((session.axis === "x" || session.axis === "y") && isWorldAlignedAxis) {
         const refBody = session.startBody ?? ctx.primaryBody;
+        const movingSet = new Set(session.targetIds);
         if (refBody) {
           const otherBodies = ctx.scene.bodies.filter(
-            (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
+            (b) => !movingSet.has(b.entityId) && !session.copyIdMap.has(b.entityId),
           );
           const startPivot = session.startCenter3D ?? refBody.pivot3D;
-          // Snap Concêntrico ao Centro Geométrico (⌖) no eixo X ou Y
           let snappedToCentroid = false;
           for (const ob of otherBodies) {
             if (
@@ -2821,6 +3220,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             }
           }
           if (!snappedToCentroid) {
+            setSnappedPivotLabel(null);
             const rawVec: Vec3Mm = {
               x: session.axis === "x" ? currentDeltaMm : 0,
               y: session.axis === "y" ? currentDeltaMm : 0,
@@ -2845,30 +3245,70 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             }
           }
         }
-      } else if (session.axis === "z") {
-        // Snap 3D Completo no Eixo Z (Base-Topo, Topo-Base, Topo-Topo, Base-Base, Centro-Z)
-        const refBody = session.startBody ?? ctx.primaryBody;
-        if (refBody) {
-          const otherBodies = ctx.scene.bodies.filter(
-            (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
+      } else if (
+        session.axis === "z" ||
+        Math.abs(activeAxisVec3D.z) > 0.15
+      ) {
+        // 1. Snap Magnético de Superfície Base (Z = 0.00 mm) com Histerese (3.5mm / 5.5mm) + Ecolocalização Azul Edge-Triggered!
+        const candidateDz = activeAxisVec3D.z * currentDeltaMm;
+        const candidateDx = activeAxisVec3D.x * currentDeltaMm;
+        const candidateDy = activeAxisVec3D.y * currentDeltaMm;
+        const entById = new Map(session.startEntities.map((e) => [e.id, e]));
+        const baseSnap = evaluateBaseSurfaceSnap3D(
+          session.startBodies,
+          candidateDz,
+          baseSnapLatchedRef.current,
+          0,
+          entById,
+          { dx: candidateDx, dy: candidateDy },
+        );
+        baseSnapLatchedRef.current = baseSnap.latched;
+
+        const echoStep = stepBaseEcholocationState3D(
+          echolocationStateRef.current,
+          baseSnap,
+          performance.now(),
+          0,
+        );
+        echolocationStateRef.current = echoStep.nextState;
+        if (echoStep.triggeredNewPulse && echoStep.nextState.activePulse) {
+          triggerHaptic("selection");
+          ctx.triggerEcholocationWavePulse(echoStep.nextState.activePulse);
+        }
+
+        if (baseSnap.snapped && Math.abs(activeAxisVec3D.z) > 0.5) {
+          currentDeltaMm = Number(
+            (baseSnap.snappedDeltaZMm / activeAxisVec3D.z).toFixed(2),
           );
-          const rawVecZ: Vec3Mm = { x: 0, y: 0, z: currentDeltaMm };
-          const snapResZ = resolveContactAndAlignmentSnaps3D(
-            refBody,
-            otherBodies,
-            rawVecZ,
-            session.pixelsPerMm,
-            6.5,
-            session.startCenter3D ?? ctx.subSel.activePivot3D,
-          );
-          if (snapResZ.hasContactSnap || snapResZ.hasAlignmentSnap) {
-            currentDeltaMm = Math.round(snapResZ.snappedDelta.z * 100) / 100;
-            setActiveContactSnap(snapResZ);
+          setActiveBaseSnapEval(baseSnap);
+          setActiveContactSnap(null);
+        } else {
+          setActiveBaseSnapEval(null);
+          // 2. Snap 3D entre corpos no Eixo Z (Base-Topo, Topo-Base, Topo-Topo, Base-Base)
+          const refBody = session.startBody ?? ctx.primaryBody;
+          const movingSet = new Set(session.targetIds);
+          if (refBody && isWorldAlignedAxis) {
+            const otherBodies = ctx.scene.bodies.filter(
+              (b) => !movingSet.has(b.entityId) && !session.copyIdMap.has(b.entityId),
+            );
+            const rawVecZ: Vec3Mm = { x: 0, y: 0, z: currentDeltaMm };
+            const snapResZ = resolveContactAndAlignmentSnaps3D(
+              refBody,
+              otherBodies,
+              rawVecZ,
+              session.pixelsPerMm,
+              6.5,
+              session.startCenter3D ?? ctx.subSel.activePivot3D,
+            );
+            if (snapResZ.hasContactSnap || snapResZ.hasAlignmentSnap) {
+              currentDeltaMm = Math.round(snapResZ.snappedDelta.z * 100) / 100;
+              setActiveContactSnap(snapResZ);
+            } else {
+              setActiveContactSnap(null);
+            }
           } else {
             setActiveContactSnap(null);
           }
-        } else {
-          setActiveContactSnap(null);
         }
       }
 
@@ -2913,7 +3353,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             );
             applyLivePreview(nextEntities, session.targetIds);
           } else if (refFace && refFace.role === "inner_side") {
-            // Arraste nas faces internas do furo/cavidade do tubo -> fecha o furo até cicatrizar (heal)
             const inwardMm = Math.max(0, Math.abs(currentDeltaMm));
             const nextEntities = applyDirectOffsetFace3DToEntities(
               session.startEntities,
@@ -2928,6 +3367,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.targetIds,
               "bottom",
               currentDeltaMm,
+              refFace.normal,
+              "ocs",
             );
             applyLivePreview(nextEntities, session.targetIds);
           } else if (refFace && (refFace.role === "top" || refFace.role === "miter")) {
@@ -2942,17 +3383,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.activeResultIds = res.activeIds;
               applyLivePreview(res.updatedEntities, res.activeIds);
             } else {
-              const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-              const nextEntities = applyDirectExtrudeToEntities(
+              const nextEntities = applyDirectOffsetFace3DToEntities(
                 session.startEntities,
                 session.targetIds,
-                nextH,
-                ctx.booleanMode,
+                "top",
+                currentDeltaMm,
+                refFace.normal,
+                "ocs",
               );
               applyLivePreview(nextEntities, session.targetIds);
             }
           } else if (ctx.selectedSideFacesCount >= 2 || ctx.offsetFaceTarget === "sides") {
-            // Quando 2+ faces laterais externas estão selecionadas (ou modo 4 Laterais), expande todas as 4 simultaneamente (Sapata)
             const nextEntities = applyDirectOffsetFace3DToEntities(
               session.startEntities,
               session.targetIds,
@@ -3050,17 +3491,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             applyLivePreview(nextEntities, session.targetIds);
           }
         } else if (session.axis === "x" || session.axis === "y" || session.axis === "z") {
-          const deltaObj =
-            session.axis === "x"
-              ? { dx: currentDeltaMm }
-              : session.axis === "y"
-                ? { dy: currentDeltaMm }
-                : { dz: currentDeltaMm };
+          const deltaObj = {
+            dx: Number((activeAxisVec3D.x * currentDeltaMm).toFixed(3)),
+            dy: Number((activeAxisVec3D.y * currentDeltaMm).toFixed(3)),
+            dz: Number((activeAxisVec3D.z * currentDeltaMm).toFixed(3)),
+          };
           if (ctx.onPreviewEntities || ctx.onCommitEntities) {
-            const res = applyDirectTransform3DToEntities(
+            const res = applyMultiBodyRigidTransform3D(
               session.startEntities,
               session.targetIds,
+              ctx.scene,
               deltaObj,
+              session.startCenter3D ?? null,
               ctx.copyOnTransform,
               session.copyIdMap,
             );
@@ -3072,15 +3514,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 bodyIds: res.activeIds.map((id) => `body_${id}`),
                 activePivot3D: session.startCenter3D
                   ? {
-                      x:
-                        session.startCenter3D.x +
-                        (session.axis === "x" ? currentDeltaMm : 0),
-                      y:
-                        session.startCenter3D.y +
-                        (session.axis === "y" ? currentDeltaMm : 0),
-                      z:
-                        session.startCenter3D.z +
-                        (session.axis === "z" ? currentDeltaMm : 0),
+                      x: session.startCenter3D.x + deltaObj.dx,
+                      y: session.startCenter3D.y + deltaObj.dy,
+                      z: session.startCenter3D.z + deltaObj.dz,
                     }
                   : null,
               }));
@@ -3088,11 +3524,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           } else if (session.axis === "z" && ctx.onLiveElevateSelection && ctx.selected[0]) {
             ctx.onLiveElevateSelection(session.initialValue + currentDeltaMm);
           } else if (ctx.onLiveTranslateSelectionXY) {
-            ctx.onLiveTranslateSelectionXY(
-              session.axis === "x" ? currentDeltaMm : 0,
-              session.axis === "y" ? currentDeltaMm : 0,
-              session.targetIds,
-            );
+            ctx.onLiveTranslateSelectionXY(deltaObj.dx, deltaObj.dy, session.targetIds);
           }
         }
       }
@@ -3103,6 +3535,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       if (!session) return;
       if (session.pointerId !== undefined && ev.pointerId !== session.pointerId) return;
       setActiveContactSnap(null);
+      setActiveBaseSnapEval(null);
       ev.stopPropagation();
       if (ev.cancelable) ev.preventDefault();
 
@@ -3531,7 +3964,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             ev.currentTarget.dataset.isDragging = "0";
           }}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md"
+          className={cn(
+            "pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md transition-opacity duration-150",
+            fluxState.isManipulating && "opacity-0 pointer-events-none",
+          )}
         >
           <span className="shrink-0 font-mono text-[9.5px] font-bold text-cyan-400">
             SEL 3D:
@@ -3557,16 +3993,23 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   triggerHaptic("selection");
                   const targetB = primaryBody ?? scene.bodies[0] ?? null;
                   if (sc.id === "body" && targetB) {
+                    const expandedIds = expandBodyIdsWithAssemblyGroup3D(
+                      subSel.bodyIds.length > 0 ? subSel.bodyIds : [targetB.bodyId],
+                      scene,
+                      entities,
+                    ).bodyIds;
                     setSubSel({
                       faceIds: [],
                       edgeIds: [],
                       vertexIds: [],
-                      bodyIds: [targetB.bodyId],
+                      bodyIds: expandedIds,
                       selectionScope: "body",
                       activePivot3D: targetB.pivot3D,
                       activeHingeEdgeId: null,
                     });
-                    onSelectEntities?.([targetB.entityId]);
+                    onSelectEntities?.(
+                      expandedIds.map((bId) => bId.replace(/^body_/, "")),
+                    );
                   } else {
                     setSubSel((prev) => ({
                       ...prev,
@@ -3585,6 +4028,156 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               </button>
             );
           })}
+          <span className="mx-0.5 h-3 w-px shrink-0 bg-slate-500/30" />
+          {/* Atalhos Táteis Mobile-First de Multi-Seleção Inteligente */}
+          <button
+            type="button"
+            data-testid="chamfer-3d-multiselect-toggle-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("selection");
+              setMultiSelectAddMode((m) => !m);
+            }}
+            title="Modo Adição Tátil (+ Multi): Toque em vários corpos 3D para acumular ou alternar na seleção sem precisar de Shift"
+            className={cn(
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+              multiSelectAddMode
+                ? isDark
+                  ? "border-sky-400 bg-sky-500/30 text-sky-200"
+                  : "border-sky-600 bg-sky-600 text-white"
+                : isDark
+                  ? "border-slate-700/70 bg-slate-900/70 text-slate-300 hover:border-sky-400 hover:text-white"
+                  : "border-slate-300 bg-slate-100 text-slate-700 hover:border-sky-500 hover:text-slate-900",
+            )}
+          >
+            + Multi
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-marquee-box-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("selection");
+              setMarqueeModeActive((m) => !m);
+              setMarqueeRectState(null);
+            }}
+            title="Seleção em Caixa (⬚ Caixa): Arraste Esq➔Dir para Janela (100% dentro) ou Dir➔Esq para Cruzamento (tocados)"
+            className={cn(
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+              marqueeModeActive
+                ? isDark
+                  ? "border-cyan-400 bg-cyan-500/30 text-cyan-200"
+                  : "border-cyan-600 bg-cyan-600 text-white"
+                : isDark
+                  ? "border-slate-700/70 bg-slate-900/70 text-slate-300 hover:border-cyan-400 hover:text-white"
+                  : "border-slate-300 bg-slate-100 text-slate-700 hover:border-cyan-500 hover:text-slate-900",
+            )}
+          >
+            ⬚ Caixa
+          </button>
+          {scene.bodies.length >= 2 && (
+            <button
+              type="button"
+              data-testid="chamfer-3d-same-profile-btn"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                triggerHaptic("action");
+                const refBody = primaryBody ?? scene.bodies[0]!;
+                const rawSameIds = selectBodiesWithSameProfile3D(
+                  refBody,
+                  scene.bodies,
+                  new Map(entities.map((e) => [e.id, e])),
+                ).map((b) => b.bodyId);
+                const expandedIds = expandBodyIdsWithAssemblyGroup3D(
+                  rawSameIds,
+                  scene,
+                  entities,
+                ).bodyIds;
+                setSubSel({
+                  faceIds: [],
+                  edgeIds: [],
+                  vertexIds: [],
+                  bodyIds: expandedIds,
+                  selectionScope: "body",
+                  activePivot3D: refBody.pivot3D,
+                  activeHingeEdgeId: null,
+                });
+                onSelectEntities?.(expandedIds.map((bId) => bId.replace(/^body_/, "")));
+              }}
+              title="Selecionar automaticamente todos os corpos com a mesma seção transversal e espessura de parede"
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer whitespace-nowrap",
+                isDark
+                  ? "border-sky-500/45 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300"
+                  : "border-sky-600/45 bg-sky-500/15 hover:bg-sky-500/25 text-sky-800",
+              )}
+            >
+              ≈ Mesmo Perfil
+            </button>
+          )}
+          {scene.bodies.length >= 1 && (
+            <button
+              type="button"
+              data-testid="chamfer-3d-select-all-bodies-btn"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                triggerHaptic("selection");
+                const allBodyIds = scene.bodies.map((b) => b.bodyId);
+                setSubSel({
+                  faceIds: [],
+                  edgeIds: [],
+                  vertexIds: [],
+                  bodyIds: allBodyIds,
+                  selectionScope: "body",
+                  activePivot3D: scene.bodies[0]?.pivot3D ?? { x: 0, y: 0, z: 0 },
+                  activeHingeEdgeId: null,
+                });
+                onSelectEntities?.(scene.bodies.map((b) => b.entityId));
+              }}
+              title="Selecionar todos os corpos 3D da cena"
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer whitespace-nowrap",
+                isDark
+                  ? "border-slate-700/70 bg-slate-900/70 hover:border-cyan-400 text-slate-200"
+                  : "border-slate-300 bg-slate-100 hover:border-cyan-600 text-slate-800",
+              )}
+            >
+              ☑️ Tudo
+            </button>
+          )}
+          {(subSel.bodyIds.length > 0 ||
+            subSel.faceIds.length > 0 ||
+            subSel.edgeIds.length > 0 ||
+            vertexIds.length > 0) && (
+            <button
+              type="button"
+              data-testid="chamfer-3d-clear-selection-btn"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                triggerHaptic("tap");
+                setLastCompletedDrag(null);
+                setSubSel({
+                  faceIds: [],
+                  edgeIds: [],
+                  vertexIds: [],
+                  bodyIds: [],
+                  selectionScope: "auto",
+                  activePivot3D: null,
+                  activeHingeEdgeId: null,
+                });
+                onSelectEntities?.([]);
+              }}
+              title="Limpar seleção ativa"
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer whitespace-nowrap",
+                isDark
+                  ? "border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/25 text-rose-300"
+                  : "border-rose-500/45 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700",
+              )}
+            >
+              ✕ Limpar
+            </button>
+          )}
           <span className="mx-0.5 h-3 w-px shrink-0 bg-slate-500/30" />
           <button
             type="button"
@@ -3715,6 +4308,266 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               Vistas 2D
             </button>
           )}
+        </div>
+      )}
+
+      {/* =====================================================================
+          0A-MULTI. BARRA CONTEXTUAL DE MULTI-SELEÇÃO DE CORPOS E MONTAGEM LÓGICA
+          ===================================================================== */}
+      {is3DEnvironment &&
+        directTool === "select_3d" &&
+        !isLoftActive &&
+        selectedBodiesList.length >= 2 &&
+        !fluxState.isManipulating && (() => {
+          const selectedEntIds = selectedBodiesList.map((b) => b.entityId);
+          const groupIds = new Set(
+            selectedBodiesList
+              .map((b) => {
+                const ent = entities.find((e) => e.id === b.entityId);
+                return ent ? getEntityAssemblyGroupId(ent) : null;
+              })
+              .filter(Boolean),
+          );
+          const hasSharedAssemblyGroup =
+            groupIds.size === 1 &&
+            selectedBodiesList.every((b) => {
+              const ent = entities.find((e) => e.id === b.entityId);
+              return Boolean(ent && getEntityAssemblyGroupId(ent));
+            });
+
+          return (
+            <div
+              data-testid="chamfer-3d-multiselect-action-bar"
+              style={{
+                ...themeSurfaceStyle,
+                top: activeMode === "3d" ? "48px" : "72px",
+                maxWidth: "calc(100% - 28px)",
+              }}
+              onPointerDown={(ev) => ev.stopPropagation()}
+              onClick={(ev) => ev.stopPropagation()}
+              className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x rounded-full border border-sky-500/55 px-3 py-0.5 shadow-lg backdrop-blur-md"
+            >
+              <span className="shrink-0 font-mono text-[10px] font-extrabold text-sky-400 whitespace-nowrap">
+                {selectedBodiesList.length} CORPOS
+              </span>
+              <span className="h-3 w-px shrink-0 bg-slate-500/35" />
+              <button
+                type="button"
+                data-testid="chamfer-3d-multiselect-move-btn"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setCopyOnTransform(false);
+                  setDirectTool("transform_3d");
+                }}
+                className={pillBtnClass(false)}
+              >
+                Mover / Girar
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-multiselect-copy-btn"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setCopyOnTransform(true);
+                  setDirectTool("transform_3d");
+                }}
+                className={pillBtnClass(copyOnTransform)}
+              >
+                Copiar Conjunto
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-multiselect-group-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  if (hasSharedAssemblyGroup) {
+                    onCommitEntities?.(
+                      (prev) => ungroupAssemblyEntities3D(prev, selectedEntIds).updatedEntities,
+                      selectedEntIds,
+                    );
+                  } else {
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyAssemblyGroupToEntities3D(
+                          prev,
+                          selectedEntIds,
+                          `Subconjunto (${selectedBodiesList.length} peças)`,
+                        ).updatedEntities,
+                      selectedEntIds,
+                    );
+                  }
+                }}
+                title="Agrupar Montagem Lógica (Assembly Group): mantém cada peça individual na Lista de Corte / BOM!"
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+                  hasSharedAssemblyGroup
+                    ? isDark
+                      ? "border-amber-400/70 bg-amber-500/20 text-amber-200"
+                      : "border-amber-600/60 bg-amber-500/15 text-amber-800"
+                    : isDark
+                      ? "border-sky-400/70 bg-sky-500/20 text-sky-200 hover:bg-sky-500/30"
+                      : "border-sky-600/60 bg-sky-500/15 text-sky-800 hover:bg-sky-500/25",
+                )}
+              >
+                {hasSharedAssemblyGroup ? "🔗 Desagrupar" : "🔗 Agrupar"}
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-multiselect-boolean-union-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const primaryId = selectedEntIds[0]!;
+                  onCommitEntities?.((prev) => {
+                    const res = applyDirectBoolean3DBetweenBodies(prev, selectedEntIds, "union");
+                    return res.updatedEntities;
+                  }, [primaryId]);
+                  setSubSel({
+                    faceIds: [],
+                    edgeIds: [],
+                    vertexIds: [],
+                    bodyIds: [`body_${primaryId}`],
+                    selectionScope: "body",
+                    activePivot3D: primaryBody?.pivot3D ?? { x: 0, y: 0, z: 0 },
+                    activeHingeEdgeId: null,
+                  });
+                }}
+                title="União Booleana Real (Boolean Union): funde os sólidos selecionados em 1 único corpo"
+                className={pillBtnClass(false)}
+              >
+                ⊕ Unir
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-multiselect-drop-base-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  let droppedSnap: BaseSurfaceSnapEvaluation3D | null = null;
+                  onCommitEntities?.((prev) => {
+                    const prevScene = buildDirectTopology3DScene(prev, sheetThickness);
+                    const res = applyDropBodiesToBaseZ0(prev, selectedEntIds, prevScene);
+                    droppedSnap = res.snapEval;
+                    return res.updatedEntities;
+                  }, selectedEntIds);
+                  if (droppedSnap) {
+                    const step = stepBaseEcholocationState3D(
+                      {
+                        isInBaseContact: false,
+                        armed: true,
+                        pulseCounter: echolocationStateRef.current.pulseCounter,
+                        activePulse: null,
+                      },
+                      { ...(droppedSnap as BaseSurfaceSnapEvaluation3D), snapped: true },
+                      performance.now(),
+                    );
+                    echolocationStateRef.current = step.nextState;
+                    if (step.triggeredNewPulse && step.nextState.activePulse) {
+                      triggerEcholocationWavePulse(step.nextState.activePulse);
+                    }
+                  }
+                }}
+                title="Pousar conjunto selecionado exatamente sobre o plano Base Z = 0.00 mm"
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold cursor-pointer whitespace-nowrap transition-colors",
+                  isDark
+                    ? "border-cyan-400/60 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200"
+                    : "border-sky-600/60 bg-sky-500/15 hover:bg-sky-500/25 text-sky-800",
+                )}
+              >
+                ⤓ Base
+              </button>
+            </div>
+          );
+        })()}
+
+      {/* =====================================================================
+          0A-MARQUEE. OVERLAY INTERATIVO DE SELEÇÃO EM CAIXA (WINDOW vs CROSSING)
+          ===================================================================== */}
+      {is3DEnvironment && marqueeModeActive && (
+        <div
+          data-testid="chamfer-3d-marquee-overlay"
+          style={{ touchAction: "none" }}
+          onPointerDown={(ev) => {
+            ev.stopPropagation();
+            ev.preventDefault();
+            const rect = rootOverlayRef.current?.getBoundingClientRect();
+            const x = ev.clientX - (rect?.left ?? 0);
+            const y = ev.clientY - (rect?.top ?? 0);
+            setMarqueeRectState({
+              start: { x, y },
+              current: { x, y },
+              additive: multiSelectAddMode || ev.shiftKey,
+            });
+          }}
+          onPointerMove={(ev) => {
+            if (!marqueeRectState) return;
+            ev.stopPropagation();
+            const rect = rootOverlayRef.current?.getBoundingClientRect();
+            const x = ev.clientX - (rect?.left ?? 0);
+            const y = ev.clientY - (rect?.top ?? 0);
+            setMarqueeRectState((prev) =>
+              prev ? { ...prev, current: { x, y } } : null,
+            );
+          }}
+          onPointerUp={(ev) => {
+            if (!marqueeRectState) return;
+            ev.stopPropagation();
+            const res = evaluateMarqueeBoxSelection3D(
+              marqueeRectState.start,
+              marqueeRectState.current,
+              scene.bodies,
+              toScreen,
+            );
+            const expandedHitIds = expandBodyIdsWithAssemblyGroup3D(
+              res.matchedBodyIds,
+              scene,
+              entities,
+            ).bodyIds;
+            const finalBodyIds = marqueeRectState.additive
+              ? Array.from(new Set([...subSel.bodyIds, ...expandedHitIds]))
+              : expandedHitIds;
+            setSubSel({
+              faceIds: [],
+              edgeIds: [],
+              vertexIds: [],
+              bodyIds: finalBodyIds,
+              selectionScope: "body",
+              activePivot3D:
+                scene.bodiesById.get(finalBodyIds[0] ?? "")?.pivot3D ?? null,
+              activeHingeEdgeId: null,
+            });
+            onSelectEntities?.(finalBodyIds.map((bId) => bId.replace(/^body_/, "")));
+            setMarqueeRectState(null);
+            setMarqueeModeActive(false);
+            triggerHaptic("action");
+          }}
+          className="pointer-events-auto absolute inset-0 z-40 cursor-crosshair select-none"
+        >
+          <div className="pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 rounded-full border border-cyan-400/60 bg-slate-950/85 px-3 py-1 font-mono text-[10px] font-bold text-cyan-200 shadow-lg">
+            ⬚ Arraste Esq➔Dir: Janela (100% dentro) · Dir➔Esq: Cruzamento (tocados)
+          </div>
+          {marqueeRectState && (() => {
+            const isWindow = marqueeRectState.current.x >= marqueeRectState.start.x;
+            const left = Math.min(marqueeRectState.start.x, marqueeRectState.current.x);
+            const top = Math.min(marqueeRectState.start.y, marqueeRectState.current.y);
+            const w = Math.max(2, Math.abs(marqueeRectState.current.x - marqueeRectState.start.x));
+            const h = Math.max(2, Math.abs(marqueeRectState.current.y - marqueeRectState.start.y));
+            return (
+              <div
+                data-testid="chamfer-3d-marquee-box-rect"
+                style={{ left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px` }}
+                className={cn(
+                  "pointer-events-none absolute rounded-xs",
+                  isWindow
+                    ? "border-2 border-sky-400 bg-sky-500/15"
+                    : "border-2 border-dashed border-cyan-300 bg-cyan-400/15",
+                )}
+              >
+                <span className="absolute -top-5 left-0 whitespace-nowrap font-mono text-[9.5px] font-bold text-sky-300">
+                  {isWindow ? "Janela (100% Dentro)" : "Cruzamento (Tocados)"}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -3927,36 +4780,40 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           style={{
             ...themeSurfaceStyle,
             top: activeMode === "3d" ? "12px" : "36px",
-            maxWidth: "calc(100% - 28px)",
+            maxWidth: "calc(100% - 24px)",
           }}
-          onPointerDown={(ev) => {
-            ev.stopPropagation();
-            const el = ev.currentTarget;
-            el.dataset.dragStartX = String(ev.clientX);
-            el.dataset.dragStartScroll = String(el.scrollLeft);
-            el.dataset.isDragging = "1";
-          }}
-          onPointerMove={(ev) => {
-            const el = ev.currentTarget;
-            if (el.dataset.isDragging !== "1") return;
-            const dx = ev.clientX - Number(el.dataset.dragStartX || 0);
-            if (Math.abs(dx) > 4) {
-              el.scrollLeft = Number(el.dataset.dragStartScroll || 0) - dx;
-            }
-          }}
-          onPointerUp={(ev) => {
-            ev.currentTarget.dataset.isDragging = "0";
-          }}
-          onPointerCancel={(ev) => {
-            ev.currentTarget.dataset.isDragging = "0";
-          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing rounded-full border px-3 py-1 shadow-lg backdrop-blur-md transition-all"
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] -translate-x-1/2 items-center justify-between gap-1.5 overflow-hidden rounded-full border pl-3 pr-1.5 shadow-lg backdrop-blur-md transition-all"
         >
-          <activePillMeta.icon className="size-3.5 shrink-0 text-cyan-500" />
-          <span className="shrink-0 font-mono text-[11px] font-bold tracking-tight">
-            {activePillMeta.label}
-          </span>
+          <div
+            onPointerDown={(ev) => {
+              ev.stopPropagation();
+              const el = ev.currentTarget;
+              el.dataset.dragStartX = String(ev.clientX);
+              el.dataset.dragStartScroll = String(el.scrollLeft);
+              el.dataset.isDragging = "1";
+            }}
+            onPointerMove={(ev) => {
+              const el = ev.currentTarget;
+              if (el.dataset.isDragging !== "1") return;
+              const dx = ev.clientX - Number(el.dataset.dragStartX || 0);
+              if (Math.abs(dx) > 4) {
+                el.scrollLeft = Number(el.dataset.dragStartScroll || 0) - dx;
+              }
+            }}
+            onPointerUp={(ev) => {
+              ev.currentTarget.dataset.isDragging = "0";
+            }}
+            onPointerCancel={(ev) => {
+              ev.currentTarget.dataset.isDragging = "0";
+            }}
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain py-1 pr-1 cursor-grab active:cursor-grabbing"
+          >
+            <activePillMeta.icon className="size-3.5 shrink-0 text-cyan-500" />
+            <span className="shrink-0 font-mono text-[11px] font-bold tracking-tight whitespace-nowrap">
+              {activePillMeta.label}
+            </span>
 
           {/* Cota / Valor Atual (clicável para abrir o teclado numérico universal) */}
           <button
@@ -4230,6 +5087,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
                 <button
                   type="button"
+                  data-testid="chamfer-3d-shell-frame-toggle"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setReferenceFrame3D((f) => (f === "wcs" ? "ocs" : "wcs"));
+                  }}
+                  title="Alternar Referencial de Face Alvo: 🌐 Global (WCS) vs 📦 Local da Peça (OCS)"
+                  className={pillBtnClass(referenceFrame3D === "ocs")}
+                >
+                  {referenceFrame3D === "wcs" ? "🌐 Global" : "📦 Local"}
+                </button>
+                <button
+                  type="button"
                   data-testid="chamfer-3d-shell-mode-tube"
                   onClick={() => {
                     triggerHaptic("action");
@@ -4238,6 +5107,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       selectedFacesList,
                       "both_ends",
                       shellTargetFaceCap,
+                      referenceFrame3D,
+                      shellBody.rotation3D,
                     );
                     onCommitEntities?.(
                       (prev) =>
@@ -4264,6 +5135,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       selectedFacesList,
                       "top_only",
                       shellTargetFaceCap,
+                      referenceFrame3D,
+                      shellBody.rotation3D,
                     );
                     onCommitEntities?.(
                       (prev) =>
@@ -4296,11 +5169,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       onClick={() => {
                         triggerHaptic("selection");
                         setShellTargetFaceCap(fOpt.id);
-                        const matchingFace = shellBody.faces.find(
-                          (f) =>
-                            f.role !== "inner_side" &&
-                            f.role !== "inner_bottom" &&
-                            resolveFaceShellCapDirection3D(f) === fOpt.id,
+                        const matchingFace = findBodyFaceByReferenceFrame3D(
+                          shellBody,
+                          fOpt.id,
+                          referenceFrame3D,
                         );
                         setSubSel((prev) => ({
                           ...prev,
@@ -4310,6 +5182,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                           matchingFace ? [matchingFace] : [],
                           shellOpenCapsMode,
                           fOpt.id,
+                          referenceFrame3D,
+                          shellBody.rotation3D,
                         );
                         onCommitEntities?.(
                           (prev) =>
@@ -4386,6 +5260,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           {primaryBody && directTool === "offset_face_3d" && (
             <>
               <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                data-testid="chamfer-3d-offset-frame-toggle"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setReferenceFrame3D((f) => (f === "wcs" ? "ocs" : "wcs"));
+                }}
+                title="Alternar Referencial Geométrico: 🌐 Global (WCS) vs 📦 Local da Peça (OCS)"
+                className={pillBtnClass(referenceFrame3D === "ocs")}
+              >
+                {referenceFrame3D === "wcs" ? "🌐 Global" : "📦 Local"}
+              </button>
               {(
                 [
                   { id: "top" as const, label: "Topo (+Z)" },
@@ -4400,6 +5286,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 <button
                   key={t.id}
                   type="button"
+                  data-testid={`chamfer-3d-offset-target-${t.id}`}
                   onClick={() => setOffsetFaceTarget(t.id)}
                   className={pillBtnClass(offsetFaceTarget === t.id)}
                 >
@@ -4429,6 +5316,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                           targetMode,
                           targetMode === "inner_cavity" ? Math.abs(dVal) : dVal,
                           primaryFace?.normal ?? null,
+                          referenceFrame3D,
                         ),
                       activeTargetEntityIds,
                     );
@@ -4523,6 +5411,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
               <button
                 type="button"
+                data-testid="chamfer-3d-transform-copy-toggle"
                 onClick={() => {
                   triggerHaptic("selection");
                   setCopyOnTransform((c) => !c);
@@ -4538,6 +5427,66 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               </button>
               <button
                 type="button"
+                data-testid="chamfer-3d-transform-frame-toggle"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setReferenceFrame3D((f) => (f === "wcs" ? "ocs" : "wcs"));
+                }}
+                title="Alternar Referencial do Gizmo: 🌐 Global (WCS) vs 📦 Local da Peça (OCS)"
+                className={pillBtnClass(referenceFrame3D === "ocs")}
+              >
+                {referenceFrame3D === "wcs" ? "🌐 Global" : "📦 Local"}
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-drop-to-base-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const ids =
+                    activeTargetEntityIds.length > 0
+                      ? activeTargetEntityIds
+                      : [primaryBody.entityId];
+                  let droppedSnap: BaseSurfaceSnapEvaluation3D | null = null;
+                  onCommitEntities?.((prev) => {
+                    const prevScene = buildDirectTopology3DScene(prev, sheetThickness);
+                    const res = applyDropBodiesToBaseZ0(prev, ids, prevScene);
+                    droppedSnap = res.snapEval;
+                    return res.updatedEntities;
+                  }, ids);
+                  if (droppedSnap) {
+                    setActiveBaseSnapEval(droppedSnap);
+                    const step = stepBaseEcholocationState3D(
+                      {
+                        isInBaseContact: false,
+                        armed: true,
+                        pulseCounter: echolocationStateRef.current.pulseCounter,
+                        activePulse: null,
+                      },
+                      {
+                        ...(droppedSnap as BaseSurfaceSnapEvaluation3D),
+                        snapped: true,
+                      },
+                      performance.now(),
+                    );
+                    echolocationStateRef.current = step.nextState;
+                    if (step.triggeredNewPulse && step.nextState.activePulse) {
+                      triggerEcholocationWavePulse(step.nextState.activePulse);
+                    }
+                  }
+                }}
+                title="Pousar peça/conjunto selecionado exatamente na superfície Base Z = 0.00 mm"
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold cursor-pointer whitespace-nowrap transition-colors",
+                  isDark
+                    ? "border-cyan-400/60 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200"
+                    : "border-sky-600/60 bg-sky-500/15 hover:bg-sky-500/25 text-sky-800",
+                )}
+              >
+                ⤓ Base
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-pivot-snap-btn"
                 onClick={() => {
                   triggerHaptic("selection");
                   setIsPickingPivotSnap((p) => !p);
@@ -4546,6 +5495,66 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               >
                 {isPickingPivotSnap ? "Toque Vértice..." : "Pivô Snap"}
               </button>
+              {selectedBodiesList.length >= 2 && (
+                <button
+                  type="button"
+                  data-testid="chamfer-3d-pivot-mode-cycle-btn"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    const modes: MultiSelectionPivotMode3D[] = [
+                      "bbox_center",
+                      "mass_centroid",
+                      "primary_body",
+                      "snap_point",
+                      "custom_draggable",
+                    ];
+                    const nextIdx = (modes.indexOf(multiPivotMode) + 1) % modes.length;
+                    setMultiPivotMode(modes[nextIdx]!);
+                  }}
+                  title="Alternar modo de Pivô do Conjunto (BBox, Centroide de Massa, Corpo Principal, Snap, Livre)"
+                  className={pillBtnClass(multiPivotMode !== "bbox_center")}
+                >
+                  Pivô:{" "}
+                  {multiPivotMode === "bbox_center"
+                    ? "Centro"
+                    : multiPivotMode === "mass_centroid"
+                      ? "Massa"
+                      : multiPivotMode === "primary_body"
+                        ? "Principal"
+                        : multiPivotMode === "snap_point"
+                          ? "Snap"
+                          : "Livre"}
+                </button>
+              )}
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(["x", "y", "z"] as const).map((pl) => (
+                <button
+                  key={pl}
+                  type="button"
+                  data-testid={`chamfer-3d-transform-mirror-${pl}`}
+                  onClick={() => {
+                    triggerHaptic("action");
+                    let nextSel = activeTargetEntityIds;
+                    onCommitEntities?.((prev) => {
+                      const res = applyDirectMirror3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        pl,
+                        copyOnTransform,
+                        selectionCenter3D ?? primaryBody.pivot3D,
+                      );
+                      if (res.activeIds.length > 0) {
+                        nextSel = res.activeIds;
+                      }
+                      return res.updatedEntities;
+                    }, nextSel);
+                  }}
+                  title={`Espelhar no plano ${pl.toUpperCase()}`}
+                  className={pillBtnClass(false)}
+                >
+                  ⇄ {pl.toUpperCase()}
+                </button>
+              ))}
             </>
           )}
 
@@ -5057,119 +6066,125 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </>
           )}
 
-          <button
-            type="button"
-            data-testid="chamfer-3d-active-pill-confirm-btn"
-            onClick={() => {
-              triggerHaptic("action");
-              if (directTool === "array_3d") {
-                if (smartArrayPanelTab === "miter_frame" && smartMiterFrameCalc.valid) {
-                  let createdIds: string[] = [];
-                  onCommitEntities?.(
-                    (prev) => {
-                      const res = generateSmartMiterFrameEntities3D(
-                        prev,
-                        smartArraySourceBody?.entityId ?? null,
-                        smartArraySourceBody,
-                        smartMiterFrameCalc,
-                      );
-                      createdIds = res.createdIds;
-                      return res.updatedEntities;
-                    },
-                    createdIds,
-                  );
-                  if (createdIds.length > 0) {
-                    setSubSel({
-                      faceIds: [],
-                      edgeIds: [],
-                      vertexIds: [],
-                      bodyIds: createdIds.map((id) => `body_${id}`),
-                      selectionScope: "body",
-                      activePivot3D: { x: 0, y: 0, z: 0 },
-                      activeHingeEdgeId: null,
-                    });
-                    onSelectEntities?.(createdIds);
-                  }
-                } else if (
-                  smartArrayPanelTab === "grille_span" &&
-                  smartArraySourceBody &&
-                  smartArrayCalc.valid
-                ) {
-                  let createdIds: string[] = [];
-                  onCommitEntities?.(
-                    (prev) => {
-                      const res = generateSmartGrilleArrayEntities3D(
-                        prev,
-                        smartArraySourceBody.entityId,
-                        smartArraySourceBody,
-                        smartArrayCalc,
-                        scene.bodies,
-                      );
-                      createdIds = res.createdIds;
-                      return res.updatedEntities;
-                    },
-                    createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId],
-                  );
-                  if (createdIds.length > 0) {
-                    setSubSel({
-                      faceIds: [],
-                      edgeIds: [],
-                      vertexIds: [],
-                      bodyIds: createdIds.map((id) => `body_${id}`),
-                      selectionScope: "body",
-                      activePivot3D: { x: 0, y: 0, z: 0 },
-                      activeHingeEdgeId: null,
-                    });
-                    onSelectEntities?.(createdIds);
-                  }
-                }
-              } else if (directTool === "shell_3d") {
-                const shellBody = primaryBody ?? scene.bodies[0] ?? null;
-                if (shellBody) {
-                  const shellTargetIds =
-                    activeTargetEntityIds.length > 0
-                      ? activeTargetEntityIds
-                      : [shellBody.entityId];
-                  const tVal =
-                    shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
-                  onCommitEntities?.(
-                    (prev) =>
-                      applyDirectShell3DToEntities(
-                        prev,
-                        shellTargetIds,
-                        tVal,
-                        resolvedShellOpenCaps,
-                      ),
-                    shellTargetIds,
-                  );
-                }
-              }
-              setDirectTool("select_3d");
-              setNumpadSession(null);
-            }}
-            className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-500 px-2.5 font-mono text-[10px] font-bold text-white shadow-2xs transition-colors cursor-pointer"
-          >
-            <Check className="size-3" />
-            <span>Concluir</span>
-          </button>
+          </div>
 
-          <button
-            type="button"
-            aria-label="Fechar ferramenta 3D"
-            onClick={() => {
-              triggerHaptic("tap");
-              setDirectTool("select_3d");
-              setNumpadSession(null);
-            }}
-            className={cn(
-              "flex size-6 shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer",
-              isDark
-                ? "text-slate-400 hover:bg-slate-800 hover:text-white"
-                : "text-slate-500 hover:bg-slate-200 hover:text-slate-900",
-            )}
-          >
-            <X className="size-3.5" />
-          </button>
+          {/* Ações Primárias Fixas à Direita (Nunca cortadas em nenhuma largura de viewport) */}
+          <div className="flex shrink-0 items-center gap-1 border-l border-slate-500/30 pl-1.5">
+            <button
+              type="button"
+              data-testid="chamfer-3d-active-pill-confirm-btn"
+              onClick={() => {
+                triggerHaptic("action");
+                if (directTool === "array_3d") {
+                  if (smartArrayPanelTab === "miter_frame" && smartMiterFrameCalc.valid) {
+                    let createdIds: string[] = [];
+                    onCommitEntities?.(
+                      (prev) => {
+                        const res = generateSmartMiterFrameEntities3D(
+                          prev,
+                          smartArraySourceBody?.entityId ?? null,
+                          smartArraySourceBody,
+                          smartMiterFrameCalc,
+                        );
+                        createdIds = res.createdIds;
+                        return res.updatedEntities;
+                      },
+                      createdIds,
+                    );
+                    if (createdIds.length > 0) {
+                      setSubSel({
+                        faceIds: [],
+                        edgeIds: [],
+                        vertexIds: [],
+                        bodyIds: createdIds.map((id) => `body_${id}`),
+                        selectionScope: "body",
+                        activePivot3D: { x: 0, y: 0, z: 0 },
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.(createdIds);
+                    }
+                  } else if (
+                    smartArrayPanelTab === "grille_span" &&
+                    smartArraySourceBody &&
+                    smartArrayCalc.valid
+                  ) {
+                    let createdIds: string[] = [];
+                    onCommitEntities?.(
+                      (prev) => {
+                        const res = generateSmartGrilleArrayEntities3D(
+                          prev,
+                          smartArraySourceBody.entityId,
+                          smartArraySourceBody,
+                          smartArrayCalc,
+                          scene.bodies,
+                        );
+                        createdIds = res.createdIds;
+                        return res.updatedEntities;
+                      },
+                      createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId],
+                    );
+                    if (createdIds.length > 0) {
+                      setSubSel({
+                        faceIds: [],
+                        edgeIds: [],
+                        vertexIds: [],
+                        bodyIds: createdIds.map((id) => `body_${id}`),
+                        selectionScope: "body",
+                        activePivot3D: { x: 0, y: 0, z: 0 },
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.(createdIds);
+                    }
+                  }
+                } else if (directTool === "shell_3d") {
+                  const shellBody = primaryBody ?? scene.bodies[0] ?? null;
+                  if (shellBody) {
+                    const shellTargetIds =
+                      activeTargetEntityIds.length > 0
+                        ? activeTargetEntityIds
+                        : [shellBody.entityId];
+                    const tVal =
+                      shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectShell3DToEntities(
+                          prev,
+                          shellTargetIds,
+                          tVal,
+                          resolvedShellOpenCaps,
+                        ),
+                      shellTargetIds,
+                    );
+                  }
+                }
+                setDirectTool("select_3d");
+                setNumpadSession(null);
+              }}
+              className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-500 px-2.5 font-mono text-[10px] font-bold text-white shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Check className="size-3" />
+              <span>Concluir</span>
+            </button>
+
+            <button
+              type="button"
+              aria-label="Fechar ferramenta 3D"
+              data-testid="chamfer-3d-active-pill-cancel-btn"
+              onClick={() => {
+                triggerHaptic("tap");
+                setDirectTool("select_3d");
+                setNumpadSession(null);
+              }}
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer",
+                isDark
+                  ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : "text-slate-600 hover:bg-slate-200 hover:text-slate-900",
+              )}
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -5380,7 +6395,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
                     // Se a ferramenta SHELL 3D estiver ativa, clicar em qualquer face aplica o Shell diretamente nessa face!
                     if (directTool === "shell_3d") {
-                      const clickedCap = resolveFaceShellCapDirection3D(face);
+                      const clickedCap = resolveFaceShellCapDirection3D(
+                        face,
+                        referenceFrame3D,
+                        body.rotation3D,
+                      );
                       setShellTargetFaceCap(clickedCap);
                       setSubSel({
                         faceIds: [face.faceId],
@@ -5398,6 +6417,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         [face],
                         shellOpenCapsMode,
                         clickedCap,
+                        referenceFrame3D,
+                        body.rotation3D,
                       );
                       onCommitEntities?.(
                         (prev) =>
@@ -5412,38 +6433,62 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       return;
                     }
 
-                    // C. Duplo-toque na peça, Curva de Perfil 3D (extrudeHeightMm <= 0.05), Escopo "Peça Inteira" OU Modo Corpo/Transformar ativo -> Reconhece o CORPO / PERFIL 3D e exibe o Gizmo +X / +Y / +Z no centroide ⌖
+                    // C. Duplo-toque na peça, Modo + Multi, Curva de Perfil 3D, Escopo "Peça Inteira" OU Modo Corpo/Transformar ativo -> Reconhece o CORPO / MONTAGEM LÓGICA
+                    const clickedEnt = entities.find((e) => e.id === body.entityId);
+                    const hasAssemblyGroup = Boolean(
+                      clickedEnt && getEntityAssemblyGroupId(clickedEnt),
+                    );
                     if (
                       isDoubleTapOnBody ||
+                      multiSelectAddMode ||
+                      hasAssemblyGroup ||
                       body.extrudeHeightMm <= 0.05 ||
                       selectionScope === "body" ||
                       directTool === "transform_3d"
                     ) {
+                      const clickedGroupMembers = expandBodyIdsWithAssemblyGroup3D(
+                        [face.bodyId],
+                        scene,
+                        entities,
+                      ).bodyIds;
                       const currentBodies = subSel.bodyIds;
-                      const nextBodyIds =
+                      const isAdditive =
+                        multiSelectAddMode ||
                         ev.shiftKey ||
                         (directTool === "transform_3d" &&
                           !isDoubleTapOnBody &&
                           body.extrudeHeightMm > 0.05 &&
-                          currentBodies.length > 0)
-                          ? currentBodies.includes(face.bodyId)
-                            ? currentBodies.length > 1
-                              ? currentBodies.filter((id) => id !== face.bodyId)
-                              : currentBodies
-                            : [...currentBodies, face.bodyId]
-                          : [face.bodyId];
+                          currentBodies.length > 0);
+                      const alreadySelected = clickedGroupMembers.every((id) =>
+                        currentBodies.includes(id),
+                      );
+                      const nextBodyIds = isAdditive
+                        ? alreadySelected
+                          ? currentBodies.length > clickedGroupMembers.length
+                            ? currentBodies.filter((id) => !clickedGroupMembers.includes(id))
+                            : currentBodies
+                          : Array.from(new Set([...currentBodies, ...clickedGroupMembers]))
+                        : clickedGroupMembers;
 
                       setSubSel({
                         faceIds: [],
                         edgeIds: [],
                         vertexIds: [],
                         bodyIds: nextBodyIds,
-                        selectionScope: selectionScope === "body" ? "body" : "auto",
+                        selectionScope:
+                          selectionScope === "body" || multiSelectAddMode || hasAssemblyGroup
+                            ? "body"
+                            : "auto",
                         activePivot3D: body.pivot3D,
                         activeHingeEdgeId: null,
                       });
-                      onSelectEntities?.([body.entityId]);
-                      if (selectionScope !== "body") {
+                      onSelectEntities?.(nextBodyIds.map((bId) => bId.replace(/^body_/, "")));
+                      if (
+                        selectionScope !== "body" &&
+                        !multiSelectAddMode &&
+                        directTool === "select_3d" &&
+                        isDoubleTapOnBody
+                      ) {
                         setDirectTool("transform_3d");
                       }
                       return;
@@ -5456,7 +6501,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         : [...subSel.faceIds, face.faceId]
                       : [face.faceId];
 
-                    const clickedCap = resolveFaceShellCapDirection3D(face);
+                    const clickedCap = resolveFaceShellCapDirection3D(
+                      face,
+                      referenceFrame3D,
+                      body.rotation3D,
+                    );
                     setShellTargetFaceCap(clickedCap);
 
                     setSubSel({
@@ -5690,36 +6739,61 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             const loftOrderIdx = loftSectionIds.indexOf(body.entityId);
             const isLoftSection = loftOrderIdx >= 0;
             const isBodySelected = subSel.bodyIds.includes(body.bodyId);
+            const isPrimarySelectedBody = primaryBody?.bodyId === body.bodyId && isBodySelected;
             const isProfileCurve = body.extrudeHeightMm <= 0.05;
+            const bodyEnt = entities.find((e) => e.id === body.entityId);
+            const isGroupedMember = Boolean(bodyEnt && getEntityAssemblyGroupId(bodyEnt));
 
             return (
               <g key={`centroid_loft_${body.bodyId}`}>
-                {/* Contorno destacado dos perfis 3D e seções selecionadas no Loft */}
-                {(isProfileCurve || isLoftSection) &&
-                  body.edges.map((edge) => {
-                    const pts = edge.polyline3D
-                      .map((p) => {
-                        const s = toScreen(p);
-                        return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
-                      })
-                      .join(" ");
-                    return (
-                      <polyline
-                        key={`profile_outline_${edge.edgeId}`}
-                        points={pts}
-                        fill="none"
-                        stroke={
-                          isLoftSection
-                            ? "#38BDF8"
-                            : isBodySelected
-                              ? "#00E5FF"
-                              : "rgba(148, 163, 184, 0.85)"
-                        }
-                        strokeWidth={isLoftSection || isBodySelected ? 2.6 : 1.7}
-                        style={{ pointerEvents: "none" }}
-                      />
-                    );
-                  })}
+                {/* Contorno diferenciado: Corpo Principal (#0EA5E9 contínuo intenso) vs. Corpos Adicionais (#38BDF8 tracejado coordenado) */}
+                {(isProfileCurve || isLoftSection || isBodySelected) &&
+                  body.edges
+                    .filter(
+                      (edge) =>
+                        isProfileCurve ||
+                        isLoftSection ||
+                        edge.role === "top_perimeter" ||
+                        edge.role === "bottom_perimeter" ||
+                        edge.role === "vertical",
+                    )
+                    .map((edge) => {
+                      const pts = edge.polyline3D
+                        .map((p) => {
+                          const s = toScreen(p);
+                          return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+                        })
+                        .join(" ");
+                      return (
+                        <polyline
+                          key={`profile_outline_${edge.edgeId}`}
+                          points={pts}
+                          fill="none"
+                          stroke={
+                            isLoftSection
+                              ? "#38BDF8"
+                              : isPrimarySelectedBody
+                                ? "#0EA5E9"
+                                : isBodySelected
+                                  ? "#38BDF8"
+                                  : "rgba(148, 163, 184, 0.85)"
+                          }
+                          strokeWidth={
+                            isPrimarySelectedBody
+                              ? 2.6
+                              : isLoftSection || isBodySelected
+                                ? 2.0
+                                : 1.7
+                          }
+                          strokeDasharray={
+                            isBodySelected && !isPrimarySelectedBody && !isLoftSection
+                              ? "5 3"
+                              : undefined
+                          }
+                          style={{ pointerEvents: "none" }}
+                        />
+                      );
+                    })}
 
                 {/* Linha tracejada vertical de referência entre Z=0 e a altura Z — VISÍVEL APENAS NA PEÇA SELECIONADA */}
                 {(isBodySelected || isLoftSection) && body.elevationZ > 0.25 && (
@@ -5745,7 +6819,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 )}
 
                 {/* Marcador de Snap de Centro Geométrico (⌖) — VISÍVEL APENAS NA PEÇA SELECIONADA OU EM LOFT */}
-                {(isBodySelected || isLoftActive) && (
+                {(isBodySelected || isLoftActive) && !fluxState.isManipulating && (
                   <g
                     data-testid={`chamfer-3d-centroid-marker-${body.entityId}`}
                     transform={`translate(${centerSc.x}, ${centerSc.y})`}
@@ -5761,16 +6835,21 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         onToggleLoftSection?.(body.entityId);
                         return;
                       }
+                      const expandedIds = expandBodyIdsWithAssemblyGroup3D(
+                        [body.bodyId],
+                        scene,
+                        entities,
+                      ).bodyIds;
                       setSubSel({
                         faceIds: [],
                         edgeIds: [],
                         vertexIds: [],
-                        bodyIds: [body.bodyId],
+                        bodyIds: expandedIds,
                         selectionScope: "body",
                         activePivot3D: body.pivot3D,
                         activeHingeEdgeId: null,
                       });
-                      onSelectEntities?.([body.entityId]);
+                      onSelectEntities?.(expandedIds.map((bId) => bId.replace(/^body_/, "")));
                       setDirectTool("transform_3d");
                     }}
                   >
@@ -5779,11 +6858,24 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       cy={0}
                       r={8}
                       fill={isLoftSection ? "rgba(56, 189, 248, 0.28)" : "rgba(15, 23, 42, 0.65)"}
-                      stroke={isLoftSection ? "#38BDF8" : "#00E5FF"}
-                      strokeWidth={1.5}
+                      stroke={isPrimarySelectedBody ? "#0EA5E9" : "#38BDF8"}
+                      strokeWidth={1.6}
                     />
                     <line x1={-5} y1={0} x2={5} y2={0} stroke="#38BDF8" strokeWidth={1.2} />
                     <line x1={0} y1={-5} x2={0} y2={5} stroke="#38BDF8" strokeWidth={1.2} />
+                    {isGroupedMember && (
+                      <text
+                        x={11}
+                        y={-9}
+                        fill="#38BDF8"
+                        fontSize="9"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                        style={{ pointerEvents: "none" }}
+                      >
+                        🔗
+                      </text>
+                    )}
                   </g>
                 )}
 
@@ -5827,6 +6919,72 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           })}
 
           {/* ================================================================= */}
+          {/* B4. ECOLOCALIZAÇÃO AZUL EDGE-TRIGGERED NO PLANO BASE (Z = 0.00mm) */}
+          {/*     3 anéis concêntricos finos projetados em perspectiva 3D       */}
+          {/* ================================================================= */}
+          {activeEcholocationPulse && (() => {
+            const cPt = activeEcholocationPulse.contactPoint3D;
+            const centerScreen = toScreen({ x: cPt.x, y: cPt.y, z: 0.05 });
+            const baseR = Math.max(24, activeEcholocationPulse.pieceHorizontalRadiusMm);
+            const buildProjectedRingPath = (radiusMm: number) => {
+              const segs = 32;
+              const pts: string[] = [];
+              for (let i = 0; i <= segs; i++) {
+                const ang = (i / segs) * Math.PI * 2;
+                const sc = toScreen({
+                  x: cPt.x + Math.cos(ang) * radiusMm,
+                  y: cPt.y + Math.sin(ang) * radiusMm,
+                  z: 0.05,
+                });
+                pts.push(`${i === 0 ? "M" : "L"} ${(sc.x - centerScreen.x).toFixed(1)} ${(sc.y - centerScreen.y).toFixed(1)}`);
+              }
+              return `${pts.join(" ")} Z`;
+            };
+            const unitRingPath = buildProjectedRingPath(baseR);
+
+            return (
+              <g
+                key={`echo_pulse_${activeEcholocationPulse.pulseId}`}
+                data-testid="chamfer-3d-base-echolocation"
+                transform={`translate(${centerScreen.x.toFixed(1)}, ${centerScreen.y.toFixed(1)})`}
+                style={{ pointerEvents: "none" }}
+              >
+                <style>
+                  {`@keyframes chamferBaseEchoWave {
+                    0% { transform: scale(0.15); opacity: 0.85; }
+                    100% { transform: scale(2.2); opacity: 0; }
+                  }`}
+                </style>
+                <circle cx={0} cy={0} r={3.5} fill="#38BDF8" opacity={0.9} />
+                {prefersReducedMotion ? (
+                  <path
+                    d={unitRingPath}
+                    fill="rgba(56, 189, 248, 0.08)"
+                    stroke="#38BDF8"
+                    strokeWidth={1.8}
+                    opacity={0.75}
+                  />
+                ) : (
+                  [0, 90, 180].map((delayMs, rIdx) => (
+                    <path
+                      key={rIdx}
+                      d={unitRingPath}
+                      fill={rIdx === 0 ? "rgba(14, 165, 233, 0.08)" : "none"}
+                      stroke={rIdx === 0 ? "#38BDF8" : "#0EA5E9"}
+                      strokeWidth={rIdx === 0 ? 2.1 : 1.5}
+                      style={{
+                        transformOrigin: "0px 0px",
+                        animation: `chamferBaseEchoWave 520ms cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms forwards`,
+                        opacity: 0,
+                      }}
+                    />
+                  ))
+                )}
+              </g>
+            );
+          })()}
+
+          {/* ================================================================= */}
           {/* C. VISUALIZAÇÃO DE SNAP DE ENCOSTO SUAVE E GUIAS COLINEARES       */}
           {/* ================================================================= */}
           {activeContactSnap && (
@@ -5848,28 +7006,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       strokeLinecap="round"
                     />
                     <circle cx={mx} cy={my} r={4} fill="#00E5FF" />
-                    <rect
-                      x={mx - 54}
-                      y={my - 22}
-                      width={108}
-                      height={18}
-                      rx={5}
-                      fill="#0B1220"
-                      stroke="#00E5FF"
-                      strokeWidth={1.2}
-                    />
-                    <text
-                      x={mx}
-                      y={my - 13}
-                      fill="#00E5FF"
-                      fontSize="9.5"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                    >
-                      0.00 mm (Encosto)
-                    </text>
                   </g>
                 );
               })()}
@@ -5888,17 +7024,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       strokeWidth={1.6}
                       strokeDasharray="4 3"
                     />
-                    <text
-                      x={(sp1.x + sp2.x) * 0.5}
-                      y={(sp1.y + sp2.y) * 0.5 - 6}
-                      fill="#38BDF8"
-                      fontSize="9"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                      textAnchor="middle"
-                    >
-                      {guide.label}
-                    </text>
                   </g>
                 );
               })}
@@ -6511,7 +7636,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           {/* F. PONTOS MAGNÉTICOS DE SNAP DO PIVÔ 3D                           */}
           {/* ================================================================= */}
           {(isPickingPivotSnap || activeAxis === "pivot") &&
-            primaryBody?.snapCandidates.map((cand) => {
+            (selectedBodiesList.length > 0 ? selectedBodiesList : primaryBody ? [primaryBody] : []).flatMap(
+              (b) => b.snapCandidates,
+            ).map((cand) => {
               const sp = toScreen(cand.point3D);
               return (
                 <g
@@ -6520,6 +7647,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   onClick={(ev) => {
                     ev.stopPropagation();
                     triggerHaptic("action");
+                    setMultiPivotMode("snap_point");
+                    setCustomPivot3D(cand.point3D);
                     setSubSel((prev) => ({ ...prev, activePivot3D: cand.point3D }));
                     setSnappedPivotLabel(cand.label);
                     setIsPickingPivotSnap(false);
@@ -6539,15 +7668,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             })}
 
           {/* ================================================================= */}
-          {/* G. GIZMO DO CORPO (TRÍADE X/Y/Z + ROTAÇÃO + PIVÔ + BOTÃO COPY)    */}
-          {/* Exibido EXCLUSIVAMENTE quando um CORPO está selecionado           */}
+          {/* G. GIZMO DO CORPO (TRÍADE X/Y/Z + ROTAÇÃO + PIVÔ — REGRAS FLUX)   */}
           {/* ================================================================= */}
           {gizmoScreen &&
             selectionKind3D === "body" &&
             directTool !== "shell_3d" &&
             directTool !== "array_3d" && (
               <g data-testid="chamfer-gizmo-body-manipulator">
-                {/* Linha Tracejada de Deslocamento + Pílula Clicável de Distância em Tempo Real */}
+                {/* Linha Tracejada de Deslocamento + Pílula Clicável Pós-Arraste */}
                 {(() => {
                   const isLiveLinear =
                     (activeAxis === "x" ||
@@ -6616,84 +7744,84 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         stroke="#0B1220"
                         strokeWidth={1.5}
                       />
-                      <g
-                        data-testid="chamfer-3d-displacement-pill"
-                        transform={`translate(${midX}, ${midY - 22})`}
-                        className="pointer-events-auto cursor-pointer"
-                        onPointerDown={(ev) => {
-                          ev.stopPropagation();
-                          ev.preventDefault();
-                        }}
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          const paramKey =
-                            linearAxis === "y"
-                              ? "moveY"
-                              : linearAxis === "z"
-                                ? "moveZ"
-                                : "moveX";
-                          const axisName =
-                            linearAxis === "y"
-                              ? "Y"
-                              : linearAxis === "z"
-                                ? "Z"
-                                : "X";
-                          openFloatingNumpad(
-                            "DISTANCE",
-                            isCopyDrag
-                              ? `CÓPIA DIST +${axisName}`
-                              : `DESLOCAR +${axisName}`,
-                            "mm",
-                            currentDistMm || 100,
-                            paramKey,
-                            targetEntityId,
-                            undefined,
-                            isCopyDrag,
-                          );
-                        }}
-                      >
-                        <rect
-                          x={-58}
-                          y={-12}
-                          width={116}
-                          height={24}
-                          rx={6}
-                          fill={isDark ? "#060A12" : "#FFFFFF"}
-                          stroke={isCopyDrag ? "#10B981" : "#00B4D8"}
-                          strokeWidth={1.5}
-                        />
-                        <text
-                          x={0}
-                          y={1}
-                          fill={
-                            linearAxis === "z"
-                              ? isDark
-                                ? "#60A5FA"
-                                : "#0284C7"
-                              : isCopyDrag
-                                ? "#10B981"
-                                : isDark
-                                  ? "#38BDF8"
-                                  : "#0284C7"
-                          }
-                          fontSize="10.5"
-                          fontWeight="bold"
-                          fontFamily="monospace"
-                          textAnchor="middle"
-                          dominantBaseline="central"
+                      {/* Durante o arraste ativo, o FLUX exibe 1 único HUD consolidado sem duplicar pílulas sobre a linha */}
+                      {!isLiveLinear && (
+                        <g
+                          data-testid="chamfer-3d-displacement-pill"
+                          transform={`translate(${midX}, ${midY - 22})`}
+                          className="pointer-events-auto cursor-pointer"
+                          onPointerDown={(ev) => {
+                            ev.stopPropagation();
+                            ev.preventDefault();
+                          }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            const paramKey =
+                              linearAxis === "y"
+                                ? "moveY"
+                                : linearAxis === "z"
+                                  ? "moveZ"
+                                  : "moveX";
+                            const axisName =
+                              linearAxis === "y"
+                                ? "Y"
+                                : linearAxis === "z"
+                                  ? "Z"
+                                  : "X";
+                            openFloatingNumpad(
+                              "DISTANCE",
+                              isCopyDrag
+                                ? `CÓPIA DIST +${axisName}`
+                                : `DESLOCAR +${axisName}`,
+                              "mm",
+                              currentDistMm || 100,
+                              paramKey,
+                              targetEntityId,
+                              undefined,
+                              isCopyDrag,
+                            );
+                          }}
                         >
-                          {linearAxis === "z"
-                            ? `Ortho: ${(primaryBody?.elevationZ ?? currentDistMm).toFixed(2)} mm < +Z`
-                            : `${isCopyDrag ? "⧉ " : ""}${currentDistMm >= 0 ? currentDistMm : currentDistMm} mm ✎`}
-                        </text>
-                      </g>
+                          <rect
+                            x={-58}
+                            y={-12}
+                            width={116}
+                            height={24}
+                            rx={6}
+                            fill={isDark ? "#060A12" : "#FFFFFF"}
+                            stroke={isCopyDrag ? "#10B981" : "#00B4D8"}
+                            strokeWidth={1.5}
+                          />
+                          <text
+                            x={0}
+                            y={1}
+                            fill={
+                              linearAxis === "z"
+                                ? isDark
+                                  ? "#60A5FA"
+                                  : "#0284C7"
+                                : isCopyDrag
+                                  ? "#10B981"
+                                  : isDark
+                                    ? "#38BDF8"
+                                    : "#0284C7"
+                            }
+                            fontSize="10.5"
+                            fontWeight="bold"
+                            fontFamily="monospace"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                          >
+                            {`${isCopyDrag ? "⧉ " : ""}Δ${linearAxis.toUpperCase()}: ${currentDistMm > 0 ? `+${currentDistMm}` : currentDistMm} mm ✎`}
+                          </text>
+                        </g>
+                      )}
                     </g>
                   );
                 })()}
 
                 {/* ============================================================= */}
                 {/* BÚSSOLA DE ROTAÇÃO EM RAIO EXTERNO (ESTILO SHAPR3D)           */}
-                {/* Aparece SOMENTE ao tocar/arrastar uma alça de rotação         */}
                 {/* ============================================================= */}
                 {(() => {
                   const isLiveRotation =
@@ -6708,7 +7836,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       lastCompletedDrag.axis === "rot_z");
 
                   const showCompassRing = isLiveRotation || compassFadingOut;
-                  const showAnglePill = isLiveRotation || isCompletedRotation;
+                  const showAnglePill = isCompletedRotation;
 
                   if (!showCompassRing && !showAnglePill) return null;
 
@@ -6753,7 +7881,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   const activeRimY =
                     gizmoScreen.origin.y + Math.sin(currentAngleRad) * compassR;
 
-                  // Posição da pílula flutuante de graus no raio externo da bússola
                   const rawPillX =
                     gizmoScreen.origin.x + Math.cos(currentAngleRad) * (compassR + 30);
                   const rawPillY =
@@ -6770,11 +7897,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                           data-testid="chamfer-3d-external-rotation-compass"
                           style={{
                             opacity: compassFadingOut && !isLiveRotation ? 0 : 1,
-                            transition: "opacity 180ms ease-out",
+                            transition: "opacity 150ms ease-out",
                             pointerEvents: "none",
                           }}
                         >
-                          {/* Setor Angular Preenchido entre 0° e Δ° */}
                           {sectorPath && (
                             <path
                               d={sectorPath}
@@ -6783,8 +7909,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                               strokeWidth={1}
                             />
                           )}
-
-                          {/* Halo externo sutil de instrumento óptico */}
                           <circle
                             cx={gizmoScreen.origin.x}
                             cy={gizmoScreen.origin.y}
@@ -6794,8 +7918,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             strokeWidth={0.75}
                             opacity={0.28}
                           />
-
-                          {/* Anel principal tracejado externo envolvendo toda a peça */}
                           <circle
                             cx={gizmoScreen.origin.x}
                             cy={gizmoScreen.origin.y}
@@ -6806,8 +7928,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             strokeDasharray="4 3"
                             opacity={0.82}
                           />
-
-                          {/* Graduações radiais a cada 5° / 15° / 45° / 90° */}
                           {degreeTicks.map((deg) => {
                             const rad = startAngleRad + (deg * Math.PI) / 180;
                             const isCardinal = deg % 90 === 0;
@@ -6881,8 +8001,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                               </g>
                             );
                           })}
-
-                          {/* Linha de referência pontilhada de 0° (início do giro) */}
                           <line
                             x1={gizmoScreen.origin.x}
                             y1={gizmoScreen.origin.y}
@@ -6893,8 +8011,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             strokeDasharray="3 3"
                             opacity={0.75}
                           />
-
-                          {/* Linha radial ativa apontando para o ângulo atual Δ° */}
                           <line
                             x1={gizmoScreen.origin.x}
                             y1={gizmoScreen.origin.y}
@@ -6904,8 +8020,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             strokeWidth={1.75}
                             strokeDasharray="4 2"
                           />
-
-                          {/* Pino magnético no aro externo da bússola */}
                           <circle
                             cx={activeRimX}
                             cy={activeRimY}
@@ -6917,7 +8031,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         </g>
                       )}
 
-                      {/* Pílula Flutuante de Graus ao Vivo e Clicável Pós-Giro */}
+                      {/* Pílula Clicável Pós-Giro (Durante o giro ao vivo, o HUD Consolidado FLUX assume a leitura) */}
                       {showAnglePill && (
                         <g
                           data-testid="chamfer-3d-live-rotation-angle-pill"
@@ -6948,7 +8062,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                               "°",
                               currentDeg || 45,
                               rotParam,
-                              (lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId),
+                              lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId,
                               undefined,
                               copyOnTransform || Boolean(lastCompletedDrag?.copyMode),
                             );
@@ -6974,7 +8088,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             textAnchor="middle"
                             dominantBaseline="central"
                           >
-                            {`${currentDeg > 0 ? `+${currentDeg}` : currentDeg}°${!isLiveRotation ? " ✎" : ""}`}
+                            {`${currentDeg > 0 ? `+${currentDeg}` : currentDeg}° ✎`}
                           </text>
                         </g>
                       )}
@@ -6983,458 +8097,420 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 })()}
 
                 {/* ============================================================= */}
-                {/* 3 EIXOS LINEARES FINOS (+X, +Y, +Z) - HASTES 1.75px           */}
+                {/* 3 EIXOS LINEARES (+X, +Y, +Z) — GERENCIADOS PELO FLUX         */}
                 {/* ============================================================= */}
                 {/* Eixo X (Vermelho) */}
-                <g
-                  data-testid="chamfer-gizmo-axis-x"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) =>
-                    handleAxisPointerDown(
-                      "x",
-                      gizmoScreen.x.ux,
-                      gizmoScreen.x.uy,
-                      gizmoScreen.x.pixelsPerMm,
-                      ev,
-                    )
-                  }
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.x.endX}
-                    y2={gizmoScreen.x.endY}
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={22}
-                    style={{ pointerEvents: "stroke" }}
-                  />
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.x.endX}
-                    y2={gizmoScreen.x.endY}
-                    stroke="#EF4444"
-                    strokeWidth={activeAxis === "x" ? 2.75 : 1.75}
-                    markerEnd="url(#gizmo-arrow-x)"
-                    style={{ pointerEvents: "stroke" }}
-                  />
-                  <circle
-                    cx={gizmoScreen.x.endX + gizmoScreen.x.ux * 14}
-                    cy={gizmoScreen.x.endY + gizmoScreen.x.uy * 14}
-                    r={10.5}
-                    fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
-                    stroke="rgba(239, 68, 68, 0.65)"
-                    strokeWidth={1.1}
-                    style={{ pointerEvents: "all" }}
-                    className="cursor-pointer"
-                  />
-                  <text
-                    x={gizmoScreen.x.endX + gizmoScreen.x.ux * 14}
-                    y={gizmoScreen.x.endY + gizmoScreen.x.uy * 14}
-                    fill="#EF4444"
-                    fontSize="9"
-                    fontWeight="bold"
-                    fontFamily="monospace"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    style={{ pointerEvents: "none" }}
+                {fluxState.showAxisX && (
+                  <g
+                    data-testid="chamfer-gizmo-axis-x"
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                    style={{ touchAction: "none" }}
+                    onPointerDown={(ev) =>
+                      handleAxisPointerDown(
+                        "x",
+                        gizmoScreen.x.ux,
+                        gizmoScreen.x.uy,
+                        gizmoScreen.x.pixelsPerMm,
+                        ev,
+                        gizmoScreen.x.axisVec3D,
+                      )
+                    }
+                    onClick={(ev) => ev.stopPropagation()}
                   >
-                    +X
-                  </text>
-                </g>
+                    <line
+                      x1={gizmoScreen.origin.x}
+                      y1={gizmoScreen.origin.y}
+                      x2={gizmoScreen.x.endX}
+                      y2={gizmoScreen.x.endY}
+                      stroke="rgba(0,0,0,0.001)"
+                      strokeWidth={22}
+                      style={{ pointerEvents: "stroke" }}
+                    />
+                    <line
+                      x1={gizmoScreen.origin.x}
+                      y1={gizmoScreen.origin.y}
+                      x2={gizmoScreen.x.endX}
+                      y2={gizmoScreen.x.endY}
+                      stroke="#EF4444"
+                      strokeWidth={activeAxis === "x" ? 2.85 : 1.75}
+                      markerEnd="url(#gizmo-arrow-x)"
+                      style={{ pointerEvents: "stroke" }}
+                    />
+                    <circle
+                      cx={gizmoScreen.x.endX + gizmoScreen.x.ux * 14}
+                      cy={gizmoScreen.x.endY + gizmoScreen.x.uy * 14}
+                      r={10.5}
+                      fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
+                      stroke="rgba(239, 68, 68, 0.65)"
+                      strokeWidth={1.1}
+                      style={{ pointerEvents: "all" }}
+                      className="cursor-pointer"
+                    />
+                    <text
+                      x={gizmoScreen.x.endX + gizmoScreen.x.ux * 14}
+                      y={gizmoScreen.x.endY + gizmoScreen.x.uy * 14}
+                      fill="#EF4444"
+                      fontSize="9"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      +X
+                    </text>
+                  </g>
+                )}
 
                 {/* Eixo Y (Verde) */}
-                <g
-                  data-testid="chamfer-gizmo-axis-y"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) =>
-                    handleAxisPointerDown(
-                      "y",
-                      gizmoScreen.y.ux,
-                      gizmoScreen.y.uy,
-                      gizmoScreen.y.pixelsPerMm,
-                      ev,
-                    )
-                  }
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.y.endX}
-                    y2={gizmoScreen.y.endY}
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={22}
-                    style={{ pointerEvents: "stroke" }}
-                  />
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.y.endX}
-                    y2={gizmoScreen.y.endY}
-                    stroke="#22C55E"
-                    strokeWidth={activeAxis === "y" ? 2.75 : 1.75}
-                    markerEnd="url(#gizmo-arrow-y)"
-                    style={{ pointerEvents: "stroke" }}
-                  />
-                  <circle
-                    cx={gizmoScreen.y.endX + gizmoScreen.y.ux * 14}
-                    cy={gizmoScreen.y.endY + gizmoScreen.y.uy * 14}
-                    r={10.5}
-                    fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
-                    stroke="rgba(34, 197, 94, 0.65)"
-                    strokeWidth={1.1}
-                    style={{ pointerEvents: "all" }}
-                    className="cursor-pointer"
-                  />
-                  <text
-                    x={gizmoScreen.y.endX + gizmoScreen.y.ux * 14}
-                    y={gizmoScreen.y.endY + gizmoScreen.y.uy * 14}
-                    fill="#22C55E"
-                    fontSize="9"
-                    fontWeight="bold"
-                    fontFamily="monospace"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    style={{ pointerEvents: "none" }}
+                {fluxState.showAxisY && (
+                  <g
+                    data-testid="chamfer-gizmo-axis-y"
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                    style={{ touchAction: "none" }}
+                    onPointerDown={(ev) =>
+                      handleAxisPointerDown(
+                        "y",
+                        gizmoScreen.y.ux,
+                        gizmoScreen.y.uy,
+                        gizmoScreen.y.pixelsPerMm,
+                        ev,
+                        gizmoScreen.y.axisVec3D,
+                      )
+                    }
+                    onClick={(ev) => ev.stopPropagation()}
                   >
-                    +Y
-                  </text>
-                </g>
+                    <line
+                      x1={gizmoScreen.origin.x}
+                      y1={gizmoScreen.origin.y}
+                      x2={gizmoScreen.y.endX}
+                      y2={gizmoScreen.y.endY}
+                      stroke="rgba(0,0,0,0.001)"
+                      strokeWidth={22}
+                      style={{ pointerEvents: "stroke" }}
+                    />
+                    <line
+                      x1={gizmoScreen.origin.x}
+                      y1={gizmoScreen.origin.y}
+                      x2={gizmoScreen.y.endX}
+                      y2={gizmoScreen.y.endY}
+                      stroke="#22C55E"
+                      strokeWidth={activeAxis === "y" ? 2.85 : 1.75}
+                      markerEnd="url(#gizmo-arrow-y)"
+                      style={{ pointerEvents: "stroke" }}
+                    />
+                    <circle
+                      cx={gizmoScreen.y.endX + gizmoScreen.y.ux * 14}
+                      cy={gizmoScreen.y.endY + gizmoScreen.y.uy * 14}
+                      r={10.5}
+                      fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
+                      stroke="rgba(34, 197, 94, 0.65)"
+                      strokeWidth={1.1}
+                      style={{ pointerEvents: "all" }}
+                      className="cursor-pointer"
+                    />
+                    <text
+                      x={gizmoScreen.y.endX + gizmoScreen.y.ux * 14}
+                      y={gizmoScreen.y.endY + gizmoScreen.y.uy * 14}
+                      fill="#22C55E"
+                      fontSize="9"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      +Y
+                    </text>
+                  </g>
+                )}
 
                 {/* Eixo Z (Azul #3B82F6 ficando Âmbar #F59E0B ao arrastar) */}
-                <g
-                  data-testid="chamfer-gizmo-axis-z"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) =>
-                    handleAxisPointerDown(
-                      directTool === "extrude_3d" && selectionKind3D !== "body"
-                        ? "extrude"
-                        : "z",
-                      gizmoScreen.z.ux,
-                      gizmoScreen.z.uy,
-                      gizmoScreen.z.pixelsPerMm,
-                      ev,
-                    )
-                  }
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.z.endX}
-                    y2={gizmoScreen.z.endY}
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={22}
-                    style={{ pointerEvents: "stroke" }}
-                  />
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.z.endX}
-                    y2={gizmoScreen.z.endY}
-                    stroke={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
-                    strokeWidth={
-                      activeAxis === "z" || activeAxis === "extrude" ? 2.85 : 1.75
+                {fluxState.showAxisZ && (
+                  <g
+                    data-testid="chamfer-gizmo-axis-z"
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                    style={{ touchAction: "none" }}
+                    onPointerDown={(ev) =>
+                      handleAxisPointerDown(
+                        directTool === "extrude_3d" && selectionKind3D !== "body"
+                          ? "extrude"
+                          : "z",
+                        gizmoScreen.z.ux,
+                        gizmoScreen.z.uy,
+                        gizmoScreen.z.pixelsPerMm,
+                        ev,
+                        gizmoScreen.z.axisVec3D,
+                      )
                     }
-                    markerEnd={
-                      activeAxis === "z"
-                        ? "url(#gizmo-arrow-amber)"
-                        : "url(#gizmo-arrow-z-blue)"
-                    }
-                    style={{ pointerEvents: "stroke" }}
-                  />
-                  <circle
-                    cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 14}
-                    cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 14}
-                    r={10.5}
-                    fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
-                    stroke={
-                      activeAxis === "z"
-                        ? "rgba(245, 158, 11, 0.8)"
-                        : "rgba(59, 130, 246, 0.65)"
-                    }
-                    strokeWidth={1.1}
-                    style={{ pointerEvents: "all" }}
-                    className="cursor-pointer"
-                  />
-                  <text
-                    x={gizmoScreen.z.endX + gizmoScreen.z.ux * 14}
-                    y={gizmoScreen.z.endY + gizmoScreen.z.uy * 14}
-                    fill={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
-                    fontSize="9"
-                    fontWeight="bold"
-                    fontFamily="monospace"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    style={{ pointerEvents: "none" }}
+                    onClick={(ev) => ev.stopPropagation()}
                   >
-                    {directTool === "extrude_3d" && selectionKind3D !== "body"
-                      ? "EXT"
-                      : "+Z"}
-                  </text>
-                </g>
-
-                {/* ============================================================= */}
-                {/* ALÇAS DE GIRO E BOTÃO TÁTIL "GIRAR ↻" RENDERIZADOS NA CAMADA  */}
-                {/* SUPERIOR (Z-ORDER ACIMA DAS SETAS LINEARES)                   */}
-                {/* ============================================================= */}
-                {/* Arco de Rotação Z (Plano XY - Âmbar/Ciano r=32px) */}
-                <g
-                  data-testid="chamfer-gizmo-rot-z"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 32} A 32 32 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 32}`}
-                    fill="none"
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={20}
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 32} A 32 32 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 32}`}
-                    fill="none"
-                    stroke={activeAxis === "rot_z" ? "#00B4D8" : "#F59E0B"}
-                    strokeWidth={activeAxis === "rot_z" ? 3.0 : 2.1}
-                    strokeLinecap="round"
-                    opacity={activeAxis === "rot_z" ? 1 : 0.92}
-                  />
-                </g>
-
-                {/* Arco de Rotação X (Plano YZ - Vermelho r=27px) */}
-                <g
-                  data-testid="chamfer-gizmo-rot-x"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27}`}
-                    fill="none"
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={18}
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27}`}
-                    fill="none"
-                    stroke="#EF4444"
-                    strokeWidth={activeAxis === "rot_x" ? 2.8 : 1.9}
-                    strokeLinecap="round"
-                    opacity={activeAxis === "rot_x" ? 1 : 0.88}
-                  />
-                </g>
-
-                {/* Arco de Rotação Y (Plano XZ - Verde r=27px) */}
-                <g
-                  data-testid="chamfer-gizmo-rot-y"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) => handleAxisPointerDown("rot_y", 0, 0, 1, ev)}
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 27}`}
-                    fill="none"
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={18}
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 27}`}
-                    fill="none"
-                    stroke="#22C55E"
-                    strokeWidth={activeAxis === "rot_y" ? 2.8 : 1.9}
-                    strokeLinecap="round"
-                    opacity={activeAxis === "rot_y" ? 1 : 0.88}
-                  />
-                </g>
-
-                {/* ALÇA CIRCULAR TÁTIL "GIRAR ↻" SEMPRE VISÍVEL E DESOBSTRUÍDA (VIEW-ALIGNED r=58px) */}
-                {(() => {
-                  const rotPlacement = computeViewAlignedRotationHandlePlacement(
-                    gizmoScreen.origin,
-                    { x: gizmoScreen.x.endX, y: gizmoScreen.x.endY },
-                    { x: gizmoScreen.y.endX, y: gizmoScreen.y.endY },
-                    { x: gizmoScreen.z.endX, y: gizmoScreen.z.endY },
-                    58,
-                  );
-                  const isRotatingAny =
-                    activeAxis === "rot_z" || activeAxis === "rot_x" || activeAxis === "rot_y";
-                  return (
-                    <g
-                      data-testid="chamfer-gizmo-rotate-handle-btn"
-                      className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                      style={{ touchAction: "none" }}
-                      onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
-                      onClick={(ev) => ev.stopPropagation()}
+                    <line
+                      x1={gizmoScreen.origin.x}
+                      y1={gizmoScreen.origin.y}
+                      x2={gizmoScreen.z.endX}
+                      y2={gizmoScreen.z.endY}
+                      stroke="rgba(0,0,0,0.001)"
+                      strokeWidth={22}
+                      style={{ pointerEvents: "stroke" }}
+                    />
+                    <line
+                      x1={gizmoScreen.origin.x}
+                      y1={gizmoScreen.origin.y}
+                      x2={gizmoScreen.z.endX}
+                      y2={gizmoScreen.z.endY}
+                      stroke={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
+                      strokeWidth={
+                        activeAxis === "z" || activeAxis === "extrude" ? 2.85 : 1.75
+                      }
+                      markerEnd={
+                        activeAxis === "z"
+                          ? "url(#gizmo-arrow-amber)"
+                          : "url(#gizmo-arrow-z-blue)"
+                      }
+                      style={{ pointerEvents: "stroke" }}
+                    />
+                    <circle
+                      cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 14}
+                      cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 14}
+                      r={10.5}
+                      fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
+                      stroke={
+                        activeAxis === "z"
+                          ? "rgba(245, 158, 11, 0.8)"
+                          : "rgba(59, 130, 246, 0.65)"
+                      }
+                      strokeWidth={1.1}
+                      style={{ pointerEvents: "all" }}
+                      className="cursor-pointer"
+                    />
+                    <text
+                      x={gizmoScreen.z.endX + gizmoScreen.z.ux * 14}
+                      y={gizmoScreen.z.endY + gizmoScreen.z.uy * 14}
+                      fill={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
+                      fontSize="9"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      style={{ pointerEvents: "none" }}
                     >
-                      {/* Arco curvo anti-colisão no setor mais aberto (r=58px) */}
-                      <path
-                        d={rotPlacement.arcPath}
-                        fill="none"
-                        stroke="rgba(0,0,0,0.001)"
-                        strokeWidth={26}
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d={rotPlacement.arcPath}
-                        fill="none"
-                        stroke={isRotatingAny ? "#00B4D8" : "#F59E0B"}
-                        strokeWidth={isRotatingAny ? 3.2 : 2.35}
-                        strokeLinecap="round"
-                      />
-                      <circle
-                        cx={rotPlacement.startTip.x}
-                        cy={rotPlacement.startTip.y}
-                        r={2.8}
-                        fill={isRotatingAny ? "#00B4D8" : "#F59E0B"}
-                      />
-                      <circle
-                        cx={rotPlacement.endTip.x}
-                        cy={rotPlacement.endTip.y}
-                        r={2.8}
-                        fill={isRotatingAny ? "#00B4D8" : "#F59E0B"}
-                      />
-                      {/* Pega circular tátil "↻" desobstruída */}
-                      <circle
-                        cx={rotPlacement.handlePos.x}
-                        cy={rotPlacement.handlePos.y}
-                        r={12.5}
-                        fill={
-                          isRotatingAny
-                            ? "#0284C7"
-                            : isDark
-                              ? "rgba(15, 23, 42, 0.94)"
-                              : "rgba(255, 255, 255, 0.96)"
-                        }
-                        stroke={isRotatingAny ? "#38BDF8" : "#F59E0B"}
-                        strokeWidth={2}
-                      />
-                      <text
-                        x={rotPlacement.handlePos.x}
-                        y={rotPlacement.handlePos.y}
-                        fill={isRotatingAny ? "#FFFFFF" : "#F59E0B"}
-                        fontSize="12"
-                        fontWeight="bold"
-                        fontFamily="monospace"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        style={{ pointerEvents: "none" }}
+                      {directTool === "extrude_3d" && selectionKind3D !== "body"
+                        ? "EXT"
+                        : "+Z"}
+                    </text>
+                  </g>
+                )}
+
+                {/* ============================================================= */}
+                {/* ALÇAS DE GIRO E BOTÃO TÁTIL "GIRAR ↻" (OCULTOS EM DRAG LINEAR) */}
+                {/* ============================================================= */}
+                {fluxState.showRotationHandles && (
+                  <>
+                    {(activeAxis === null || activeAxis === "rot_z") && (
+                      <g
+                        data-testid="chamfer-gizmo-rot-z"
+                        className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                        style={{ touchAction: "none" }}
+                        onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
+                        onClick={(ev) => ev.stopPropagation()}
                       >
-                        ↻
-                      </text>
-                    </g>
-                  );
-                })()}
+                        <path
+                          d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 32} A 32 32 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 32}`}
+                          fill="none"
+                          stroke="rgba(0,0,0,0.001)"
+                          strokeWidth={20}
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 32} A 32 32 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 32}`}
+                          fill="none"
+                          stroke={activeAxis === "rot_z" ? "#00B4D8" : "#F59E0B"}
+                          strokeWidth={activeAxis === "rot_z" ? 3.0 : 2.1}
+                          strokeLinecap="round"
+                          opacity={activeAxis === "rot_z" ? 1 : 0.92}
+                        />
+                      </g>
+                    )}
+
+                    {(activeAxis === null || activeAxis === "rot_x") && (
+                      <g
+                        data-testid="chamfer-gizmo-rot-x"
+                        className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                        style={{ touchAction: "none" }}
+                        onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <path
+                          d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27}`}
+                          fill="none"
+                          stroke="rgba(0,0,0,0.001)"
+                          strokeWidth={18}
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27}`}
+                          fill="none"
+                          stroke="#EF4444"
+                          strokeWidth={activeAxis === "rot_x" ? 2.8 : 1.9}
+                          strokeLinecap="round"
+                          opacity={activeAxis === "rot_x" ? 1 : 0.88}
+                        />
+                      </g>
+                    )}
+
+                    {(activeAxis === null || activeAxis === "rot_y") && (
+                      <g
+                        data-testid="chamfer-gizmo-rot-y"
+                        className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                        style={{ touchAction: "none" }}
+                        onPointerDown={(ev) => handleAxisPointerDown("rot_y", 0, 0, 1, ev)}
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <path
+                          d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 27}`}
+                          fill="none"
+                          stroke="rgba(0,0,0,0.001)"
+                          strokeWidth={18}
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 27}`}
+                          fill="none"
+                          stroke="#22C55E"
+                          strokeWidth={activeAxis === "rot_y" ? 2.8 : 1.9}
+                          strokeLinecap="round"
+                          opacity={activeAxis === "rot_y" ? 1 : 0.88}
+                        />
+                      </g>
+                    )}
+
+                    {(() => {
+                      const rotPlacement = computeViewAlignedRotationHandlePlacement(
+                        gizmoScreen.origin,
+                        { x: gizmoScreen.x.endX, y: gizmoScreen.x.endY },
+                        { x: gizmoScreen.y.endX, y: gizmoScreen.y.endY },
+                        { x: gizmoScreen.z.endX, y: gizmoScreen.z.endY },
+                        58,
+                      );
+                      const isRotatingAny =
+                        activeAxis === "rot_z" ||
+                        activeAxis === "rot_x" ||
+                        activeAxis === "rot_y";
+                      return (
+                        <g
+                          data-testid="chamfer-gizmo-rotate-handle-btn"
+                          className="pointer-events-auto cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                          style={{ touchAction: "none" }}
+                          onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          <path
+                            d={rotPlacement.arcPath}
+                            fill="none"
+                            stroke="rgba(0,0,0,0.001)"
+                            strokeWidth={26}
+                            strokeLinecap="round"
+                          />
+                          <path
+                            d={rotPlacement.arcPath}
+                            fill="none"
+                            stroke={isRotatingAny ? "#00B4D8" : "#F59E0B"}
+                            strokeWidth={isRotatingAny ? 3.2 : 2.35}
+                            strokeLinecap="round"
+                          />
+                          <circle
+                            cx={rotPlacement.startTip.x}
+                            cy={rotPlacement.startTip.y}
+                            r={2.8}
+                            fill={isRotatingAny ? "#00B4D8" : "#F59E0B"}
+                          />
+                          <circle
+                            cx={rotPlacement.endTip.x}
+                            cy={rotPlacement.endTip.y}
+                            r={2.8}
+                            fill={isRotatingAny ? "#00B4D8" : "#F59E0B"}
+                          />
+                          <circle
+                            cx={rotPlacement.handlePos.x}
+                            cy={rotPlacement.handlePos.y}
+                            r={12.5}
+                            fill={
+                              isRotatingAny
+                                ? "#0284C7"
+                                : isDark
+                                  ? "rgba(15, 23, 42, 0.94)"
+                                  : "rgba(255, 255, 255, 0.96)"
+                            }
+                            stroke={isRotatingAny ? "#38BDF8" : "#F59E0B"}
+                            strokeWidth={2}
+                          />
+                          <text
+                            x={rotPlacement.handlePos.x}
+                            y={rotPlacement.handlePos.y}
+                            fill={isRotatingAny ? "#FFFFFF" : "#F59E0B"}
+                            fontSize="12"
+                            fontWeight="bold"
+                            fontFamily="monospace"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            style={{ pointerEvents: "none" }}
+                          >
+                            ↻
+                          </text>
+                        </g>
+                      );
+                    })()}
+                  </>
+                )}
 
                 {/* ============================================================= */}
                 {/* PIVÔ CENTRAL (12px): ANEL DUPLO CIRÚRGICO BRANCO + CIANO      */}
                 {/* ============================================================= */}
-                <g
-                  data-testid="chamfer-gizmo-pivot-handle"
-                  className="pointer-events-auto cursor-move"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) =>
-                    handleAxisPointerDown("pivot", 0, 0, 1, ev)
-                  }
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("selection");
-                    setIsPickingPivotSnap((p) => !p);
-                  }}
-                >
-                  {/* Área de toque invisível generosa para fácil captura */}
-                  <circle
-                    cx={gizmoScreen.origin.x}
-                    cy={gizmoScreen.origin.y}
-                    r={15}
-                    fill="rgba(0,0,0,0.001)"
-                  />
-                  {/* Anel externo branco cirúrgico (diâmetro 12px => r=6) */}
-                  <circle
-                    cx={gizmoScreen.origin.x}
-                    cy={gizmoScreen.origin.y}
-                    r={6}
-                    fill="#FFFFFF"
-                    stroke={
-                      isPickingPivotSnap || activeAxis === "pivot"
-                        ? "#F59E0B"
-                        : "#00B4D8"
+                {fluxState.showPivotHandle && (
+                  <g
+                    data-testid="chamfer-gizmo-pivot-handle"
+                    className="pointer-events-auto cursor-move"
+                    style={{ touchAction: "none" }}
+                    onPointerDown={(ev) =>
+                      handleAxisPointerDown("pivot", 0, 0, 1, ev)
                     }
-                    strokeWidth={1.75}
-                  />
-                  {/* Centro ciano #00B4D8 (r=2.8) */}
-                  <circle
-                    cx={gizmoScreen.origin.x}
-                    cy={gizmoScreen.origin.y}
-                    r={2.8}
-                    fill={
-                      isPickingPivotSnap || activeAxis === "pivot"
-                        ? "#F59E0B"
-                        : "#00B4D8"
-                    }
-                  />
-                </g>
-
-                {/* Feedback de Delta Linear ou Snap de Pivô durante arraste não-rotacional */}
-                {activeAxis &&
-                  activeAxis !== "rot_x" &&
-                  activeAxis !== "rot_y" &&
-                  activeAxis !== "rot_z" && (
-                    <g
-                      transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 26})`}
-                    >
-                      <rect
-                        x={-84}
-                        y={-11}
-                        width={168}
-                        height={20}
-                        rx={6}
-                        fill={isDark ? "#0B1220" : "#FFFFFF"}
-                        stroke={
-                          activeAxis === "z"
-                            ? "#F59E0B"
-                            : copyOnTransform
-                              ? "#10B981"
-                              : "#00B4D8"
-                        }
-                        strokeWidth={1.3}
-                      />
-                      <text
-                        x={0}
-                        y={1}
-                        fill={isDark ? "#F8FAFC" : "#0F172A"}
-                        fontSize="10"
-                        fontWeight="bold"
-                        fontFamily="monospace"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                      >
-                        {activeAxis === "pivot"
-                          ? snappedPivotLabel ?? "Pivô Móvel (Snap)"
-                          : activeContactSnap?.snapBadgeLabel
-                            ? activeContactSnap.snapBadgeLabel
-                            : activeAxis === "z"
-                              ? `Ortho: ${(primaryBody?.elevationZ ?? dragDeltaMm).toFixed(2)} mm < +Z`
-                              : activeAxis === "extrude" || activeAxis === "face_normal"
-                                ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
-                                : activeAxis === "miter"
-                                  ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
-                                  : activeAxis === "planar"
-                                    ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
-                                    : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
-                      </text>
-                    </g>
-                  )}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      triggerHaptic("selection");
+                      setIsPickingPivotSnap((p) => !p);
+                    }}
+                  >
+                    <circle
+                      cx={gizmoScreen.origin.x}
+                      cy={gizmoScreen.origin.y}
+                      r={15}
+                      fill="rgba(0,0,0,0.001)"
+                    />
+                    <circle
+                      cx={gizmoScreen.origin.x}
+                      cy={gizmoScreen.origin.y}
+                      r={6}
+                      fill="#FFFFFF"
+                      stroke={
+                        isPickingPivotSnap || activeAxis === "pivot"
+                          ? "#F59E0B"
+                          : "#00B4D8"
+                      }
+                      strokeWidth={1.75}
+                    />
+                    <circle
+                      cx={gizmoScreen.origin.x}
+                      cy={gizmoScreen.origin.y}
+                      r={2.8}
+                      fill={
+                        isPickingPivotSnap || activeAxis === "pivot"
+                          ? "#F59E0B"
+                          : "#00B4D8"
+                      }
+                    />
+                  </g>
+                )}
               </g>
             )}
 
@@ -7947,19 +9023,48 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       )}
 
       {/* =====================================================================
+          3-FLUX. ÚNICO HUD CONTEXTUAL CONSOLIDADO DURANTE MANIPULAÇÃO ATIVA
+          Zero sobreposição: posicionado >= 48px acima do pivô com clamping no viewport
+          ===================================================================== */}
+      {is3DEnvironment && fluxState.consolidatedHud.visible && (
+        <div
+          data-testid="chamfer-3d-flux-consolidated-hud"
+          style={{
+            left: `${fluxState.consolidatedHud.screenX}px`,
+            top: `${fluxState.consolidatedHud.screenY}px`,
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.94)" : "rgba(255, 255, 255, 0.96)",
+            borderColor: copyOnTransform ? "#10B981" : "#38BDF8",
+          }}
+          className="pointer-events-none absolute z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-0.5 rounded-xl border px-3 py-1.5 font-mono shadow-xl transition-opacity duration-150 select-none"
+        >
+          <span
+            className={cn(
+              "whitespace-nowrap text-[11px] font-extrabold tabular-nums",
+              isDark ? "text-slate-50" : "text-slate-900",
+            )}
+          >
+            {fluxState.consolidatedHud.primaryLine}
+          </span>
+          {fluxState.consolidatedHud.secondarySnapLine && (
+            <span className="whitespace-nowrap text-[10px] font-bold text-sky-400 tabular-nums">
+              {fluxState.consolidatedHud.secondarySnapLine}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* =====================================================================
           3. BADGE IN-CANVAS CLICÁVEL AO LADO DO ELEMENTO (ACIONA O NUMPAD COMPACTO)
-          SEÇÃO 4: Offset lateral limpo para jamais colidir com a ponta vermelha +X!
+          Oculto durante manipulação ativa (FLUX) e sem botão Espelhar solto!
           ===================================================================== */}
       {is3DEnvironment &&
         gizmoScreen &&
         primaryBody &&
         !numpadSession &&
+        !fluxState.isManipulating &&
         selectionKind3D === "body" &&
         directTool !== "shell_3d" &&
         directTool !== "array_3d" &&
-        activeAxis !== "rot_x" &&
-        activeAxis !== "rot_y" &&
-        activeAxis !== "rot_z" &&
         (() => {
           const badgePos = computeNonOverlappingGizmoBadgePos({
             origin: gizmoScreen.origin,
@@ -7984,7 +9089,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 left: `${badgePos.left}px`,
                 top: `${badgePos.top}px`,
               }}
-              className="pointer-events-auto absolute z-30 flex items-center gap-1.5 select-none"
+              className="pointer-events-auto absolute z-30 flex items-center gap-1.5 select-none transition-opacity duration-150"
             >
               <button
                 type="button"
@@ -8091,7 +9196,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         : defaultAxis === "y"
                           ? "moveY"
                           : "moveZ",
-                      (lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId),
+                      lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId,
                       undefined,
                       copyOnTransform || Boolean(lastCompletedDrag?.copyMode),
                     );
@@ -8109,7 +9214,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 className="flex items-center gap-1 rounded-full border border-cyan-500/60 px-2.5 py-0.5 font-mono text-[10.5px] font-bold shadow-md transition-all hover:scale-105 cursor-pointer"
                 title="Toque para digitar medida exata"
               >
-                <span className="text-cyan-600 dark:text-cyan-300">
+                <span className="text-cyan-600 dark:text-cyan-300 tabular-nums">
                   {directTool === "fillet_3d" || directTool === "chamfer_3d"
                     ? filletOrChamferMode === "fillet"
                       ? `R ${(primaryBody.edgeFilletRadiusMm || 10).toFixed(1)} mm`
@@ -8131,193 +9236,220 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             : `${primaryBody.extrudeHeightMm.toFixed(1)} mm`}
                 </span>
               </button>
-
-              {/* Mirror ⇄ Tool Button & Popup */}
-              <div className="relative">
-                <button
-                  type="button"
-                  data-testid="chamfer-3d-gizmo-mirror-btn"
-              onPointerDown={(ev) => {
-                ev.stopPropagation();
-                ev.preventDefault();
-              }}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                triggerHaptic("selection");
-                setMirrorPlanePopupOpen((p) => !p);
-              }}
-              style={mirrorPlanePopupOpen ? undefined : themeSurfaceStyle}
-              className={cn(
-                "flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold shadow-md transition-all cursor-pointer",
-                mirrorPlanePopupOpen ? "border-amber-400 bg-amber-600 text-white" : "border-slate-500/40",
-              )}
-            >
-              <FlipHorizontal className="size-2.5" />
-              <span>Espelhar ⇄</span>
-            </button>
-            {mirrorPlanePopupOpen && (
-              <div
-                style={themeSurfaceStyle}
-                className="absolute left-0 top-full mt-1 z-40 flex items-center gap-1 rounded-lg border p-1 shadow-xl"
-              >
-                {(["x", "y", "z"] as const).map((pl) => (
-                  <button
-                    key={pl}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      setMirrorPlanePopupOpen(false);
-                      onCommitEntities?.((prev) => {
-                        const res = applyDirectMirror3DToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          pl,
-                          copyOnTransform,
-                          subSel.activePivot3D,
-                        );
-                        return res.updatedEntities;
-                      }, activeTargetEntityIds);
-                    }}
-                    className="rounded-md bg-cyan-600 hover:bg-cyan-500 px-2 py-0.5 font-mono text-[9.5px] font-bold text-white cursor-pointer"
-                  >
-                    ⇄ {pl.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            )}
-              </div>
             </div>
           );
         })()}
 
       {/* =====================================================================
-          3B. BARRA INFERIOR COMPACTA DE TELEMETRIA DA SELEÇÃO 3D (VÉRTICE / FACE / ARESTA / CORPO)
+          3B. BARRA INFERIOR COMPACTA DE TELEMETRIA E INSPETOR MULTI-CORPOS
+          Suavemente ocultada durante arraste ativo pelo Gerenciador FLUX (150ms)
           ===================================================================== */}
       {is3DEnvironment &&
         tool !== "loft_3d" &&
         (subSel.faceIds.length > 0 ||
           subSel.edgeIds.length > 0 ||
           vertexIds.length > 0 ||
-          subSel.bodyIds.length > 0) && (
-          <div
-            data-testid="chamfer-3d-selection-telemetry-bar"
-            style={{
-              ...themeSurfaceStyle,
-              bottom: "14px",
-              maxWidth: "calc(100% - 32px)",
-            }}
-            onPointerDown={(ev) => {
-              ev.stopPropagation();
-              ev.preventDefault();
-            }}
-            className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-cyan-500/50 px-3.5 py-1 font-mono text-[10.5px] font-bold shadow-lg backdrop-blur-md select-none"
-          >
-            <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[9.5px] font-extrabold text-cyan-400 border border-cyan-500/40">
-              {selectionKind3D === "vertex"
-                ? "VÉRTICE"
-                : selectionKind3D === "face"
-                  ? "FACE"
-                  : selectionKind3D === "edge"
-                    ? "ARESTA"
-                    : selectionKind3D === "hinge"
-                      ? "DOBRADIÇA"
-                      : "PEÇA INTEIRA"}
-            </span>
-            <span className={cn("truncate font-semibold", isDark ? "text-slate-100" : "text-slate-800")}>
-              {formatSubElementTelemetry3D(scene, subSel)}
-            </span>
-            {primaryBody && selectionKind3D === "body" && (
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-slate-800/95 border border-slate-700 px-2 py-0.5 text-[9.5px] font-bold text-emerald-300">
-                {(primaryBody.volumeMm3 / 1000).toFixed(1)} cm³ ·{" "}
-                {primaryBody.massGrams >= 1000
-                  ? `${(primaryBody.massGrams / 1000).toFixed(2)} kg`
-                  : `${primaryBody.massGrams.toFixed(0)} g`}{" "}
-                · χ={primaryBody.eulerCharacteristic.chi}
+          subSel.bodyIds.length > 0) && (() => {
+          const multiSummary =
+            selectionKind3D === "body" && selectedBodiesList.length >= 2
+              ? computeMultiBodyInspectorSummary3D(selectedBodiesList)
+              : null;
+
+          return (
+            <div
+              data-testid="chamfer-3d-selection-telemetry-bar"
+              style={{
+                ...themeSurfaceStyle,
+                bottom: "14px",
+              }}
+              onPointerDown={(ev) => {
+                ev.stopPropagation();
+                ev.preventDefault();
+              }}
+              className={cn(
+                "pointer-events-auto absolute left-[118px] right-2 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-[calc(100%-240px)] z-30 flex items-center gap-2 overflow-x-auto scrollbar-none rounded-full border border-cyan-500/50 px-3 py-1 font-mono text-[10.5px] font-bold shadow-lg backdrop-blur-md select-none transition-opacity duration-150",
+                fluxState.showBottomTelemetryBar
+                  ? "opacity-100"
+                  : "opacity-0 pointer-events-none",
+              )}
+            >
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[9.5px] font-extrabold border whitespace-nowrap",
+                  isDark
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                    : "bg-sky-500/15 text-sky-800 border-sky-600/40",
+                )}
+              >
+                {multiSummary
+                  ? `${multiSummary.bodyCount} CORPOS SELECIONADOS`
+                  : selectionKind3D === "vertex"
+                    ? "VÉRTICE"
+                    : selectionKind3D === "face"
+                      ? "FACE"
+                      : selectionKind3D === "edge"
+                        ? "ARESTA"
+                        : selectionKind3D === "hinge"
+                          ? "DOBRADIÇA"
+                          : "PEÇA INTEIRA"}
               </span>
-            )}
-            {primaryBody && selectionKind3D !== "body" && (
+
+              {multiSummary ? (
+                <>
+                  <span
+                    className={cn(
+                      "shrink-0 font-semibold whitespace-nowrap tabular-nums",
+                      isDark ? "text-slate-100" : "text-slate-800",
+                    )}
+                  >
+                    {`${Math.round(multiSummary.deltaXMm)}×${Math.round(multiSummary.deltaYMm)}×${Math.round(multiSummary.deltaZMm)} mm · ${multiSummary.totalVolumeCm3} cm³ · ${
+                      multiSummary.totalMassGrams >= 1000
+                        ? `${multiSummary.totalMassKg.toFixed(2)} kg`
+                        : `${Math.round(multiSummary.totalMassGrams)} g`
+                    }`}
+                  </span>
+                  <span
+                    className={cn(
+                      "hidden md:inline-flex shrink-0 items-center gap-1 text-[9.5px] font-bold whitespace-nowrap",
+                      isDark ? "text-sky-300" : "text-sky-800",
+                    )}
+                  >
+                    {multiSummary.materialSummaryLabel} · {multiSummary.wallThicknessSummaryLabel}
+                  </span>
+                  {multiSummary.isMaterialMixed && (
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-unify-material-btn"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        triggerHaptic("action");
+                        const targetMat =
+                          primaryBody?.materialName || "Aço Carbono";
+                        const targetIds = selectedBodiesList.map((b) => b.entityId);
+                        onCommitEntities?.(
+                          (prev) =>
+                            applyUniformMaterialToEntities3D(
+                              prev,
+                              targetIds,
+                              targetMat,
+                              primaryBody?.colorHex,
+                            ),
+                          targetIds,
+                        );
+                      }}
+                      title="Padronizar material de todos os corpos selecionados igual ao Corpo Principal"
+                      className="shrink-0 rounded-full border border-amber-400/60 bg-amber-500/20 hover:bg-amber-500/30 px-2 py-0.5 text-[9.5px] font-bold text-amber-200 cursor-pointer whitespace-nowrap"
+                    >
+                      Padronizar Mat.
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span
+                    className={cn(
+                      "truncate font-semibold",
+                      isDark ? "text-slate-100" : "text-slate-800",
+                    )}
+                  >
+                    {formatSubElementTelemetry3D(scene, subSel)}
+                  </span>
+                  {primaryBody && selectionKind3D === "body" && (
+                    <span className="hidden sm:inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-800/95 border border-slate-700 px-2 py-0.5 text-[9.5px] font-bold text-emerald-300 whitespace-nowrap tabular-nums">
+                      {(primaryBody.volumeMm3 / 1000).toFixed(1)} cm³ ·{" "}
+                      {primaryBody.massGrams >= 1000
+                        ? `${(primaryBody.massGrams / 1000).toFixed(2)} kg`
+                        : `${primaryBody.massGrams.toFixed(0)} g`}{" "}
+                      · χ={primaryBody.eulerCharacteristic.chi}
+                    </span>
+                  )}
+                </>
+              )}
+
+              {primaryBody && selectionKind3D !== "body" && (
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("selection");
+                    const expandedIds = expandBodyIdsWithAssemblyGroup3D(
+                      [primaryBody.bodyId],
+                      scene,
+                      entities,
+                    ).bodyIds;
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: expandedIds,
+                      selectionScope: "body",
+                      activePivot3D: primaryBody.pivot3D,
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.(expandedIds.map((bId) => bId.replace(/^body_/, "")));
+                    setDirectTool("transform_3d");
+                  }}
+                  className="shrink-0 rounded-full bg-slate-800 hover:bg-cyan-600/30 border border-cyan-500/40 px-2 py-0.5 text-[9.5px] text-cyan-300 cursor-pointer whitespace-nowrap"
+                >
+                  Peça Inteira
+                </button>
+              )}
+              {entities.some((e) => e.type === "loft3d") && (
+                <button
+                  type="button"
+                  data-testid="chamfer-3d-telemetry-unfold-loft-btn"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("action");
+                    const loftEnt = entities.find((e) => e.type === "loft3d");
+                    if (!loftEnt) return;
+                    const unfolded = unfoldLoft3DShellToFlatPattern2D(loftEnt, {
+                      seamIndex: 0,
+                      thicknessMm: sheetThickness || 2,
+                      kFactor: 0.33,
+                      origin2D: { x: 260, y: 0 },
+                    });
+                    if (unfolded && unfolded.flatEntities.length > 0) {
+                      onCommitEntities?.(
+                        (prev) => [...prev, ...unfolded.flatEntities],
+                        unfolded.flatEntities.map((fe) => fe.id),
+                      );
+                    }
+                  }}
+                  title="Planificar Casca 3D (Unfold por Triangulação em Verdadeira Grandeza)"
+                  className="shrink-0 rounded-full bg-amber-600 hover:bg-amber-500 border border-amber-400/60 px-2 py-0.5 text-[9.5px] font-bold text-white cursor-pointer whitespace-nowrap"
+                >
+                  📐 Unfold 2D
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(ev) => {
                   ev.stopPropagation();
-                  triggerHaptic("selection");
+                  setLastCompletedDrag(null);
                   setSubSel({
                     faceIds: [],
                     edgeIds: [],
                     vertexIds: [],
-                    bodyIds: [primaryBody.bodyId],
-                    selectionScope: "body",
-                    activePivot3D: primaryBody.pivot3D,
+                    bodyIds: [],
+                    selectionScope: "auto",
+                    activePivot3D: null,
                     activeHingeEdgeId: null,
                   });
-                  onSelectEntities?.([primaryBody.entityId]);
-                  setDirectTool("transform_3d");
+                  onSelectEntities?.([]);
+                  setDirectTool("select_3d");
                 }}
-                className="rounded-full bg-slate-800 hover:bg-cyan-600/30 border border-cyan-500/40 px-2 py-0.5 text-[9.5px] text-cyan-300 cursor-pointer"
+                className={cn(
+                  "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] cursor-pointer",
+                  isDark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900",
+                )}
+                title="Limpar seleção 3D"
               >
-                Peça Inteira
+                ✕
               </button>
-            )}
-            {entities.some((e) => e.type === "loft3d") && (
-              <button
-                type="button"
-                data-testid="chamfer-3d-telemetry-unfold-loft-btn"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  triggerHaptic("action");
-                  const loftEnt = entities.find((e) => e.type === "loft3d");
-                  if (!loftEnt) return;
-                  const unfolded = unfoldLoft3DShellToFlatPattern2D(loftEnt, {
-                    seamIndex: 0,
-                    thicknessMm: sheetThickness || 2,
-                    kFactor: 0.33,
-                    origin2D: { x: 260, y: 0 },
-                  });
-                  if (unfolded && unfolded.flatEntities.length > 0) {
-                    onCommitEntities?.(
-                      (prev) => [...prev, ...unfolded.flatEntities],
-                      unfolded.flatEntities.map((fe) => fe.id),
-                    );
-                  }
-                }}
-                title="Planificar Casca 3D (Unfold por Triangulação em Verdadeira Grandeza)"
-                className="rounded-full bg-amber-600 hover:bg-amber-500 border border-amber-400/60 px-2 py-0.5 text-[9.5px] font-bold text-white cursor-pointer whitespace-nowrap"
-              >
-                📐 Unfold 2D
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setLastCompletedDrag(null);
-                setSubSel({
-                  faceIds: [],
-                  edgeIds: [],
-                  vertexIds: [],
-                  bodyIds: [],
-                  selectionScope: "auto",
-                  activePivot3D: null,
-                  activeHingeEdgeId: null,
-                });
-                onSelectEntities?.([]);
-                setDirectTool("select_3d");
-              }}
-              className={cn(
-                "rounded-full px-1.5 py-0.5 text-[10px] cursor-pointer",
-                isDark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900",
-              )}
-              title="Limpar seleção 3D"
-            >
-              ✕
-            </button>
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
       {/* =====================================================================
           4. TECLADO NUMÉRICO FLUTUANTE COMPACTO (196px — CENTRALIZADO E PROTEGIDO)

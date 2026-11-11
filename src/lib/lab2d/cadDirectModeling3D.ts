@@ -33,6 +33,22 @@ import {
   buildSolidMesh,
   resolveEntitySolidFeatureType,
 } from "./chamferSolidKernel";
+import {
+  buildBodyTransformMatrix4x4,
+  classifyGlobalSpatialDirection3D,
+  classifyLocalSemanticFaceRole3D,
+  computeBodyOBBAndAABB3D,
+  extractNormalizedProfileSignature3D,
+  formatFaceDualOrientationHud3D,
+  getEntityAssemblyGroupId,
+  mapDirectionalSlotToEntityLocalTarget3D,
+  transformGlobalVectorToLocalOCS,
+  transformLocalNormalToGlobalWCS,
+  type CoordinateReferenceFrame3D,
+  type GlobalSpatialDirection3D,
+  type LocalSemanticFaceRole3D,
+  type Matrix4x4,
+} from "./chamfer3DFluxWcsSnapMulti";
 
 export interface Vec3Mm {
   x: number;
@@ -177,6 +193,18 @@ export interface DirectFace3D {
   centroid: Vec3Mm;
   areaMm2: number;
   polygon3D: Vec3Mm[];
+  /** Normal intrínseca no espaço local da peça (OCS) */
+  localNormal?: Vec3Mm;
+  /** Normal real no mundo (WCS) calculada por normalize((M^-1)^T * n_local) */
+  globalNormal?: Vec3Mm;
+  /** Identidade semântica intrínseca local (OCS) */
+  localRole?: LocalSemanticFaceRole3D;
+  /** Direção espacial global real em tempo real (WCS, tolerância 1.5°) */
+  globalDirection?: GlobalSpatialDirection3D;
+  /** Inclinação em graus quando globalDirection === "INCLINED" */
+  globalTiltDeg?: number;
+  /** Etiqueta dupla para Inspetor/HUD: ex. "FACE F1 · TOPO LOCAL · ORIENTAÇÃO GLOBAL +Y" */
+  hudOrientationLabel?: string;
 }
 
 export interface DirectEdge3D {
@@ -277,6 +305,14 @@ export interface DirectBody3D {
   edges: DirectEdge3D[];
   vertices: DirectVertex3D[];
   snapCandidates: DirectSnapPivotCandidate3D[];
+  /** Matriz homogênea 4×4 (OCS -> WCS) do corpo */
+  transformMatrix4x4?: Matrix4x4;
+  /** Vértices da Oriented Bounding Box (OBB) do corpo expressos em WCS */
+  obbCornersWCS?: Vec3Mm[];
+  /** Identificador de Montagem Lógica (Group) quando agrupado sem fusão booleana */
+  assemblyGroupId?: string | null;
+  /** Assinatura normalizada de seção transversal para seleção de mesmo perfil */
+  profileSignature?: string;
 }
 
 export interface DirectTopology3DScene {
@@ -5092,6 +5128,75 @@ export function buildDirectTopology3DScene(
     bodiesById.set(bodyId, kBodyObj);
   });
 
+  // =========================================================================
+  // PASSO DE REINDEXAÇÃO GEOMÉTRICA EM TEMPO REAL (WCS / OCS / MATRIZ 4×4 / OBB)
+  // =========================================================================
+  const entitiesByIdMap = new Map(entities.map((e) => [e.id, e]));
+  for (const b of bodies) {
+    const srcEnt = entitiesByIdMap.get(b.entityId);
+    const mat4 = buildBodyTransformMatrix4x4(b.pivot3D, b.rotation3D);
+    b.transformMatrix4x4 = mat4;
+    b.assemblyGroupId = getEntityAssemblyGroupId(srcEnt);
+    b.profileSignature = extractNormalizedProfileSignature3D(b, srcEnt).signature;
+
+    // Estima limites locais antes da rotação em torno do pivot3D para OBB
+    const localPts: Vec3Mm[] = [];
+    for (const f of b.faces) {
+      for (const p of f.polygon3D) {
+        const rel = transformGlobalVectorToLocalOCS(
+          { x: p.x - b.pivot3D.x, y: p.y - b.pivot3D.y, z: p.z - b.pivot3D.z },
+          b.rotation3D,
+        );
+        const dist = Math.hypot(
+          p.x - b.pivot3D.x,
+          p.y - b.pivot3D.y,
+          p.z - b.pivot3D.z,
+        );
+        localPts.push({
+          x: b.pivot3D.x + rel.x * dist,
+          y: b.pivot3D.y + rel.y * dist,
+          z: b.pivot3D.z + rel.z * dist,
+        });
+      }
+    }
+    if (localPts.length > 0) {
+      let lMinX = Infinity, lMaxX = -Infinity;
+      let lMinY = Infinity, lMaxY = -Infinity;
+      let lMinZ = Infinity, lMaxZ = -Infinity;
+      for (const lp of localPts) {
+        if (lp.x < lMinX) lMinX = lp.x;
+        if (lp.x > lMaxX) lMaxX = lp.x;
+        if (lp.y < lMinY) lMinY = lp.y;
+        if (lp.y > lMaxY) lMaxY = lp.y;
+        if (lp.z < lMinZ) lMinZ = lp.z;
+        if (lp.z > lMaxZ) lMaxZ = lp.z;
+      }
+      const obb = computeBodyOBBAndAABB3D(
+        { minX: lMinX, maxX: lMaxX, minY: lMinY, maxY: lMaxY, minZ: lMinZ, maxZ: lMaxZ },
+        mat4,
+      );
+      b.obbCornersWCS = obb.obbCornersWCS;
+    }
+
+    b.faces.forEach((face, idx) => {
+      const localN = transformGlobalVectorToLocalOCS(face.normal, b.rotation3D);
+      const globalN = transformLocalNormalToGlobalWCS(localN, mat4);
+      const localRole = classifyLocalSemanticFaceRole3D(face.role, localN);
+      const globalClass = classifyGlobalSpatialDirection3D(globalN);
+      face.normal = globalN;
+      face.localNormal = localN;
+      face.globalNormal = globalN;
+      face.localRole = localRole;
+      face.globalDirection = globalClass.direction;
+      face.globalTiltDeg = globalClass.tiltAngleDeg;
+      face.hudOrientationLabel = formatFaceDualOrientationHud3D(
+        idx + 1,
+        localRole,
+        globalClass,
+      );
+    });
+  }
+
   // Bounding box global da cena 3D
   let gMinX = Infinity;
   let gMaxX = -Infinity;
@@ -5266,11 +5371,14 @@ export function formatSubElementTelemetry3D(
       .filter((f): f is DirectFace3D => Boolean(f));
     if (faces.length > 0) {
       const totalArea = faces.reduce((acc, f) => acc + f.areaMm2, 0);
-      const countLabel = faces.length === 1 ? "1 face" : `${faces.length} faces`;
       const formattedArea = totalArea.toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
+      if (faces.length === 1 && faces[0]!.hudOrientationLabel) {
+        return `${faces[0]!.hudOrientationLabel} | ${formattedArea} mm²`;
+      }
+      const countLabel = faces.length === 1 ? "1 face" : `${faces.length} faces`;
       return `${countLabel} | ${formattedArea} mm²`;
     }
   }
@@ -5781,39 +5889,77 @@ export function applyDirectFilletOrChamfer3DToEntities(
  * Identifica a direção da face (`"top" | "bottom" | "front" | "back" | "left" | "right"`)
  * a partir de um `DirectFace3D` clicado pelo usuário.
  */
-export function resolveFaceShellCapDirection3D(face: DirectFace3D): ShellOpenCap3D {
-  if (face.role === "top" || face.sideIndex === -1) return "top";
-  if (face.role === "bottom" || face.sideIndex === -2) return "bottom";
-  const nx = face.normal.x;
-  const ny = face.normal.y;
-  const nz = face.normal.z;
-  const ax = Math.abs(nx);
-  const ay = Math.abs(ny);
-  const az = Math.abs(nz);
+export function resolveFaceShellCapDirection3D(
+  face: DirectFace3D,
+  frame: CoordinateReferenceFrame3D = "ocs",
+  _rotation3D?: { rxDeg: number; ryDeg: number; rzDeg: number },
+): ShellOpenCap3D {
+  if (frame === "ocs") {
+    if (face.role === "top" || face.sideIndex === -1) return "top";
+    if (face.role === "bottom" || face.sideIndex === -2) return "bottom";
+    const ln = face.localNormal ?? face.normal;
+    const ax = Math.abs(ln.x);
+    const ay = Math.abs(ln.y);
+    const az = Math.abs(ln.z);
+    if (az >= ax && az >= ay && az > 0.45) {
+      return ln.z >= 0 ? "top" : "bottom";
+    }
+    if (ax >= ay) {
+      return ln.x >= 0 ? "right" : "left";
+    }
+    return ln.y >= 0 ? "front" : "back";
+  }
+
+  const gn = face.globalNormal ?? face.normal;
+  const ax = Math.abs(gn.x);
+  const ay = Math.abs(gn.y);
+  const az = Math.abs(gn.z);
   if (az >= ax && az >= ay && az > 0.45) {
-    return nz >= 0 ? "top" : "bottom";
+    return gn.z >= 0 ? "top" : "bottom";
   }
   if (ax >= ay) {
-    return nx >= 0 ? "right" : "left";
+    return gn.x >= 0 ? "right" : "left";
   }
-  return ny >= 0 ? "front" : "back";
+  return gn.y >= 0 ? "front" : "back";
 }
 
 /**
  * Resolve as faces abertas do `Shell / Casca 3D` respeitando estritamente a(s) face(s) selecionada(s):
- * - No modo `Caixa (1 Face)` (`top_only`): abre EXCLUSIVAMENTE a face clicada pelo usuário (`FRONT`, `BACK`, `LEFT`, `RIGHT`, `TOP` ou `BOTTOM`).
- * - No modo `Tubo (2 Faces)` (`both_ends`): se clicou em `FRONT` ou `BACK`, vaza o tubo no eixo Y (`["front", "back"]`);
- *   se clicou em `LEFT` ou `RIGHT`, vaza no eixo X (`["left", "right"]`); se clicou em `TOP` ou `BOTTOM`, vaza no eixo Z (`["top", "bottom"]`).
+ * - Usa `localNormal` (OCS) para identificar qual parede física da peça corresponde à face clicada,
+ *   mesmo quando o sólido foi rotacionado no espaço 3D!
+ * - Quando nenhuma face está selecionada e `frame === "wcs"`, converte o `fallbackCap` global (`top`, `bottom`, etc.)
+ *   para a parede local correspondente usando `rotation3D`.
  */
 export function resolveShellOpenCapsFromSelection3D(
   selectedFaces: readonly DirectFace3D[],
   mode: "both_ends" | "top_only",
   fallbackCap: ShellOpenCap3D = "top",
+  frame: CoordinateReferenceFrame3D = "ocs",
+  rotation3D?: { rxDeg: number; ryDeg: number; rzDeg: number },
 ): ShellOpenCap3D[] {
-  const primaryDir: ShellOpenCap3D =
-    selectedFaces && selectedFaces.length > 0
-      ? resolveFaceShellCapDirection3D(selectedFaces[0]!)
-      : fallbackCap;
+  let primaryDir: ShellOpenCap3D;
+  if (selectedFaces && selectedFaces.length > 0) {
+    primaryDir = resolveFaceShellCapDirection3D(selectedFaces[0]!, "ocs");
+  } else if (frame === "wcs" && rotation3D) {
+    const slotMap: Record<
+      ShellOpenCap3D,
+      "top" | "bottom" | "pos_x" | "neg_x" | "pos_y" | "neg_y"
+    > = {
+      top: "top",
+      bottom: "bottom",
+      right: "pos_x",
+      left: "neg_x",
+      front: "pos_y",
+      back: "neg_y",
+    };
+    primaryDir = mapDirectionalSlotToEntityLocalTarget3D(
+      slotMap[fallbackCap],
+      rotation3D,
+      "wcs",
+    ).localShellCap;
+  } else {
+    primaryDir = fallbackCap;
+  }
 
   if (mode === "top_only") {
     return [primaryDir];
@@ -5878,34 +6024,93 @@ export function applyDirectOffsetFace3DToEntities(
     | "neg_y",
   deltaMm: number,
   faceNormal?: Vec3Mm | null,
+  referenceFrame: CoordinateReferenceFrame3D = "wcs",
 ): Entity[] {
   const rounded = Number(deltaMm.toFixed(2));
   const idSet = new Set(targetIds);
-
-  const effectiveNormal: Vec3Mm | undefined =
-    faceNormal ??
-    (faceTarget === "pos_x"
-      ? { x: 1, y: 0, z: 0 }
-      : faceTarget === "neg_x"
-        ? { x: -1, y: 0, z: 0 }
-        : faceTarget === "pos_y"
-          ? { x: 0, y: 1, z: 0 }
-          : faceTarget === "neg_y"
-            ? { x: 0, y: -1, z: 0 }
-            : undefined);
 
   return entities.map((e) => {
     if (!idSet.has(e.id)) return e;
     const cur = getEntityDirect3DParams(e);
     const mSpec = getMiterBarSpecFromEntity(e);
+    const hasRot =
+      Math.abs(cur.rotation3D.rxDeg) > 0.05 ||
+      Math.abs(cur.rotation3D.ryDeg) > 0.05 ||
+      Math.abs(cur.rotation3D.rzDeg) > 0.05;
 
-    if (faceTarget === "top") {
+    // Resolve o alvo local (OCS) quando o usuário escolhe uma direção global (+Z, -Z, +X, -X, +Y, -Y)
+    // ou clica diretamente em uma face rotacionada no espaço 3D!
+    let resolvedTarget = faceTarget;
+    let effectiveNormal: Vec3Mm | undefined = faceNormal ?? undefined;
+
+    if (
+      faceTarget === "top" ||
+      faceTarget === "bottom" ||
+      faceTarget === "pos_x" ||
+      faceTarget === "neg_x" ||
+      faceTarget === "pos_y" ||
+      faceTarget === "neg_y"
+    ) {
+      const mapped = mapDirectionalSlotToEntityLocalTarget3D(
+        faceTarget,
+        cur.rotation3D,
+        referenceFrame,
+      );
+      resolvedTarget = mapped.localTarget;
+      effectiveNormal = mapped.localNormal;
+    } else if (faceTarget === "side_normal" && faceNormal && hasRot) {
+      const localN = transformGlobalVectorToLocalOCS(faceNormal, cur.rotation3D);
+      if (Math.abs(localN.z) >= Math.abs(localN.x) && Math.abs(localN.z) >= Math.abs(localN.y) && Math.abs(localN.z) > 0.7) {
+        resolvedTarget = localN.z >= 0 ? "top" : "bottom";
+      } else {
+        effectiveNormal = localN;
+      }
+    }
+
+    if (!effectiveNormal) {
+      effectiveNormal =
+        resolvedTarget === "pos_x"
+          ? { x: 1, y: 0, z: 0 }
+          : resolvedTarget === "neg_x"
+            ? { x: -1, y: 0, z: 0 }
+            : resolvedTarget === "pos_y"
+              ? { x: 0, y: 1, z: 0 }
+              : resolvedTarget === "neg_y"
+                ? { x: 0, y: -1, z: 0 }
+                : undefined;
+    }
+
+    if (resolvedTarget === "top") {
+      const prevCenterLocalZ = cur.elevationZ + cur.extrudeHeightMm * 0.5;
       const nextHeight = Math.max(1, Number((cur.extrudeHeightMm + rounded).toFixed(2)));
+      // Quando a peça está rotacionada em torno do pivot3D, compensa o deslocamento do centro local +0.5*rounded*ez
+      // para que a face oposta permaneça ancorada no mundo (WCS)!
+      let rotCompDx = 0;
+      let rotCompDy = 0;
+      let rotCompDz = 0;
+      if (hasRot) {
+        const mat = buildBodyTransformMatrix4x4({ x: 0, y: 0, z: 0 }, cur.rotation3D);
+        // Eixo local +Z em WCS é (mat[2], mat[6], mat[10]). Sem rotação, o centro sobe (0, 0, +0.5*rounded).
+        // Com rotação, queremos que o centro avance 0.5*rounded ao longo de +Z_local em WCS!
+        rotCompDx = 0.5 * rounded * mat[2];
+        rotCompDy = 0.5 * rounded * mat[6];
+        rotCompDz = 0.5 * rounded * (mat[10] - 1);
+      }
+      const shiftedEnt =
+        Math.abs(rotCompDx) > 1e-4 || Math.abs(rotCompDy) > 1e-4
+          ? e.type === "rect"
+            ? { ...e, x: Number((e.x + rotCompDx).toFixed(3)), y: Number((e.y + rotCompDy).toFixed(3)) }
+            : (translate(e, rotCompDx, rotCompDy) ?? e)
+          : e;
+      const nextElev = Number((cur.elevationZ + rotCompDz).toFixed(2));
+      void prevCenterLocalZ;
       return {
-        ...e,
+        ...shiftedEnt,
+        elevationZ: nextElev,
         extrudeHeight: nextHeight,
         params: {
-          ...(e.params ?? {}),
+          ...(shiftedEnt.params ?? {}),
+          elevationZ: nextElev,
           extrudeHeight: nextHeight,
           extrudeHeightMm: nextHeight,
           offsetFaceTopMm: 0,
@@ -5913,15 +6118,32 @@ export function applyDirectOffsetFace3DToEntities(
         },
       };
     }
-    if (faceTarget === "bottom") {
-      const nextElev = Number((cur.elevationZ - rounded).toFixed(2));
+    if (resolvedTarget === "bottom") {
       const nextHeight = Math.max(1, Number((cur.extrudeHeightMm + rounded).toFixed(2)));
+      let rotCompDx = 0;
+      let rotCompDy = 0;
+      let nextElev = Number((cur.elevationZ - rounded).toFixed(2));
+      if (hasRot) {
+        const mat = buildBodyTransformMatrix4x4({ x: 0, y: 0, z: 0 }, cur.rotation3D);
+        // Avançar a base local (-Z_local) em +rounded desloca o centro em -0.5*rounded * Z_local_WCS
+        rotCompDx = -0.5 * rounded * mat[2];
+        rotCompDy = -0.5 * rounded * mat[6];
+        // Sem compensação, elevationZ-rounded + nextHeight/2 mudaria o centro Z em -0.5*rounded
+        const rotCompDz = -0.5 * rounded * mat[10] - (-0.5 * rounded);
+        nextElev = Number((cur.elevationZ - rounded + rotCompDz).toFixed(2));
+      }
+      const shiftedEnt =
+        Math.abs(rotCompDx) > 1e-4 || Math.abs(rotCompDy) > 1e-4
+          ? e.type === "rect"
+            ? { ...e, x: Number((e.x + rotCompDx).toFixed(3)), y: Number((e.y + rotCompDy).toFixed(3)) }
+            : (translate(e, rotCompDx, rotCompDy) ?? e)
+          : e;
       return {
-        ...e,
+        ...shiftedEnt,
         elevationZ: nextElev,
         extrudeHeight: nextHeight,
         params: {
-          ...(e.params ?? {}),
+          ...(shiftedEnt.params ?? {}),
           elevationZ: nextElev,
           extrudeHeight: nextHeight,
           extrudeHeightMm: nextHeight,
@@ -6084,11 +6306,11 @@ export function applyDirectOffsetFace3DToEntities(
     }
 
     if (
-      (faceTarget === "side_normal" ||
-        faceTarget === "pos_x" ||
-        faceTarget === "neg_x" ||
-        faceTarget === "pos_y" ||
-        faceTarget === "neg_y") &&
+      (resolvedTarget === "side_normal" ||
+        resolvedTarget === "pos_x" ||
+        resolvedTarget === "neg_x" ||
+        resolvedTarget === "pos_y" ||
+        resolvedTarget === "neg_y") &&
       effectiveNormal
     ) {
       const nx = effectiveNormal.x;
@@ -6102,20 +6324,50 @@ export function applyDirectOffsetFace3DToEntities(
           let nextY = e.y;
           let nextW = e.w;
           let nextH = e.h;
+          let dirX = 0;
+          let dirY = 0;
           if (Math.abs(ux) >= Math.abs(uy)) {
             if (ux > 0) {
+              dirX = 1;
               nextW = Math.max(1, Number((e.w + rounded).toFixed(2)));
             } else {
+              dirX = -1;
               nextX = Number((e.x - rounded).toFixed(2));
               nextW = Math.max(1, Number((e.w + rounded).toFixed(2)));
             }
           } else {
             if (uy > 0) {
+              dirY = 1;
               nextH = Math.max(1, Number((e.h + rounded).toFixed(2)));
             } else {
+              dirY = -1;
               nextY = Number((e.y - rounded).toFixed(2));
               nextH = Math.max(1, Number((e.h + rounded).toFixed(2)));
             }
+          }
+          if (hasRot) {
+            const actualDeltaSpan = Math.abs(dirX) > 0 ? nextW - e.w : nextH - e.h;
+            const localShiftX = 0.5 * actualDeltaSpan * dirX;
+            const localShiftY = 0.5 * actualDeltaSpan * dirY;
+            const mat = buildBodyTransformMatrix4x4({ x: 0, y: 0, z: 0 }, cur.rotation3D);
+            const worldShiftX = mat[0] * localShiftX + mat[1] * localShiftY;
+            const worldShiftY = mat[4] * localShiftX + mat[5] * localShiftY;
+            const worldShiftZ = mat[8] * localShiftX + mat[9] * localShiftY;
+            const compDx = worldShiftX - localShiftX;
+            const compDy = worldShiftY - localShiftY;
+            const nextElev = Number((cur.elevationZ + worldShiftZ).toFixed(2));
+            return {
+              ...e,
+              x: Number((nextX + compDx).toFixed(3)),
+              y: Number((nextY + compDy).toFixed(3)),
+              w: nextW,
+              h: nextH,
+              elevationZ: nextElev,
+              params: {
+                ...(e.params ?? {}),
+                elevationZ: nextElev,
+              },
+            };
           }
           return { ...e, x: nextX, y: nextY, w: nextW, h: nextH };
         }
@@ -6123,7 +6375,7 @@ export function applyDirectOffsetFace3DToEntities(
           const b = boxOf(e);
           const cx = (b.minX + b.maxX) * 0.5;
           const cy = (b.minY + b.maxY) * 0.5;
-          const nextPts = e.pts.map((pt) => {
+          const rawNextPts = e.pts.map((pt) => {
             const proj = (pt.x - cx) * ux + (pt.y - cy) * uy;
             if (proj > 0) {
               return {
@@ -6133,9 +6385,33 @@ export function applyDirectOffsetFace3DToEntities(
             }
             return pt;
           });
+          if (hasRot) {
+            const nb = boxOf({ ...e, pts: rawNextPts });
+            const localShiftX = (nb.minX + nb.maxX) * 0.5 - cx;
+            const localShiftY = (nb.minY + nb.maxY) * 0.5 - cy;
+            const mat = buildBodyTransformMatrix4x4({ x: 0, y: 0, z: 0 }, cur.rotation3D);
+            const worldShiftX = mat[0] * localShiftX + mat[1] * localShiftY;
+            const worldShiftY = mat[4] * localShiftX + mat[5] * localShiftY;
+            const worldShiftZ = mat[8] * localShiftX + mat[9] * localShiftY;
+            const compDx = worldShiftX - localShiftX;
+            const compDy = worldShiftY - localShiftY;
+            const nextElev = Number((cur.elevationZ + worldShiftZ).toFixed(2));
+            return {
+              ...e,
+              pts: rawNextPts.map((pt) => ({
+                x: Number((pt.x + compDx).toFixed(3)),
+                y: Number((pt.y + compDy).toFixed(3)),
+              })),
+              elevationZ: nextElev,
+              params: {
+                ...(e.params ?? {}),
+                elevationZ: nextElev,
+              },
+            };
+          }
           return {
             ...e,
-            pts: nextPts,
+            pts: rawNextPts,
           };
         }
       }
