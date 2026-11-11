@@ -26,6 +26,12 @@ import {
   convertLoft3DMeshToTessellatedShape,
   type Loft3DMesh,
 } from "@/lib/lab2d/cadLoft3DEngine";
+import {
+  computeViewDirCad3DFromAngles,
+  DEFAULT_BREP_WIREFRAME_LAYER_CONFIG,
+  extractBRepTechnicalWireframeData3D,
+  type BRepWireframeLayerConfig,
+} from "@/lib/lab2d/chamferBRepWireframe3D";
 
 export interface ChamferUnified3DViewportProps {
   active?: boolean;
@@ -34,6 +40,7 @@ export interface ChamferUnified3DViewportProps {
   sheetThicknessMm?: number;
   edgeMode?: EdgeMode;
   renderStyle3D?: EdgeMode;
+  brepWireframeLayers?: BRepWireframeLayerConfig;
   view2D?: { tx: number; ty: number; k: number };
   view?: { tx: number; ty: number; k: number };
   viewportSize?: { w: number; h: number };
@@ -58,6 +65,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
   sheetThicknessMm,
   edgeMode,
   renderStyle3D: renderStyle3DProp,
+  brepWireframeLayers = DEFAULT_BREP_WIREFRAME_LAYER_CONFIG,
   view2D,
   view: viewProp,
   viewportSize,
@@ -84,6 +92,21 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     () => topologyScene ?? buildDirectTopology3DScene(entities, effectiveThickness),
     [topologyScene, entities, effectiveThickness],
   );
+
+  // Quantiza os ângulos de visão para recomputar geratrizes laterais de silhueta com suavidade no modo ARAME
+  const quantizedAzimuth = renderStyle3D === "wireframe" ? Math.round(azimuthDeg / 2) * 2 : 35;
+  const quantizedElevation = renderStyle3D === "wireframe" ? Math.round(elevationDeg / 2) * 2 : 32;
+
+  const brepWireframeData = useMemo(() => {
+    if (renderStyle3D !== "wireframe" || computedScene.bodies.length === 0) {
+      return null;
+    }
+    const viewDirCad3D = computeViewDirCad3DFromAngles(quantizedAzimuth, quantizedElevation);
+    return extractBRepTechnicalWireframeData3D(computedScene, entities, {
+      viewDirCad3D,
+      convertToThreeZUp: true,
+    });
+  }, [renderStyle3D, computedScene, entities, quantizedAzimuth, quantizedElevation]);
 
   // 1. Inicializa o ThreeBRepRenderer uma única vez com controles internos desativados
   //    (toda navegação Pan/Zoom/Órbita vem diretamente do canvas unificado de Lab2DEditor)
@@ -133,6 +156,20 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     }
   }, [computedScene]);
 
+  // 3.2. Sincroniza a decomposição B-Rep de 5 camadas para o modo ARAME Técnico
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.setBRepWireframeData(brepWireframeData);
+  }, [brepWireframeData]);
+
+  // 3.3. Sincroniza os filtros rápidos de camadas do modo ARAME
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.setBRepWireframeLayerConfig(brepWireframeLayers);
+  }, [brepWireframeLayers]);
+
   // 3.5. Sincroniza o preview translúcido azul-celeste ("Ghost Preview") do LOFT 3D em tempo real
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -151,7 +188,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     }
   }, [activeLoftPreviewMesh]);
 
-  // 4. Sincroniza o destaque Ciano Técnico (#00B4D8) das Faces, Arestas e Corpos selecionados no ThreeBRepRenderer
+  // 4. Sincroniza o destaque Ciano Técnico (#00B4D8 / #00F0FF) das Faces, Arestas e Corpos selecionados
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
@@ -198,10 +235,6 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
       }
     }
 
-    // Nota: quando a PEÇA INTEIRA (bodyIds) está selecionada e nenhuma face individual (faceIds) foi clicada,
-    // mantemos o acabamento metálico uniforme em todas as faces da peça (evitando pintar apenas a tampa superior
-    // de azul escuro, o que gerava ilusão óptica de peça oca/aberta).
-
     renderer.requestRender();
   }, [computedScene, subSelection3D]);
 
@@ -243,6 +276,8 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     effectiveThickness,
     computedScene,
     renderStyle3D,
+    brepWireframeData,
+    brepWireframeLayers,
   ]);
 
   return (

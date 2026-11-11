@@ -398,6 +398,24 @@ import {
 import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
 import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
+import {
+  computeAdaptiveZoomMetrics,
+  computeCharacteristicPartRadiusMm,
+  createPinchGestureSessionState,
+  evaluateAdaptivePanStep,
+  evaluateAdaptiveZoomStep,
+  isHudInteractiveElement,
+  loadZoomSensitivityConfig,
+  PINCH_DEADZONE_PX,
+  saveZoomSensitivityConfig,
+  type PinchGestureSessionState,
+  type ZoomSensitivityConfig,
+} from "@/lib/lab2d/chamferAdaptiveZoom";
+import {
+  loadBRepWireframeLayerConfig,
+  saveBRepWireframeLayerConfig,
+  type BRepWireframeLayerConfig,
+} from "@/lib/lab2d/chamferBRepWireframe3D";
 
 const ChamferUnified3DViewport = lazyWithRetry(() =>
   import("./ChamferUnified3DViewport").then((m) => ({ default: m.ChamferUnified3DViewport })),
@@ -645,7 +663,7 @@ const ENTITY_KINDS: DimKind[] = [
 const PRIMARY: Tool[] = ["select", "line", "polyline", "circle", "arc", "rect", "text"];
 
 const ZOOM_MIN = 0.05;
-const ZOOM_MAX = 30;
+const ZOOM_MAX = 80;
 
 type Measure = { a: Vec2; b: Vec2 };
 
@@ -1142,9 +1160,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
   const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
   const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("wireframe");
+  const userPickedArameIn3DRef = useRef<boolean>(false);
   const [wireframe3DStyle, setWireframe3DStyle] = useState<ChamferWireframe3DStyleConfig>(() => ({
     ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   }));
+  const [zoomSensitivity, setZoomSensitivityState] = useState<ZoomSensitivityConfig>(() =>
+    loadZoomSensitivityConfig(),
+  );
+  const zoomSensitivityRef = useRef<ZoomSensitivityConfig>(zoomSensitivity);
+  zoomSensitivityRef.current = zoomSensitivity;
+  const handleChangeZoomSensitivity = useCallback((next: ZoomSensitivityConfig) => {
+    const clean = saveZoomSensitivityConfig(next);
+    zoomSensitivityRef.current = clean;
+    setZoomSensitivityState(clean);
+  }, []);
+  const [brepWireframeLayers, setBrepWireframeLayersState] = useState<BRepWireframeLayerConfig>(
+    () => loadBRepWireframeLayerConfig(),
+  );
+  const handleChangeBrepWireframeLayers = useCallback((next: BRepWireframeLayerConfig) => {
+    const clean = saveBRepWireframeLayerConfig(next);
+    setBrepWireframeLayersState(clean);
+  }, []);
+  const pinchSessionRef = useRef<PinchGestureSessionState | null>(null);
+  const characteristicRadiusRef = useRef<number>(100);
   const [orbitCommand3D, setOrbitCommand3D] = useState<{
     azimuthDeg: number;
     elevationDeg: number;
@@ -1833,11 +1871,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [],
   );
 
-  // Motor Sólido 3D In-Place ativo no canvas unificado quando em vista 3D e modo SÓLIDO / SOMB
+  // Motor 3D B-Rep In-Place ativo no canvas unificado (SÓLIDO, SOMB e ARAME Técnico B-Rep)
   const isInPlaceSolid3DActive =
     !solidOpen &&
-    (activeMode === "3d" || orbitProjection2D.isTilted || isOrbitToolActive) &&
-    renderStyle3D !== "wireframe";
+    (activeMode === "3d" ||
+      ((orbitProjection2D.isTilted || isOrbitToolActive) &&
+        (renderStyle3D !== "wireframe" || userPickedArameIn3DRef.current)));
 
   const transitionTo3D = useCallback(
     (targetMode: "3d" | "flanges" = "3d") => {
@@ -1853,7 +1892,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setDivideEditorOpen(false);
         setMobileEditorOpenManual(false);
         setActiveArrayType(null);
-        setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
+        setRenderStyle3D((prev) =>
+          prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded-edges" : prev,
+        );
         setSelection((prevSel) => {
           if (prevSel.length > 0) return prevSel;
           const firstDrawable = entities.find((e) => e.type !== "point" && e.type !== "text");
@@ -1882,7 +1923,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setActiveMode("3d");
       setSolidOpen(false);
       setIsOrbitToolActive(true);
-      setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
+      setRenderStyle3D((prev) =>
+        prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded-edges" : prev,
+      );
       if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
         animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
       }
@@ -2247,16 +2290,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [projectId]);
 
   /* GRAVAÇÃO DO PROJETO COM GESTÃO DE ESTADO (SALVO / SALVANDO / PENDENTE) */
+  const projectRef = useRef<Project | null>(project);
+  projectRef.current = project;
+
   const performSave = useCallback(() => {
-    if (!project || !planId) return;
+    const curProject = projectRef.current;
+    if (!curProject || !planId) return;
     setSaveStatus("salvando");
     const live = pruneGroups(entities, groups);
     const next: Project = {
-      ...project,
+      ...curProject,
       layers,
       thickness,
       lastPlanId: planId,
-      plans: project.plans.map((pl) =>
+      plans: curProject.plans.map((pl) =>
         pl.id === planId
           ? {
               ...pl,
@@ -2270,11 +2317,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ),
     };
     saveProject(next);
+    projectRef.current = next;
     setProject(next);
     setTimeout(() => {
       setSaveStatus("salvo");
     }, 400);
-  }, [project, planId, entities, groups, layers, thickness, dims, cad3dTreeJson, revEngData]);
+  }, [planId, entities, groups, layers, thickness, dims, cad3dTreeJson, revEngData]);
 
   const handleManualSave = useCallback(() => {
     triggerHaptic("action");
@@ -2283,8 +2331,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [performSave]);
 
   /* SALVAMENTO AUTOMÁTICO CONFORME CONFIGURAÇÃO DO CHAMFER */
+  const activeProjectIdForAutoSave = project?.id ?? null;
   useEffect(() => {
-    if (isInitialLoad.current || !project || !planId || isDraggingEntityRef.current) return;
+    if (
+      isInitialLoad.current ||
+      !activeProjectIdForAutoSave ||
+      !planId ||
+      isDraggingEntityRef.current
+    ) {
+      return;
+    }
 
     // Sinaliza que há alterações não salvas
     setSaveStatus("pendente");
@@ -2302,7 +2358,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     return () => clearTimeout(t);
   }, [
-    project,
+    activeProjectIdForAutoSave,
     entities,
     layers,
     planId,
@@ -2610,6 +2666,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const el = canvasViewportRef.current ?? svgRef.current;
     if (!el) return;
     const onWheel = (ev: WheelEvent) => {
+      if (isHudInteractiveElement(ev.target)) {
+        return;
+      }
       ev.preventDefault();
       ev.stopPropagation();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
@@ -2617,10 +2676,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const r = el.getBoundingClientRect();
       const intensity = ev.ctrlKey ? 0.01 : 0.0015;
       const clampedDy = Math.max(-800, Math.min(800, dy));
-      const factor = Math.exp(-clampedDy * intensity);
+      const rawFactor = Math.exp(-clampedDy * intensity);
+      const metrics = computeAdaptiveZoomMetrics({
+        characteristicRadiusMm: characteristicRadiusRef.current,
+        viewK: viewRef.current.k,
+        viewportWidthPx: r.width || 800,
+        viewportHeightPx: r.height || 600,
+        userSensitivityMultiplier: zoomSensitivityRef.current.multiplier,
+      });
+      const evaluated = evaluateAdaptiveZoomStep({
+        rawZoomRatio: rawFactor,
+        metrics,
+        isPinchGesture: false,
+      });
       const px = ev.clientX - r.left;
       const py = ev.clientY - r.top;
-      const v = zoomAt(factor, px, py);
+      const v = zoomAt(evaluated.appliedZoomRatio, px, py);
       flashZoom(v.k);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -2643,6 +2714,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     () => visible.filter((e) => modeAllows(outputMode, e.layer)),
     [visible, outputMode],
   );
+
+  characteristicRadiusRef.current = computeCharacteristicPartRadiusMm({
+    entities2D: drawable,
+    selectedEntityIds: selection,
+    defaultThicknessMm: thickness,
+  });
 
   /* índices espaciais: reconstruídos só quando a geometria muda */
   const pickIndex = useMemo(() => buildIndex(visible), [visible]);
@@ -5000,39 +5077,99 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const applyPinchZoomFromScreenPoints = useCallback(
     (ax: number, ay: number, bx: number, by: number) => {
+      const now = performance.now();
       const d = Math.hypot(bx - ax, by - ay) || 1;
-      const mx = (ax + bx) / 2;
-      const my = (ay + by) / 2;
-      if (!pinchRef.current) {
+      const mx = (ax + bx) * 0.5;
+      const my = (ay + by) * 0.5;
+      if (!pinchRef.current || !pinchSessionRef.current) {
         pinchRef.current = { dist: d, mx, my };
+        pinchSessionRef.current = createPinchGestureSessionState(ax, ay, bx, by, now);
         panRef.current = null;
         orbitDragRef.current = null;
         return;
       }
       const prev = pinchRef.current;
+      const session = pinchSessionRef.current;
       if (Math.abs(d - prev.dist) < 0.05 && Math.hypot(mx - prev.mx, my - prev.my) < 0.05) {
         return;
       }
-      const factor = Math.min(2, Math.max(0.5, d / (prev.dist || 1)));
       const rectEl = svgRef.current ?? canvasViewportRef.current;
       if (!rectEl) return;
       const r = rectEl.getBoundingClientRect();
       const v = viewRef.current;
-      const wx = (prev.mx - r.left - v.tx) / v.k;
-      const wy = (prev.my - r.top - v.ty) / v.k;
-      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
-      const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
+      const metrics = computeAdaptiveZoomMetrics({
+        characteristicRadiusMm: characteristicRadiusRef.current,
+        viewK: v.k,
+        viewportWidthPx: r.width || 800,
+        viewportHeightPx: r.height || 600,
+        userSensitivityMultiplier: zoomSensitivityRef.current.multiplier,
+      });
+
+      const rawFactor = Math.min(2.5, Math.max(0.4, d / (session.prevDist || prev.dist || 1)));
+      const zoomEval = evaluateAdaptiveZoomStep({
+        rawZoomRatio: rawFactor,
+        metrics,
+        isPinchGesture: true,
+        pinchDeltaPxFromStart: d - session.initialDist,
+        touchElapsedMs: now - session.startTimeMs,
+        pinchUnlocked: session.unlockedZoom,
+      });
+      if (zoomEval.unlockedNow) {
+        session.unlockedZoom = true;
+      }
+
+      const rawMidDx = mx - session.prevMidX;
+      const rawMidDy = my - session.prevMidY;
+      const midDistFromStart = Math.hypot(mx - session.initialMidX, my - session.initialMidY);
+      if (!session.unlockedPan && midDistFromStart >= PINCH_DEADZONE_PX && now - session.startTimeMs >= 60) {
+        session.unlockedPan = true;
+      }
+
+      const panEval = session.unlockedPan
+        ? evaluateAdaptivePanStep({
+            rawDeltaPxX: rawMidDx,
+            rawDeltaPxY: rawMidDy,
+            viewportWidthPx: r.width || 800,
+            viewportHeightPx: r.height || 600,
+            metrics,
+          })
+        : { appliedDeltaPxX: 0, appliedDeltaPxY: 0, clampedByCloseUp: false };
+
+      session.prevDist = d;
+      session.prevMidX = mx;
+      session.prevMidY = my;
+      pinchRef.current = { dist: d, mx, my };
+      orbitDragRef.current = null;
+
+      if (zoomEval.blockedByDeadzone && !session.unlockedPan) {
+        return;
+      }
+
+      // Ancoragem focal exata sob o ponto médio atual dos 2 dedos
+      const anchorLocalX = mx - r.left;
+      const anchorLocalY = my - r.top;
+      const prevAnchorLocalX = anchorLocalX - panEval.appliedDeltaPxX;
+      const prevAnchorLocalY = anchorLocalY - panEval.appliedDeltaPxY;
+      const wx = (prevAnchorLocalX - v.tx) / v.k;
+      const wy = (prevAnchorLocalY - v.ty) / v.k;
+      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * zoomEval.appliedZoomRatio));
+      const nv = {
+        k,
+        tx: anchorLocalX - wx * k,
+        ty: anchorLocalY - wy * k,
+      };
       wasCameraPannedRef.current = true;
       applyView(nv);
       flashZoom(k);
       markGesture();
-      pinchRef.current = { dist: d, mx, my };
-      orbitDragRef.current = null;
     },
-    [],
+    [applyView, flashZoom, markGesture],
   );
 
   const onPointerDown = (ev: React.PointerEvent) => {
+    if (isHudInteractiveElement(ev.target)) {
+      return;
+    }
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
@@ -5042,11 +5179,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       const [a, b] = [...ptrsRef.current.values()];
       if (a && b) {
+        const d0 = Math.hypot(b.x - a.x, b.y - a.y) || 1;
         pinchRef.current = {
-          dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+          dist: d0,
           mx: (a.x + b.x) / 2,
           my: (a.y + b.y) / 2,
         };
+        pinchSessionRef.current = createPinchGestureSessionState(
+          a.x,
+          a.y,
+          b.x,
+          b.y,
+          performance.now(),
+        );
         panRef.current = null;
         orbitDragRef.current = null;
       }
@@ -6054,29 +6199,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       longPressRef.current = null;
     }
 
-    // ---- pinça + pan (2 ponteiros, qualquer ferramenta) ----
+    // ---- pinça + pan adaptativos anti-esbarrão (2 ponteiros, qualquer ferramenta) ----
     if (pinchRef.current && ptrsRef.current.size >= 2) {
       ev.preventDefault();
-      wasCameraPannedRef.current = true;
       const [a, b] = [...ptrsRef.current.values()];
       if (!a || !b) return;
-      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      const prev = pinchRef.current;
-      const factor = Math.min(2, Math.max(0.5, d / prev.dist));
-      const r = svgRef.current!.getBoundingClientRect();
-      const v = viewRef.current;
-      // ponto de mundo sob o ponto médio anterior
-      const wx = (prev.mx - r.left - v.tx) / v.k;
-      const wy = (prev.my - r.top - v.ty) / v.k;
-      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
-      const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
-      applyView(nv);
-      flashZoom(k);
-      markGesture();
-      pinchRef.current = { dist: d, mx, my };
-      orbitDragRef.current = null;
+      applyPinchZoomFromScreenPoints(a.x, a.y, b.x, b.y);
       return;
     }
 
@@ -6103,14 +6231,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (activePointerType !== pType) setActivePointerType(pType);
 
     if (panRef.current) {
-      const dx = ev.clientX - panRef.current.x;
-      const dy = ev.clientY - panRef.current.y;
-      if (Math.hypot(dx, dy) > 1.5) {
+      const rawDx = ev.clientX - panRef.current.x;
+      const rawDy = ev.clientY - panRef.current.y;
+      if (Math.hypot(rawDx, rawDy) > 1.5) {
         wasCameraPannedRef.current = true;
       }
       panRef.current = { x: ev.clientX, y: ev.clientY };
       const v = viewRef.current;
-      applyView({ ...v, tx: v.tx + dx, ty: v.ty + dy });
+      const rectEl = svgRef.current ?? canvasViewportRef.current;
+      const r = rectEl?.getBoundingClientRect();
+      const wPx = r?.width || canvasSize.w || 800;
+      const hPx = r?.height || canvasSize.h || 600;
+      const panMetrics = computeAdaptiveZoomMetrics({
+        characteristicRadiusMm: characteristicRadiusRef.current,
+        viewK: v.k,
+        viewportWidthPx: wPx,
+        viewportHeightPx: hPx,
+        userSensitivityMultiplier: zoomSensitivityRef.current.multiplier,
+      });
+      const panEval = evaluateAdaptivePanStep({
+        rawDeltaPxX: rawDx,
+        rawDeltaPxY: rawDy,
+        viewportWidthPx: wPx,
+        viewportHeightPx: hPx,
+        metrics: panMetrics,
+      });
+      applyView({ ...v, tx: v.tx + panEval.appliedDeltaPxX, ty: v.ty + panEval.appliedDeltaPxY });
       markGesture();
       return;
     }
@@ -6733,6 +6879,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       if (ptrsRef.current.size < 2) {
         pinchRef.current = null;
+        pinchSessionRef.current = null;
       }
       panRef.current = null;
       orbitDragRef.current = null;
@@ -8929,15 +9076,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               isDark={isDark}
               renderStyle3D={renderStyle3D}
-              onChangeRenderStyle3D={setRenderStyle3D}
+              onChangeRenderStyle3D={(nextMode) => {
+                userPickedArameIn3DRef.current = nextMode === "wireframe";
+                setRenderStyle3D(nextMode);
+                if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                  setIsOrbitToolActive(true);
+                  animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                }
+              }}
               wireframe3DStyle={wireframe3DStyle}
               onChangeWireframe3DStyle={setWireframe3DStyle}
+              zoomSensitivity={zoomSensitivity}
+              onChangeZoomSensitivity={handleChangeZoomSensitivity}
+              brepWireframeLayers={brepWireframeLayers}
+              onChangeBrepWireframeLayers={handleChangeBrepWireframeLayers}
             />
 
             {/* SELETOR DIRETO DE REPRESENTAÇÃO 3D NA BARRA SUPERIOR: [ SÓLIDO | SOMB | ARAME ] */}
             {(activeMode === "3d" || isOrbitToolActive || orbitProjection2D.isTilted) && (
               <div
                 data-testid="chamfer-topbar-3d-style-selector"
+                data-chamfer-hud="true"
                 style={{
                   backgroundColor: "var(--chamfer-surface-elevated)",
                   borderColor: "var(--chamfer-border-strong)",
@@ -8950,6 +9109,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
+                    userPickedArameIn3DRef.current = false;
                     setRenderStyle3D("shaded-edges");
                     if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
                       setIsOrbitToolActive(true);
@@ -8964,7 +9124,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: "var(--chamfer-text-secondary)" }
                   }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
                   title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
                 >
                   SÓLIDO
@@ -8975,6 +9135,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
+                    userPickedArameIn3DRef.current = false;
                     setRenderStyle3D("shaded");
                     if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
                       setIsOrbitToolActive(true);
@@ -8989,7 +9150,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: "var(--chamfer-text-secondary)" }
                   }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
                   title="Sólido Metálico 3D Puro (Sem Arestas)"
                 >
                   SOMB
@@ -9000,7 +9161,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
+                    userPickedArameIn3DRef.current = true;
                     setRenderStyle3D("wireframe");
+                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                      setIsOrbitToolActive(true);
+                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                    }
                   }}
                   style={
                     renderStyle3D === "wireframe"
@@ -9010,8 +9176,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: "var(--chamfer-text-secondary)" }
                   }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
-                  title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
+                  title="Arame Técnico B-Rep 3D Invariante em Espaço de Tela com Raio-X e Cotas"
                 >
                   ARAME
                 </button>
@@ -10002,11 +10168,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 : "rounded-none border-0",
           )}
           onPointerDownCapture={(ev) => {
-            const targetEl = ev.target as Element | null;
-            const isUiControl = Boolean(
-              targetEl?.closest?.('button, input, select, textarea, a, [role="button"]'),
-            );
-            if (!isUiControl) {
+            if (!isHudInteractiveElement(ev.target)) {
               ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
             }
             if (ptrsRef.current.size >= 2) {
@@ -10018,6 +10180,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   mx: (a.x + b.x) / 2,
                   my: (a.y + b.y) / 2,
                 };
+                pinchSessionRef.current = createPinchGestureSessionState(
+                  a.x,
+                  a.y,
+                  b.x,
+                  b.y,
+                  performance.now(),
+                );
                 panRef.current = null;
                 orbitDragRef.current = null;
               }
@@ -10076,6 +10245,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 mx: (t0.clientX + t1.clientX) / 2,
                 my: (t0.clientY + t1.clientY) / 2,
               };
+              pinchSessionRef.current = createPinchGestureSessionState(
+                t0.clientX,
+                t0.clientY,
+                t1.clientX,
+                t1.clientY,
+                performance.now(),
+              );
               panRef.current = null;
               orbitDragRef.current = null;
               e.stopPropagation();
@@ -10099,6 +10275,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             if (isMultiTouchGestureRef.current) {
               if (e.touches.length < 2) {
                 pinchRef.current = null;
+                pinchSessionRef.current = null;
               }
               if (e.touches.length === 0) {
                 ptrsRef.current.clear();
@@ -10495,6 +10672,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 entities={drawable}
                 thickness={thickness}
                 edgeMode={renderStyle3D}
+                brepWireframeLayers={brepWireframeLayers}
+                topologyScene={topologyScene3D}
                 view2D={view}
                 viewportSize={canvasSize}
                 azimuthDeg={orbitAzimuthDeg}
@@ -13480,6 +13659,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             width={canvasSize.w}
             height={canvasSize.h}
             activeMode={activeMode}
+            renderStyle3D={renderStyle3D}
+            brepWireframeLayers={brepWireframeLayers}
+            onChangeBrepWireframeLayers={handleChangeBrepWireframeLayers}
             isDark={isDark}
             isIsometric={drawingProjection === "isometric"}
             isoPlane={isoPlane}
@@ -13604,7 +13786,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 return synced;
               });
               if (Array.isArray(selectedIds)) {
-                setSelection(selectedIds);
+                setSelection((prevSel) =>
+                  prevSel.length === selectedIds.length &&
+                  prevSel.every((id, idx) => id === selectedIds[idx])
+                    ? prevSel
+                    : selectedIds,
+                );
               }
             }}
             onCommitAtomicDrag={(preDragEntities, finalEntities, toastMessageOrIds) => {
@@ -13622,7 +13809,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 return synced;
               });
               if (Array.isArray(toastMessageOrIds)) {
-                setSelection(toastMessageOrIds);
+                setSelection((prevSel) =>
+                  prevSel.length === toastMessageOrIds.length &&
+                  prevSel.every((id, idx) => id === toastMessageOrIds[idx])
+                    ? prevSel
+                    : toastMessageOrIds,
+                );
               } else if (typeof toastMessageOrIds === "string" && toastMessageOrIds) {
                 toast.success(toastMessageOrIds);
               }
@@ -13630,7 +13822,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onCommitEntities={(updater, toastMessageOrIds) => {
               commit(updater);
               if (Array.isArray(toastMessageOrIds)) {
-                setSelection(toastMessageOrIds);
+                setSelection((prevSel) =>
+                  prevSel.length === toastMessageOrIds.length &&
+                  prevSel.every((id, idx) => id === toastMessageOrIds[idx])
+                    ? prevSel
+                    : toastMessageOrIds,
+                );
               } else if (typeof toastMessageOrIds === "string" && toastMessageOrIds) {
                 toast.success(toastMessageOrIds);
               }

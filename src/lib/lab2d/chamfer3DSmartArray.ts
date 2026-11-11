@@ -3,6 +3,103 @@ import type { DirectBody3D, DirectFace3D } from "./cadDirectModeling3D";
 
 export type SmartArrayAxis3D = "x" | "y" | "z";
 export type SmartArrayDivisionMode3D = "by_count" | "by_max_gap";
+export type SmartGrilleAngleMode3D = "axial_louver" | "diagonal_span";
+
+export const SMART_GRILLE_STEP_STORAGE_KEY = "caldra_chamfer_smart_grille_steps_v1";
+
+export const SMART_GRILLE_COUNT_STEP_PRESETS = [1, 2, 5, 10] as const;
+export const SMART_GRILLE_GAP_STEP_PRESETS_MM = [1, 5, 10, 25, 50] as const;
+export const SMART_GRILLE_ANGLE_STEP_PRESETS_DEG = [1, 5, 15] as const;
+export const SMART_GRILLE_ANGLE_QUICK_PRESETS_DEG = [0, 15, 30, 45, 60, -45] as const;
+
+export interface SmartGrilleStepConfig {
+  countStep: number;
+  maxGapStepMm: number;
+  angleStepDeg: 1 | 5 | 15;
+}
+
+export const DEFAULT_SMART_GRILLE_STEP_CONFIG: SmartGrilleStepConfig = {
+  countStep: 1,
+  maxGapStepMm: 10,
+  angleStepDeg: 5,
+};
+
+export function sanitizeSmartGrilleStepConfig(
+  raw: Partial<SmartGrilleStepConfig> | null | undefined,
+): SmartGrilleStepConfig {
+  if (!raw || typeof raw !== "object") {
+    return { ...DEFAULT_SMART_GRILLE_STEP_CONFIG };
+  }
+  const rawCount = Math.round(Number(raw.countStep ?? 1));
+  const countStep = Number.isFinite(rawCount) && rawCount >= 1 ? Math.min(50, rawCount) : 1;
+
+  const rawGap = Number(raw.maxGapStepMm ?? 10);
+  const maxGapStepMm =
+    Number.isFinite(rawGap) && rawGap >= 0.5 ? Number(Math.min(500, rawGap).toFixed(2)) : 10;
+
+  const rawAng = Number(raw.angleStepDeg ?? 5);
+  const angleStepDeg: 1 | 5 | 15 = rawAng === 1 ? 1 : rawAng === 15 ? 15 : 5;
+
+  return { countStep, maxGapStepMm, angleStepDeg };
+}
+
+export function loadSmartGrilleStepConfig(
+  storage?: Pick<Storage, "getItem"> | null,
+): SmartGrilleStepConfig {
+  try {
+    const targetStorage =
+      storage !== undefined
+        ? storage
+        : typeof window !== "undefined" && window.localStorage
+          ? window.localStorage
+          : null;
+    if (!targetStorage) {
+      return { ...DEFAULT_SMART_GRILLE_STEP_CONFIG };
+    }
+    const stored = targetStorage.getItem(SMART_GRILLE_STEP_STORAGE_KEY);
+    if (!stored) return { ...DEFAULT_SMART_GRILLE_STEP_CONFIG };
+    return sanitizeSmartGrilleStepConfig(JSON.parse(stored) as Partial<SmartGrilleStepConfig>);
+  } catch {
+    return { ...DEFAULT_SMART_GRILLE_STEP_CONFIG };
+  }
+}
+
+export function saveSmartGrilleStepConfig(
+  config: SmartGrilleStepConfig,
+  storage?: Pick<Storage, "setItem"> | null,
+): SmartGrilleStepConfig {
+  const clean = sanitizeSmartGrilleStepConfig(config);
+  try {
+    const targetStorage =
+      storage !== undefined
+        ? storage
+        : typeof window !== "undefined" && window.localStorage
+          ? window.localStorage
+          : null;
+    if (targetStorage) {
+      targetStorage.setItem(SMART_GRILLE_STEP_STORAGE_KEY, JSON.stringify(clean));
+    }
+  } catch {
+    // Ignora falhas de quota / modo privado
+  }
+  return clean;
+}
+
+/**
+ * Calcula a largura efetiva projetada de cada perfil no eixo do vão considerando
+ * sua seção transversal (W × H) e o ângulo θ:
+ *   W_proj(θ) = W * |cos(θ)| + H * |sin(θ)|
+ */
+export function computeProjectedProfileWidthMm(
+  widthMm: number,
+  depthMm: number,
+  angleDeg: number,
+): number {
+  const W = Math.max(1, Number(widthMm) || 30);
+  const H = Math.max(1, Number(depthMm) || W);
+  const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
+  return W * Math.abs(Math.cos(rad)) + H * Math.abs(Math.sin(rad));
+}
 
 export interface SmartSpanDetection3D {
   axis: SmartArrayAxis3D;
@@ -10,6 +107,7 @@ export interface SmartSpanDetection3D {
   startInnerCoordMm: number;
   endInnerCoordMm: number;
   tubeWidthMm: number;
+  tubeDepthMm?: number;
   startBodyId: string | null;
   endBodyId: string | null;
   isAutoDetected: boolean;
@@ -22,10 +120,16 @@ export interface SmartGrilleArrayParams3D {
   mode: SmartArrayDivisionMode3D;
   spanMm: number;
   tubeWidthMm: number;
+  tubeDepthMm?: number;
   count: number;
   maxClearGapMm: number;
   startInnerCoordMm: number;
   axis: SmartArrayAxis3D;
+  angleDeg?: number;
+  angleMode?: SmartGrilleAngleMode3D;
+  perpInnerStartMm?: number;
+  perpInnerEndMm?: number;
+  perpSpanMm?: number;
 }
 
 export interface SmartGrilleArrayResult3D {
@@ -33,6 +137,12 @@ export interface SmartGrilleArrayResult3D {
   mode: SmartArrayDivisionMode3D;
   spanMm: number;
   tubeWidthMm: number;
+  tubeDepthMm: number;
+  projectedTubeWidthMm: number;
+  angleDeg: number;
+  angleMode: SmartGrilleAngleMode3D;
+  diagonalBarLengthMm?: number;
+  endMiterAngleDeg: number;
   count: number;
   clearGapMm: number;
   pitchCenterToCenterMm: number;
@@ -80,6 +190,14 @@ export function detectInternalSpan3D(
     ? getBodyIntervalAlongAxis(refBody, axis)
     : { min: 0, max: 30, size: 30, center: 15 };
   const crossSec = extractTubeCrossSectionFromBody3D(refBody);
+  const perpAxis: SmartArrayAxis3D = axis === "x" ? "y" : axis === "y" ? "x" : "y";
+  const perpInterval = refBody
+    ? getBodyIntervalAlongAxis(refBody, perpAxis)
+    : { min: 0, max: 30, size: 30, center: 15 };
+  const zSize = refBody ? Math.max(1, refBody.bbox3D.maxZ - refBody.bbox3D.minZ) : 30;
+  const isVerticalColumn =
+    axis !== "z" && zSize > Math.max(refInterval.size, perpInterval.size) * 1.15;
+
   // Se a peça selecionada for uma travessa comprida ao longo do próprio eixo `axis`, usa a bitola transversal `profileWidthMm`
   const tubeWidthMm = Math.max(
     2,
@@ -90,9 +208,12 @@ export function detectInternalSpan3D(
       ).toFixed(2),
     ),
   );
+  const resolvedDepthCandidate = isVerticalColumn
+    ? perpInterval.size
+    : crossSec.profileDepthMm || refBody?.extrudeHeightMm || tubeWidthMm;
+  const tubeDepthMm = Math.max(2, Number(resolvedDepthCandidate.toFixed(2)));
 
   // Detecta também o vão livre perpendicular (para encaixar o comprimento das barras de grade dentro de um Quadro 45°)
-  const perpAxis: SmartArrayAxis3D = axis === "x" ? "y" : axis === "y" ? "x" : "y";
   let perpInnerStartMm: number | undefined;
   let perpInnerEndMm: number | undefined;
   let perpSpanMm: number | undefined;
@@ -131,6 +252,7 @@ export function detectInternalSpan3D(
       startInnerCoordMm: Number(startInnerCoordMm.toFixed(2)),
       endInnerCoordMm: Number(endInnerCoordMm.toFixed(2)),
       tubeWidthMm,
+      tubeDepthMm,
       startBodyId: f1.entityId,
       endBodyId: f2.entityId,
       isAutoDetected: true,
@@ -150,6 +272,7 @@ export function detectInternalSpan3D(
       left: (typeof sorted)[number];
       right: (typeof sorted)[number];
       gap: number;
+      tier: number;
     } | null = null;
 
     for (let i = 0; i < sorted.length; i++) {
@@ -162,13 +285,46 @@ export function detectInternalSpan3D(
         const involvesSelected =
           left.body.entityId === refBody.entityId || right.body.entityId === refBody.entityId;
         const selectedInsideGap =
+          !involvesSelected &&
           refInterval.center >= left.interval.max - 1 &&
           refInterval.center <= right.interval.min + 1;
 
-        if (involvesSelected || selectedInsideGap) {
-          if (!bestPair || gap > bestPair.gap) {
-            bestPair = { left, right, gap };
+        if (!involvesSelected && !selectedInsideGap) continue;
+
+        // Verifica se há outra coluna/obstáculo alinhado perpendicularmente no meio do vão
+        const lPerp = getBodyIntervalAlongAxis(left.body, perpAxis);
+        const rPerp = getBodyIntervalAlongAxis(right.body, perpAxis);
+        const perpOverlap = Math.min(lPerp.max, rPerp.max) - Math.max(lPerp.min, rPerp.min) > -5;
+
+        let hasIntermediateObstacle = false;
+        for (let k = i + 1; k < j; k++) {
+          const mid = sorted[k]!;
+          if (mid.body.entityId === refBody.entityId && selectedInsideGap) continue;
+          if (
+            mid.interval.center > left.interval.max + 1 &&
+            mid.interval.center < right.interval.min - 1
+          ) {
+            hasIntermediateObstacle = true;
+            break;
           }
+        }
+
+        // Prioridade: 3 = envolve a coluna selecionada, sem obstáculo no meio e alinhado no eixo perpendicular;
+        // 2 = envolve a coluna selecionada sem obstáculo; 1 = peça selecionada é amostra interna dentro de um quadro externo; 0 = com obstáculo
+        const tier = hasIntermediateObstacle
+          ? 0
+          : involvesSelected
+            ? perpOverlap
+              ? 3
+              : 2
+            : 1;
+
+        if (
+          !bestPair ||
+          tier > bestPair.tier ||
+          (tier === bestPair.tier && gap > bestPair.gap)
+        ) {
+          bestPair = { left, right, gap, tier };
         }
       }
     }
@@ -182,7 +338,7 @@ export function detectInternalSpan3D(
           const right = sorted[j]!;
           const gap = right.interval.min - left.interval.max;
           if (gap > 15 && (!bestPair || gap > bestPair.gap)) {
-            bestPair = { left, right, gap };
+            bestPair = { left, right, gap, tier: 0 };
           }
         }
       }
@@ -198,6 +354,7 @@ export function detectInternalSpan3D(
         startInnerCoordMm,
         endInnerCoordMm,
         tubeWidthMm,
+        tubeDepthMm,
         startBodyId: bestPair.left.body.entityId,
         endBodyId: bestPair.right.body.entityId,
         isAutoDetected: true,
@@ -217,6 +374,7 @@ export function detectInternalSpan3D(
     startInnerCoordMm,
     endInnerCoordMm: Number((startInnerCoordMm + defaultSpanMm).toFixed(2)),
     tubeWidthMm,
+    tubeDepthMm,
     startBodyId: refBody?.entityId ?? null,
     endBodyId: null,
     isAutoDetected: false,
@@ -227,46 +385,88 @@ export function detectInternalSpan3D(
 }
 
 /**
- * Calcula a distribuição exata de tubos/perfis para Grades e Portões (Serralheria):
+ * Calcula a distribuição exata de tubos/perfis para Grades, Venezianas e Portões (Serralheria),
+ * integrando largura projetada por ângulo `W_proj(θ) = W * |cos θ| + H * |sin θ|`:
  *
  * - Modo A (`by_count`): Dividir Vão por Quantidade (N Tubos internos)
- *   v_livre = (V_vão - N * d_tubo) / (N + 1)
- *   P = d_tubo + v_livre
+ *   Luz(θ) = (V_vão - N * W_proj(θ)) / (N + 1)
+ *   Passo = W_proj(θ) + Luz(θ)
  *
  * - Modo B (`by_max_gap`): Por Passo ou Vão Máximo (mm)
- *   Calcula automaticamente o número ideal de tubos N para que o vão livre entre tubos
- *   nunca ultrapasse `maxClearGapMm` (ex.: 110 mm) e equaliza todas as distâncias.
+ *   N = max(1, ceil((V_vão - L_max) / (W_proj(θ) + L_max)))
  */
 export function computeSmartGrilleArray3D(
   params: SmartGrilleArrayParams3D,
 ): SmartGrilleArrayResult3D {
   const spanMm = Math.max(10, Number(params.spanMm) || 1000);
   const tubeWidthMm = Math.max(1, Number(params.tubeWidthMm) || 30);
+  const tubeDepthMm = Math.max(1, Number(params.tubeDepthMm ?? tubeWidthMm) || tubeWidthMm);
   const startInnerCoordMm = Number(params.startInnerCoordMm) || 0;
+  const angleMode: SmartGrilleAngleMode3D = params.angleMode ?? "axial_louver";
+  const rawAngleDeg = Number(params.angleDeg ?? 0) || 0;
+  // Em inclinação diagonal no plano da grade limitamos a [-75°, +75°] para evitar paralelismo singular (cos 90° = 0)
+  const angleDeg =
+    angleMode === "diagonal_span"
+      ? Math.max(-75, Math.min(75, rawAngleDeg))
+      : Math.max(-89, Math.min(89, rawAngleDeg));
+
+  const projectedTubeWidthMm =
+    Math.abs(angleDeg) < 1e-3
+      ? tubeWidthMm
+      : computeProjectedProfileWidthMm(tubeWidthMm, tubeDepthMm, angleDeg);
 
   let count = Math.max(1, Math.min(80, Math.round(params.count || 1)));
   if (params.mode === "by_max_gap") {
     const maxGap = Math.max(5, Number(params.maxClearGapMm) || 110);
-    const idealCount = Math.ceil((spanMm - maxGap) / (tubeWidthMm + maxGap));
+    const idealCount = Math.ceil((spanMm - maxGap) / (projectedTubeWidthMm + maxGap));
     count = Math.max(1, Math.min(80, idealCount));
   }
 
-  const clearGapMm = (spanMm - count * tubeWidthMm) / (count + 1);
-  const pitchCenterToCenterMm = tubeWidthMm + clearGapMm;
+  const clearGapMm = (spanMm - count * projectedTubeWidthMm) / (count + 1);
+  const pitchCenterToCenterMm = projectedTubeWidthMm + clearGapMm;
   const endInnerCoordMm = startInnerCoordMm + spanMm;
 
   const centerCoordsMm: number[] = [];
   for (let i = 0; i < count; i++) {
     const centerCoord =
-      startInnerCoordMm + clearGapMm + tubeWidthMm * 0.5 + i * pitchCenterToCenterMm;
+      startInnerCoordMm +
+      clearGapMm +
+      projectedTubeWidthMm * 0.5 +
+      i * pitchCenterToCenterMm;
     centerCoordsMm.push(Number(centerCoord.toFixed(3)));
   }
+
+  const perpSpan =
+    typeof params.perpSpanMm === "number" && params.perpSpanMm > 10
+      ? params.perpSpanMm
+      : typeof params.perpInnerStartMm === "number" &&
+          typeof params.perpInnerEndMm === "number" &&
+          params.perpInnerEndMm - params.perpInnerStartMm > 10
+        ? params.perpInnerEndMm - params.perpInnerStartMm
+        : undefined;
+
+  const cosAng = Math.max(0.2, Math.abs(Math.cos((angleDeg * Math.PI) / 180)));
+  const diagonalBarLengthMm =
+    angleMode === "diagonal_span" && perpSpan !== undefined
+      ? Number((perpSpan / cosAng).toFixed(2))
+      : perpSpan;
+
+  const endMiterAngleDeg =
+    angleMode === "diagonal_span" && Math.abs(angleDeg) >= 0.1
+      ? Number(Math.abs(angleDeg).toFixed(1))
+      : 90;
 
   return {
     axis: params.axis,
     mode: params.mode,
     spanMm: Number(spanMm.toFixed(2)),
     tubeWidthMm: Number(tubeWidthMm.toFixed(2)),
+    tubeDepthMm: Number(tubeDepthMm.toFixed(2)),
+    projectedTubeWidthMm: Number(projectedTubeWidthMm.toFixed(2)),
+    angleDeg: Number(angleDeg.toFixed(2)),
+    angleMode,
+    diagonalBarLengthMm,
+    endMiterAngleDeg,
     count,
     clearGapMm: Number(clearGapMm.toFixed(2)),
     pitchCenterToCenterMm: Number(pitchCenterToCenterMm.toFixed(2)),
@@ -274,19 +474,210 @@ export function computeSmartGrilleArray3D(
     endInnerCoordMm: Number(endInnerCoordMm.toFixed(2)),
     centerCoordsMm,
     valid: clearGapMm > 0,
+    perpInnerStartMm: params.perpInnerStartMm,
+    perpInnerEndMm: params.perpInnerEndMm,
+    perpSpanMm: perpSpan,
   };
 }
 
 /**
+ * Constrói as 6 faces 3D (quads) de uma barra da grade para o Ghost Preview 3D em tempo real,
+ * respeitando fielmente tanto `0°` (90° reto), quanto `axial_louver` (veneziana girada no eixo)
+ * e `diagonal_span` (barra inclinada diagonalmente com pontas cortadas rentes às bordas do vão).
+ */
+export function computeSmartGrilleBarPreviewQuads3D(params: {
+  centerCoordMm: number;
+  axis: SmartArrayAxis3D;
+  barWidthMm: number;
+  barHeightZMm: number;
+  perpStartMm: number;
+  perpEndMm: number;
+  z0: number;
+  z1: number;
+  angleDeg: number;
+  angleMode: SmartGrilleAngleMode3D;
+  isHorizontalInXY: boolean;
+}): Array<Array<{ x: number; y: number; z: number }>> {
+  const {
+    centerCoordMm,
+    axis,
+    barWidthMm,
+    perpStartMm,
+    perpEndMm,
+    z0,
+    z1,
+    angleDeg,
+    angleMode,
+    isHorizontalInXY,
+  } = params;
+
+  const halfW = Math.max(1.5, barWidthMm * 0.5);
+  const rad = (angleDeg * Math.PI) / 180;
+  const cosA = Math.cos(rad);
+  const sinA = Math.sin(rad);
+
+  // Caso Diagonal em Grade Horizontal XY: paralelogramo 2D com pontas cortadas rentes a perpStartMm / perpEndMm
+  if (angleMode === "diagonal_span" && Math.abs(angleDeg) >= 0.1 && isHorizontalInXY && axis !== "z") {
+    const perpLen = Math.max(10, perpEndMm - perpStartMm);
+    const safeCos = Math.max(0.25, Math.abs(cosA));
+    const halfWend = halfW / safeCos;
+    const shear = perpLen * 0.5 * Math.tan(rad);
+
+    const corners2D =
+      axis === "x"
+        ? [
+            { x: centerCoordMm - shear - halfWend, y: perpStartMm },
+            { x: centerCoordMm - shear + halfWend, y: perpStartMm },
+            { x: centerCoordMm + shear + halfWend, y: perpEndMm },
+            { x: centerCoordMm + shear - halfWend, y: perpEndMm },
+          ]
+        : [
+            { x: perpStartMm, y: centerCoordMm - shear - halfWend },
+            { x: perpEndMm, y: centerCoordMm + shear - halfWend },
+            { x: perpEndMm, y: centerCoordMm + shear + halfWend },
+            { x: perpStartMm, y: centerCoordMm - shear + halfWend },
+          ];
+
+    const top = corners2D.map((p) => ({ x: p.x, y: p.y, z: z1 }));
+    const bot = corners2D.map((p) => ({ x: p.x, y: p.y, z: z0 }));
+    return [
+      top,
+      bot,
+      [bot[0]!, bot[1]!, top[1]!, top[0]!],
+      [bot[1]!, bot[2]!, top[2]!, top[1]!],
+      [bot[2]!, bot[3]!, top[3]!, top[2]!],
+      [bot[3]!, bot[0]!, top[0]!, top[3]!],
+    ];
+  }
+
+  // Caixa base da barra antes de rotação axial/diagonal
+  const bxMin = axis === "x" ? centerCoordMm - halfW : perpStartMm;
+  const bxMax = axis === "x" ? centerCoordMm + halfW : perpEndMm;
+  const byMin =
+    axis === "y"
+      ? centerCoordMm - halfW
+      : axis === "x"
+        ? perpStartMm
+        : perpStartMm;
+  const byMax =
+    axis === "y"
+      ? centerCoordMm + halfW
+      : axis === "x"
+        ? perpEndMm
+        : perpEndMm;
+  const bzMin = axis === "z" ? centerCoordMm - halfW : z0;
+  const bzMax = axis === "z" ? centerCoordMm + halfW : z1;
+
+  const cx = (bxMin + bxMax) * 0.5;
+  const cy = (byMin + byMax) * 0.5;
+  const cz = (bzMin + bzMax) * 0.5;
+
+  const rotPt = (p: { x: number; y: number; z: number }) => {
+    if (Math.abs(angleDeg) < 0.1) return p;
+    const lx = p.x - cx;
+    const ly = p.y - cy;
+    const lz = p.z - cz;
+
+    if (angleMode === "axial_louver") {
+      if (isHorizontalInXY && axis === "x") {
+        // Eixo longitudinal = Y -> gira no plano XZ
+        return {
+          x: cx + lx * cosA + lz * sinA,
+          y: p.y,
+          z: cz - lx * sinA + lz * cosA,
+        };
+      }
+      if (isHorizontalInXY && axis === "y") {
+        // Eixo longitudinal = X -> gira no plano YZ
+        return {
+          x: p.x,
+          y: cy + ly * cosA - lz * sinA,
+          z: cz + ly * sinA + lz * cosA,
+        };
+      }
+      if (axis === "z") {
+        const spanX = bxMax - bxMin;
+        const spanY = byMax - byMin;
+        if (spanX >= spanY) {
+          return {
+            x: p.x,
+            y: cy + ly * cosA - lz * sinA,
+            z: cz + ly * sinA + lz * cosA,
+          };
+        }
+        return {
+          x: cx + lx * cosA + lz * sinA,
+          y: p.y,
+          z: cz - lx * sinA + lz * cosA,
+        };
+      }
+      // Coluna vertical (eixo longitudinal = Z) -> gira no plano XY
+      return {
+        x: cx + lx * cosA - ly * sinA,
+        y: cy + lx * sinA + ly * cosA,
+        z: p.z,
+      };
+    }
+
+    // Inclinação diagonal para colunas verticais (plano XZ ou YZ) com corte horizontal nas bordas z0..z1
+    const safeTan = Math.tan(Math.max(-1.3, Math.min(1.3, rad)));
+    if (axis === "x") {
+      return { x: p.x + lz * safeTan, y: p.y, z: p.z };
+    }
+    if (axis === "y") {
+      return { x: p.x, y: p.y + lz * safeTan, z: p.z };
+    }
+    return { x: p.x, y: p.y, z: p.z + lx * safeTan };
+  };
+
+  const baseQuads = [
+    [
+      { x: bxMin, y: byMin, z: bzMax },
+      { x: bxMax, y: byMin, z: bzMax },
+      { x: bxMax, y: byMax, z: bzMax },
+      { x: bxMin, y: byMax, z: bzMax },
+    ],
+    [
+      { x: bxMin, y: byMin, z: bzMin },
+      { x: bxMax, y: byMin, z: bzMin },
+      { x: bxMax, y: byMax, z: bzMin },
+      { x: bxMin, y: byMax, z: bzMin },
+    ],
+    [
+      { x: bxMin, y: byMin, z: bzMin },
+      { x: bxMax, y: byMin, z: bzMin },
+      { x: bxMax, y: byMin, z: bzMax },
+      { x: bxMin, y: byMin, z: bzMax },
+    ],
+    [
+      { x: bxMax, y: byMin, z: bzMin },
+      { x: bxMax, y: byMax, z: bzMin },
+      { x: bxMax, y: byMax, z: bzMax },
+      { x: bxMax, y: byMin, z: bzMax },
+    ],
+    [
+      { x: bxMax, y: byMax, z: bzMin },
+      { x: bxMin, y: byMax, z: bzMin },
+      { x: bxMin, y: byMax, z: bzMax },
+      { x: bxMax, y: byMax, z: bzMax },
+    ],
+    [
+      { x: bxMin, y: byMax, z: bzMin },
+      { x: bxMin, y: byMin, z: bzMin },
+      { x: bxMin, y: byMin, z: bzMax },
+      { x: bxMin, y: byMax, z: bzMax },
+    ],
+  ];
+
+  return baseQuads.map((q) => q.map(rotPt));
+}
+
+/**
  * Gera as entidades 3D reais para os N tubos internos do Array/Grade em uma única operação atômica.
- * REGRA DE TOPO RETO (90° POR PADRÃO):
- * - No modo `Grade / Vão`, as barras geradas possuem SEMPRE extremidades retas de 90° por padrão
- *   (`startMiterRatio = 0`, `endMiterRatio = 0`, `miterCutTopDeg = 0`, `miterCutBottomDeg = 0`),
- *   mesmo quando criadas a partir de uma barra de `Quadro 45°`.
- * - Quando inseridas dentro de um quadro estrutural, o comprimento das barras de grade ajusta-se
- *   automaticamente ao vão livre interno perpendicular entre as faces internas opostas do quadro.
- * - Cada barra gerada é persistida como corpo 3D independente (`isIndependentBody3D: true`,
- *   `isSmartGrilleBar3D: true`, `booleanMode3D: "new_body"`), ficando imediatamente visível e selecionável no 3D.
+ * - Em `0°` (padrão): pontas retas de 90° (`startMiterRatio = 0`, `endMiterRatio = 0`).
+ * - Em `axial_louver` (`∠ θ°`): aplica giro real no próprio eixo longitudinal da barra (veneziana/aleta).
+ * - Em `diagonal_span` (`∠ θ°`): inclina as barras no plano da grade, ajustando o comprimento diagonal
+ *   e os cortes angulares das extremidades para encostar rente nas bordas internas do vão.
  */
 export function generateSmartGrilleArrayEntities3D(
   entities: Entity[],
@@ -307,6 +698,9 @@ export function generateSmartGrilleArrayEntities3D(
   const barHeightZMm = Math.max(4, sourceBody.extrudeHeightMm || crossSec.profileDepthMm || 20);
   const wallT = Math.max(0, Number(sourceBody.shellThicknessMm ?? sourceBody.shellWallThicknessMm ?? 0));
   const isHollow = wallT > 0.2;
+  const angleDeg = Number(arrayResult.angleDeg ?? 0) || 0;
+  const angleMode: SmartGrilleAngleMode3D = arrayResult.angleMode ?? "axial_louver";
+  const hasAngle = Math.abs(angleDeg) >= 0.1;
 
   // Verifica se há vão livre perpendicular delimitado por outras barras na cena (ex.: Quadro 45°)
   const perpAxis: SmartArrayAxis3D =
@@ -333,8 +727,6 @@ export function generateSmartGrilleArrayEntities3D(
       perpStartMm = perpSpan.perpInnerStartMm;
       perpEndMm = perpSpan.perpInnerEndMm;
     } else if (perpEndMm - perpStartMm <= barWidthMm * 1.5) {
-      // Se a peça selecionada era a própria travessa ao longo do eixo de distribuição (ex.: Barra Inferior em Eixo X),
-      // procura o alcance perpendicular total dos outros corpos na cena
       let sceneMinPerp = Infinity;
       let sceneMaxPerp = -Infinity;
       for (const b of allBodies) {
@@ -357,14 +749,14 @@ export function generateSmartGrilleArrayEntities3D(
     const targetCenter = arrayResult.centerCoordsMm[i]!;
     const delta = targetCenter - sourceCenter;
 
-    // Se a peça base já for uma barra perpendicular naquela exata coordenada, evita duplicar em cima dela
+    // Se a peça base já for uma barra perpendicular naquela exata coordenada (e sem giro angular novo), evita duplicar em cima dela
     const isSourcePerpendicularToAxis =
       arrayResult.axis === "x"
         ? sourceBody.deltaY > sourceBody.deltaX * 1.5
         : arrayResult.axis === "y"
           ? sourceBody.deltaX > sourceBody.deltaY * 1.5
           : true;
-    if (isSourcePerpendicularToAxis && Math.abs(delta) < 0.25) {
+    if (!hasAngle && isSourcePerpendicularToAxis && Math.abs(delta) < 0.25) {
       continue;
     }
 
@@ -373,6 +765,150 @@ export function generateSmartGrilleArrayEntities3D(
     // Caso 1: Barra horizontal estrutural (originada de Quadro 45° ou de barra horizontal) em Eixo X ou Y
     if (isSourceHorizontalBar && (arrayResult.axis === "x" || arrayResult.axis === "y")) {
       const clearLenMm = Math.max(20, Number((perpEndMm - perpStartMm).toFixed(2)));
+      const elevZ = Number((sourceBody.elevationZ || 0).toFixed(2));
+
+      // 1A. Quando há ângulo configurado (`axial_louver` ou `diagonal_span`), gera corpo B-Rep paramétrico real
+      //     com seção extrudada/vazada (`Shell`) e rotação axial ou geometria diagonal em meia-esquadria!
+      if (hasAngle) {
+        const rad = (angleDeg * Math.PI) / 180;
+        const safeCos = Math.max(0.25, Math.abs(Math.cos(rad)));
+        const diagLenMm = Number((clearLenMm / safeCos).toFixed(2));
+        const baseParams = structuredClone(sourceEntity.params) ?? {};
+        delete baseParams.isHorizontalMiterBar3D;
+        delete baseParams.miterBarSpec3D;
+
+        if (angleMode === "diagonal_span") {
+          const halfWend = (barWidthMm * 0.5) / safeCos;
+          const shear = clearLenMm * 0.5 * Math.tan(rad);
+          const diagPts2D =
+            arrayResult.axis === "x"
+              ? [
+                  { x: Number((targetCenter - shear - halfWend).toFixed(3)), y: Number(perpStartMm.toFixed(3)) },
+                  { x: Number((targetCenter - shear + halfWend).toFixed(3)), y: Number(perpStartMm.toFixed(3)) },
+                  { x: Number((targetCenter + shear + halfWend).toFixed(3)), y: Number(perpEndMm.toFixed(3)) },
+                  { x: Number((targetCenter + shear - halfWend).toFixed(3)), y: Number(perpEndMm.toFixed(3)) },
+                ]
+              : [
+                  { x: Number(perpStartMm.toFixed(3)), y: Number((targetCenter - shear - halfWend).toFixed(3)) },
+                  { x: Number(perpEndMm.toFixed(3)), y: Number((targetCenter + shear - halfWend).toFixed(3)) },
+                  { x: Number(perpEndMm.toFixed(3)), y: Number((targetCenter + shear + halfWend).toFixed(3)) },
+                  { x: Number(perpStartMm.toFixed(3)), y: Number((targetCenter - shear + halfWend).toFixed(3)) },
+                ];
+
+          const diagEnt: Entity = {
+            id: newId,
+            layer: sourceEntity.layer || "corte",
+            type: "polyline",
+            pts: diagPts2D,
+            closed: true,
+            elevationZ: elevZ,
+            extrudeHeight: barHeightZMm,
+            shellWallThickness: isHollow ? wallT : 0,
+            params: {
+              ...baseParams,
+              isIndependentBody3D: true,
+              isSmartGrilleBar3D: true,
+              booleanMode3D: "new_body",
+              elevationZ: elevZ,
+              extrudeHeight: barHeightZMm,
+              extrudeHeightMm: barHeightZMm,
+              shellWallThickness: isHollow ? wallT : 0,
+              shellThicknessMm: isHollow ? wallT : 0,
+              shellOpenCaps: isHollow ? ["front", "back"] : [],
+              edgeFilletRadiusMm: Number(sourceBody.edgeFilletRadiusMm ?? 0),
+              edgeChamferDistMm: Number(sourceBody.edgeChamferDistMm ?? 0),
+              miterCutTopDeg: 0,
+              miterCutBottomDeg: 0,
+              rotation3D: { rxDeg: 0, ryDeg: 0, rzDeg: 0 },
+              grilleAngleDeg: angleDeg,
+              grilleAngleMode: angleMode,
+              bodyName: `Barra Diagonal #${i + 1} (${diagLenMm.toFixed(0)} mm · ∠ ${angleDeg}°)`,
+              bodyColorHex: sourceBody.colorHex || "#94A3B8",
+              bodyMaterial: sourceBody.materialName || "Aço Estrutural ASTM A36",
+              frameMemberRole: "inner_grille",
+              frameLongLengthMm: diagLenMm,
+              frameShortLengthMm: clearLenMm,
+            },
+          };
+          createdEntities.push(diagEnt);
+          createdIds.push(newId);
+          continue;
+        }
+
+        // `axial_louver` (Veneziana / Aleta girada no próprio eixo longitudinal X ou Y)
+        const minX =
+          arrayResult.axis === "x"
+            ? Number((targetCenter - barWidthMm * 0.5).toFixed(2))
+            : Number(perpStartMm.toFixed(2));
+        const maxX =
+          arrayResult.axis === "x"
+            ? Number((targetCenter + barWidthMm * 0.5).toFixed(2))
+            : Number(perpEndMm.toFixed(2));
+        const minY =
+          arrayResult.axis === "y"
+            ? Number((targetCenter - barWidthMm * 0.5).toFixed(2))
+            : Number(perpStartMm.toFixed(2));
+        const maxY =
+          arrayResult.axis === "y"
+            ? Number((targetCenter + barWidthMm * 0.5).toFixed(2))
+            : Number(perpEndMm.toFixed(2));
+
+        const rectPts2D = [
+          { x: minX, y: minY },
+          { x: maxX, y: minY },
+          { x: maxX, y: maxY },
+          { x: minX, y: maxY },
+        ];
+        const louverRot =
+          arrayResult.axis === "x"
+            ? { rxDeg: 0, ryDeg: angleDeg, rzDeg: 0 }
+            : { rxDeg: angleDeg, ryDeg: 0, rzDeg: 0 };
+
+        const louverEnt: Entity = {
+          id: newId,
+          layer: sourceEntity.layer || "corte",
+          type: "polyline",
+          pts: rectPts2D,
+          closed: true,
+          elevationZ: elevZ,
+          extrudeHeight: barHeightZMm,
+          shellWallThickness: isHollow ? wallT : 0,
+          params: {
+            ...baseParams,
+            isIndependentBody3D: true,
+            isSmartGrilleBar3D: true,
+            booleanMode3D: "new_body",
+            elevationZ: elevZ,
+            extrudeHeight: barHeightZMm,
+            extrudeHeightMm: barHeightZMm,
+            shellWallThickness: isHollow ? wallT : 0,
+            shellThicknessMm: isHollow ? wallT : 0,
+            shellOpenCaps: isHollow
+              ? arrayResult.axis === "x"
+                ? ["front", "back"]
+                : ["left", "right"]
+              : [],
+            edgeFilletRadiusMm: Number(sourceBody.edgeFilletRadiusMm ?? 0),
+            edgeChamferDistMm: Number(sourceBody.edgeChamferDistMm ?? 0),
+            miterCutTopDeg: 0,
+            miterCutBottomDeg: 0,
+            rotation3D: louverRot,
+            grilleAngleDeg: angleDeg,
+            grilleAngleMode: angleMode,
+            bodyName: `Veneziana #${i + 1} (${clearLenMm.toFixed(0)} mm · ∠ ${angleDeg}°)`,
+            bodyColorHex: sourceBody.colorHex || "#94A3B8",
+            bodyMaterial: sourceBody.materialName || "Aço Estrutural ASTM A36",
+            frameMemberRole: "inner_grille",
+            frameLongLengthMm: clearLenMm,
+            frameShortLengthMm: clearLenMm,
+          },
+        };
+        createdEntities.push(louverEnt);
+        createdIds.push(newId);
+        continue;
+      }
+
+      // 1B. Caso padrão `0°` (90°/90° reto): preserva integralmente `isHorizontalMiterBar3D`
       const minX =
         arrayResult.axis === "x"
           ? Number((targetCenter - barWidthMm * 0.5).toFixed(2))
@@ -393,7 +929,7 @@ export function generateSmartGrilleArrayEntities3D(
       const cornerOrigin3D = {
         x: minX,
         y: minY,
-        z: Number((sourceBody.elevationZ || 0).toFixed(2)),
+        z: elevZ,
       };
       const dirLen3D =
         arrayResult.axis === "x" ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
@@ -472,7 +1008,7 @@ export function generateSmartGrilleArrayEntities3D(
       continue;
     }
 
-    // Caso 2: Coluna/Perfil 3D vertical ou distribuição no eixo Z — garante pontas retas de 90° por padrão e persistência 3D
+    // Caso 2: Coluna/Perfil 3D vertical ou distribuição no eixo Z
     const translate2D = (ent: Entity, dx: number, dy: number): Entity => {
       if ((ent as { type: string }).type === "rect") {
         const r = ent as Entity & { x: number; y: number };
@@ -491,8 +1027,67 @@ export function generateSmartGrilleArrayEntities3D(
 
     const cloned = translate2D(sourceEntity, dx, dy);
     cloned.id = newId;
-    const nextElevZ = Number(((sourceBody.elevationZ || 0) + dz).toFixed(3));
-    const nextHeightZ = Math.max(1, Number((sourceBody.extrudeHeightMm || 20).toFixed(2)));
+    const baseElevZ = (sourceBody.elevationZ || 0) + dz;
+    const baseHeightZ = Math.max(1, Number((sourceBody.extrudeHeightMm || 20).toFixed(2)));
+
+    let nextElevZ = Number(baseElevZ.toFixed(3));
+    let nextHeightZ = baseHeightZ;
+    const baseRot = {
+      rxDeg: Number(sourceBody.rotation3D?.rxDeg ?? 0),
+      ryDeg: Number(sourceBody.rotation3D?.ryDeg ?? 0),
+      rzDeg: Number(sourceBody.rotation3D?.rzDeg ?? 0),
+    };
+    let nextRot = { ...baseRot };
+    let nextMiterTopDeg = 0;
+    let nextMiterBotDeg = 0;
+    let nextMiterAxis: "x" | "y" = arrayResult.axis === "y" ? "y" : "x";
+
+    if (hasAngle) {
+      if (angleMode === "axial_louver") {
+        if (arrayResult.axis === "z") {
+          // Empilhado em Z: gira em torno do maior eixo horizontal (X ou Y)
+          if (sourceBody.deltaX >= sourceBody.deltaY) {
+            nextRot.rxDeg = Number((baseRot.rxDeg + angleDeg).toFixed(2));
+          } else {
+            nextRot.ryDeg = Number((baseRot.ryDeg + angleDeg).toFixed(2));
+          }
+        } else {
+          // Coluna vertical (longitudinal em Z) ou barra 2D horizontal longa:
+          const isHorizontalLongInY =
+            arrayResult.axis === "x" &&
+            sourceBody.deltaY > Math.max(sourceBody.deltaX, baseHeightZ) * 1.5;
+          const isHorizontalLongInX =
+            arrayResult.axis === "y" &&
+            sourceBody.deltaX > Math.max(sourceBody.deltaY, baseHeightZ) * 1.5;
+          if (isHorizontalLongInY) {
+            nextRot.ryDeg = Number((baseRot.ryDeg + angleDeg).toFixed(2));
+          } else if (isHorizontalLongInX) {
+            nextRot.rxDeg = Number((baseRot.rxDeg + angleDeg).toFixed(2));
+          } else {
+            nextRot.rzDeg = Number((baseRot.rzDeg + angleDeg).toFixed(2));
+          }
+        }
+      } else {
+        // `diagonal_span` em colunas verticais (plano XZ ou YZ)
+        const rad = (angleDeg * Math.PI) / 180;
+        const safeCos = Math.max(0.25, Math.abs(Math.cos(rad)));
+        const diagHeightZ = Number((baseHeightZ / safeCos).toFixed(2));
+        nextElevZ = Number((baseElevZ - (diagHeightZ - baseHeightZ) * 0.5).toFixed(3));
+        nextHeightZ = diagHeightZ;
+        if (arrayResult.axis === "x") {
+          nextRot.ryDeg = Number((baseRot.ryDeg + angleDeg).toFixed(2));
+          nextMiterAxis = "x";
+          nextMiterTopDeg = Number((-angleDeg).toFixed(1));
+          nextMiterBotDeg = Number((-angleDeg).toFixed(1));
+        } else if (arrayResult.axis === "y") {
+          nextRot.rxDeg = Number((baseRot.rxDeg - angleDeg).toFixed(2));
+          nextMiterAxis = "y";
+          nextMiterTopDeg = Number((-angleDeg).toFixed(1));
+          nextMiterBotDeg = Number((-angleDeg).toFixed(1));
+        }
+      }
+    }
+
     cloned.elevationZ = nextElevZ;
     cloned.extrudeHeight = nextHeightZ;
     cloned.shellWallThickness = isHollow ? wallT : 0;
@@ -505,8 +1100,14 @@ export function generateSmartGrilleArrayEntities3D(
         }
       | undefined;
 
+    const baseClonedParams = structuredClone(sourceEntity.params) ?? {};
+    if (hasAngle) {
+      delete baseClonedParams.isHorizontalMiterBar3D;
+      delete baseClonedParams.miterBarSpec3D;
+    }
+
     cloned.params = {
-      ...(structuredClone(sourceEntity.params) ?? {}),
+      ...baseClonedParams,
       isIndependentBody3D: true,
       isSmartGrilleBar3D: true,
       booleanMode3D: "new_body",
@@ -524,10 +1125,14 @@ export function generateSmartGrilleArrayEntities3D(
       edgeChamferDistMm: Number(sourceBody.edgeChamferDistMm ?? 0),
       cornerFilletsMm: { ...(sourceBody.cornerFilletsMm ?? {}) },
       cornerChamfersMm: { ...(sourceBody.cornerChamfersMm ?? {}) },
-      // Pontas retas de 90° por padrão no modo Grade / Vão:
-      miterCutTopDeg: 0,
-      miterCutBottomDeg: 0,
-      ...(rawMiter && rawMiter.cornerOrigin3D
+      miterCutTopDeg: nextMiterTopDeg,
+      miterCutTopAxis: nextMiterAxis,
+      miterCutBottomDeg: nextMiterBotDeg,
+      miterCutBottomAxis: nextMiterAxis,
+      rotation3D: nextRot,
+      grilleAngleDeg: angleDeg,
+      grilleAngleMode: angleMode,
+      ...(!hasAngle && rawMiter && rawMiter.cornerOrigin3D
         ? {
             miterBarSpec3D: {
               ...rawMiter,
@@ -541,7 +1146,11 @@ export function generateSmartGrilleArrayEntities3D(
             },
           }
         : {}),
-      bodyName: `Barra de Grade #${i + 1} (90°/90°)`,
+      bodyName: hasAngle
+        ? angleMode === "diagonal_span"
+          ? `Barra Diagonal #${i + 1} (${nextHeightZ.toFixed(0)} mm · ∠ ${angleDeg}°)`
+          : `Veneziana #${i + 1} (∠ ${angleDeg}°)`
+        : `Barra de Grade #${i + 1} (90°/90°)`,
       bodyColorHex: sourceBody.colorHex || "#94A3B8",
       bodyMaterial: sourceBody.materialName || "Aço Estrutural ASTM A36",
     };

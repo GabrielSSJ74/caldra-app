@@ -18,9 +18,21 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { CadTessellatedShape } from "../core/CadMesh";
 import type { CadSelectedEntity, CadSelectionType, CadMeasurementResult } from "../core/CadSelection";
 import type { EdgeMode, ViewPresetId } from "@/lib/viz3d/cameraPresets";
+import {
+  DEFAULT_BREP_WIREFRAME_LAYER_CONFIG,
+  type BRepTechnicalWireframeData3D,
+  type BRepWireframeLayerConfig,
+} from "@/lib/lab2d/chamferBRepWireframe3D";
+import {
+  computeAdaptiveZoomMetrics,
+  loadZoomSensitivityConfig,
+} from "@/lib/lab2d/chamferAdaptiveZoom";
 import {
   computeOrbitalBasisZUp,
   cubicBezier022,
@@ -64,6 +76,7 @@ export class ThreeBRepRenderer {
   private rootGroup: THREE.Group;
   private meshGroup: THREE.Group;
   private edgesGroup: THREE.Group;
+  private brepWireframeGroup: THREE.Group;
   private verticesGroup: THREE.Group;
   private sketchWireframeGroup: THREE.Group;
   private loftPreviewGroup: THREE.Group;
@@ -72,8 +85,34 @@ export class ThreeBRepRenderer {
   private gridHelper: THREE.GridHelper | null = null;
   private currentTheme: "light" | "dark" = "light";
 
-  // Dados do Sólido Carregado
+  // Dados do Sólido Carregado e Camadas ARAME B-Rep
   private currentShape: CadTessellatedShape | null = null;
+  private currentBRepWireframeData: BRepTechnicalWireframeData3D | null = null;
+  private brepWireframeLayers: BRepWireframeLayerConfig = {
+    ...DEFAULT_BREP_WIREFRAME_LAYER_CONFIG,
+  };
+  private currentScreenScalePxPerMm = 1.0;
+  private depthPrePassMesh: THREE.Mesh | null = null;
+  private depthPrePassMaterial: THREE.MeshBasicMaterial;
+  private brepOuterContourMat: LineMaterial;
+  private brepFeatureThicknessMat: LineMaterial;
+  private brepInternalDetailMat: LineMaterial;
+  private brepHiddenXRayMat: LineMaterial;
+  private brepCenterlineAxisMat: LineMaterial;
+  private brepSelectedEdgeMat: LineMaterial;
+  private brepLineObjects: {
+    outerContour: LineSegments2 | null;
+    featureThickness: LineSegments2 | null;
+    internalDetail: LineSegments2 | null;
+    hiddenXRay: LineSegments2 | null;
+    centerlineAxis: LineSegments2 | null;
+  } = {
+    outerContour: null,
+    featureThickness: null,
+    internalDetail: null,
+    hiddenXRay: null,
+    centerlineAxis: null,
+  };
   private currentWireframes: Sketch3DWireframe[] = [];
   private multiSelection: CadSelectedEntity[] = [];
   private hoveredEntity: CadSelectedEntity | null = null;
@@ -242,6 +281,7 @@ export class ThreeBRepRenderer {
     this.rootGroup = new THREE.Group();
     this.meshGroup = new THREE.Group();
     this.edgesGroup = new THREE.Group();
+    this.brepWireframeGroup = new THREE.Group();
     this.verticesGroup = new THREE.Group();
     this.sketchWireframeGroup = new THREE.Group();
     this.loftPreviewGroup = new THREE.Group();
@@ -250,6 +290,7 @@ export class ThreeBRepRenderer {
 
     this.rootGroup.add(this.meshGroup);
     this.rootGroup.add(this.edgesGroup);
+    this.rootGroup.add(this.brepWireframeGroup);
     this.rootGroup.add(this.verticesGroup);
     this.rootGroup.add(this.sketchWireframeGroup);
     this.rootGroup.add(this.loftPreviewGroup);
@@ -431,6 +472,96 @@ export class ThreeBRepRenderer {
       gapSize: 2,
     });
 
+    // 7.5. Materiais Screen-Space Invariantes para o Modo "ARAME TÉCNICO B-REP"
+    const resVec = new THREE.Vector2(width, height);
+    this.depthPrePassMaterial = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true,
+      polygonOffset: true,
+      polygonOffsetFactor: 1.5,
+      polygonOffsetUnits: 1.5,
+      side: THREE.DoubleSide,
+    });
+
+    this.brepOuterContourMat = new LineMaterial({
+      color: 0xe0f2fe,
+      linewidth: 2.0,
+      worldUnits: false,
+      transparent: true,
+      opacity: 0.98,
+      depthTest: true,
+      depthWrite: false,
+      depthFunc: THREE.LessEqualDepth,
+      resolution: resVec.clone(),
+    });
+
+    this.brepFeatureThicknessMat = new LineMaterial({
+      color: 0x7dd3fc,
+      linewidth: 1.35,
+      worldUnits: false,
+      transparent: true,
+      opacity: 0.92,
+      depthTest: true,
+      depthWrite: false,
+      depthFunc: THREE.LessEqualDepth,
+      resolution: resVec.clone(),
+    });
+
+    this.brepInternalDetailMat = new LineMaterial({
+      color: 0x38bdf8,
+      linewidth: 0.95,
+      worldUnits: false,
+      transparent: true,
+      opacity: 0.74,
+      depthTest: true,
+      depthWrite: false,
+      depthFunc: THREE.LessEqualDepth,
+      resolution: resVec.clone(),
+    });
+
+    this.brepHiddenXRayMat = new LineMaterial({
+      color: 0x38bdf8,
+      linewidth: 1.0,
+      worldUnits: false,
+      dashed: true,
+      dashScale: 1,
+      dashSize: 5,
+      gapSize: 4,
+      transparent: true,
+      opacity: 0.28,
+      depthTest: true,
+      depthWrite: false,
+      depthFunc: THREE.GreaterDepth,
+      resolution: resVec.clone(),
+    });
+
+    this.brepCenterlineAxisMat = new LineMaterial({
+      color: 0x94a3b8,
+      linewidth: 0.85,
+      worldUnits: false,
+      dashed: true,
+      dashScale: 1,
+      dashSize: 6.5,
+      gapSize: 3.5,
+      transparent: true,
+      opacity: 0.42,
+      depthTest: false,
+      depthWrite: false,
+      resolution: resVec.clone(),
+    });
+
+    this.brepSelectedEdgeMat = new LineMaterial({
+      color: 0x00f0ff,
+      linewidth: 2.8,
+      worldUnits: false,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: false,
+      depthWrite: false,
+      resolution: resVec.clone(),
+    });
+
     // 8. Raycasting e Eventos de Mouse/Touch
     this.raycaster = new THREE.Raycaster();
     this.raycaster.params.Line = { threshold: 3.5 };
@@ -551,7 +682,18 @@ export class ThreeBRepRenderer {
       solidMesh.castShadow = true;
       solidMesh.receiveShadow = true;
       solidMesh.frustumCulled = false;
+      solidMesh.renderOrder = 2;
       this.meshGroup.add(solidMesh);
+
+      // Malha de pré-passe de profundidade (colorWrite: false) usada exclusivamente no modo ARAME
+      // para ocluir e separar com precisão sub-pixel arestas frontais vs. arestas traseiras Raio-X
+      const depthMesh = new THREE.Mesh(geometry, this.depthPrePassMaterial);
+      depthMesh.name = "arame_depth_prepass_mesh";
+      depthMesh.frustumCulled = false;
+      depthMesh.renderOrder = 1;
+      depthMesh.visible = this.edgeMode === "wireframe";
+      this.depthPrePassMesh = depthMesh;
+      this.meshGroup.add(depthMesh);
     }
 
     if (edges && edges.edges.length > 0) {
@@ -765,7 +907,120 @@ export class ThreeBRepRenderer {
     }
   }
 
+  private clearBRepWireframeObjects(): void {
+    while (this.brepWireframeGroup.children.length > 0) {
+      const obj = this.brepWireframeGroup.children[0] as LineSegments2;
+      this.brepWireframeGroup.remove(obj);
+      if (obj.geometry) {
+        obj.geometry.dispose();
+      }
+    }
+    this.brepLineObjects = {
+      outerContour: null,
+      featureThickness: null,
+      internalDetail: null,
+      hiddenXRay: null,
+      centerlineAxis: null,
+    };
+  }
+
+  private updateBRepLineResolutions(width: number, height: number, pxPerMm?: number): void {
+    const safeW = Math.max(10, width);
+    const safeH = Math.max(10, height);
+    if (pxPerMm !== undefined && Number.isFinite(pxPerMm) && pxPerMm > 1e-4) {
+      this.currentScreenScalePxPerMm = pxPerMm;
+    }
+    const dashScale = Math.max(0.05, Math.min(200, this.currentScreenScalePxPerMm));
+    const allMats = [
+      this.brepOuterContourMat,
+      this.brepFeatureThicknessMat,
+      this.brepInternalDetailMat,
+      this.brepHiddenXRayMat,
+      this.brepCenterlineAxisMat,
+      this.brepSelectedEdgeMat,
+    ];
+    for (const m of allMats) {
+      m.resolution.set(safeW, safeH);
+    }
+    this.brepHiddenXRayMat.dashScale = dashScale;
+    this.brepCenterlineAxisMat.dashScale = dashScale;
+  }
+
+  public setBRepWireframeData(data: BRepTechnicalWireframeData3D | null): void {
+    this.currentBRepWireframeData = data;
+    this.clearBRepWireframeObjects();
+
+    if (data) {
+      const buildFatSegments = (
+        positions: Float32Array,
+        material: LineMaterial,
+        name: string,
+        renderOrder: number,
+        computeDashes = false,
+      ): LineSegments2 | null => {
+        if (!positions || positions.length < 6) return null;
+        const geo = new LineSegmentsGeometry();
+        geo.setPositions(positions);
+        const segs = new LineSegments2(geo, material);
+        segs.name = name;
+        segs.frustumCulled = false;
+        segs.renderOrder = renderOrder;
+        if (computeDashes) {
+          segs.computeLineDistances();
+        }
+        this.brepWireframeGroup.add(segs);
+        return segs;
+      };
+
+      this.brepLineObjects.hiddenXRay = buildFatSegments(
+        data.allOccludablePositions,
+        this.brepHiddenXRayMat,
+        "brep_arame_hidden_xray",
+        3,
+        true,
+      );
+      this.brepLineObjects.internalDetail = buildFatSegments(
+        data.internalDetailPositions,
+        this.brepInternalDetailMat,
+        "brep_arame_internal_detail",
+        4,
+        false,
+      );
+      this.brepLineObjects.featureThickness = buildFatSegments(
+        data.featureThicknessPositions,
+        this.brepFeatureThicknessMat,
+        "brep_arame_feature_thickness",
+        4,
+        false,
+      );
+      this.brepLineObjects.outerContour = buildFatSegments(
+        data.outerContourPositions,
+        this.brepOuterContourMat,
+        "brep_arame_outer_contour",
+        5,
+        false,
+      );
+      this.brepLineObjects.centerlineAxis = buildFatSegments(
+        data.centerlineAxisPositions,
+        this.brepCenterlineAxisMat,
+        "brep_arame_centerlines",
+        6,
+        true,
+      );
+    }
+
+    this.updateVisibilityByEdgeMode();
+    this.requestRender();
+  }
+
+  public setBRepWireframeLayerConfig(config: BRepWireframeLayerConfig): void {
+    this.brepWireframeLayers = { ...config };
+    this.updateVisibilityByEdgeMode();
+    this.requestRender();
+  }
+
   private clearGeometry(): void {
+    this.depthPrePassMesh = null;
     while (this.meshGroup.children.length > 0) {
       const obj = this.meshGroup.children[0] as THREE.Mesh;
       this.meshGroup.remove(obj);
@@ -801,7 +1056,8 @@ export class ThreeBRepRenderer {
         obj.material !== this.primaryFaceMaterial &&
         obj.material !== this.secondaryFaceMaterial &&
         obj.material !== this.primaryEdgeMaterial &&
-        obj.material !== this.secondaryEdgeMaterial
+        obj.material !== this.secondaryEdgeMaterial &&
+        obj.material !== this.brepSelectedEdgeMat
       ) {
         obj.material.dispose();
       }
@@ -841,13 +1097,17 @@ export class ThreeBRepRenderer {
     switch (this.edgeMode) {
       case "shaded-edges": {
         // MODO "SÓLIDO" (Acabamento Metálico Acetinado de Estúdio CAD — Estilo Shapr3D)
-        // Arestas Limpas: desenha contorno APENAS nas bordas reais da peça (perímetro superior,
-        // perímetro inferior e quinas vivas >= 25°), ocultando linhas de transição de tangência nas dobras.
         this.meshGroup.visible = true;
+        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
+        this.brepWireframeGroup.visible = false;
         this.studioUniforms.uShadingMode.value = 0;
         this.studioUniforms.uOpacity.value = 1.0;
         this.baseSolidMaterial.transparent = false;
         this.baseSolidMaterial.depthWrite = true;
+        this.baseSolidMaterial.polygonOffsetFactor = 1;
+        this.baseSolidMaterial.polygonOffsetUnits = 1;
+        this.primaryFaceMaterial.transparent = false;
+        this.primaryFaceMaterial.opacity = 1.0;
 
         this.edgesGroup.visible = true;
         for (const child of this.edgesGroup.children) {
@@ -866,13 +1126,17 @@ export class ThreeBRepRenderer {
 
       case "shaded": {
         // MODO "SOMB" (Sombreamento Técnico de Engenharia com Arestas de Feature e Linhas de Tangência)
-        // Superfície metálica fosca clara (Matcap Técnico CAD) + Arestas de Feature Nítidas (1.4px)
-        // + 2 linhas de transição de tangência da dobra (0.75px suave), sem linhas dentro da curva.
         this.meshGroup.visible = true;
+        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
+        this.brepWireframeGroup.visible = false;
         this.studioUniforms.uShadingMode.value = 1;
         this.studioUniforms.uOpacity.value = 1.0;
         this.baseSolidMaterial.transparent = false;
         this.baseSolidMaterial.depthWrite = true;
+        this.baseSolidMaterial.polygonOffsetFactor = 1;
+        this.baseSolidMaterial.polygonOffsetUnits = 1;
+        this.primaryFaceMaterial.transparent = false;
+        this.primaryFaceMaterial.opacity = 1.0;
 
         this.edgesGroup.visible = true;
         for (const child of this.edgesGroup.children) {
@@ -881,12 +1145,10 @@ export class ThreeBRepRenderer {
           line.visible = true;
           if (line.material instanceof THREE.LineBasicMaterial) {
             if (isTangent) {
-              // Apenas as 2 linhas de transição de tangência da dobra (0.75px suave)
               line.material.color.setHex(isDark ? 0xcbd5e1 : 0x334155);
               line.material.opacity = 0.42;
               line.material.linewidth = 0.75;
             } else {
-              // Arestas de Feature Nítidas (>= 25°): 1.4px em #0F172A (claro) / #F8FAFC (escuro)
               line.material.color.setHex(isDark ? 0xf8fafc : 0x0f172a);
               line.material.opacity = 0.94;
               line.material.linewidth = 1.4;
@@ -898,37 +1160,66 @@ export class ThreeBRepRenderer {
       }
 
       case "wireframe": {
-        // MODO "ARAME" (Technical Wireframe CAD com Profundidade Óptica)
+        // MODO "ARAME TÉCNICO B-REP" INVARIANTE EM ESPAÇO DE TELA (Multi-Pass: Ghost Volume + Depth Pre-Pass + Visíveis + Raio-X + Eixos)
         this.meshGroup.visible = true;
+        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = true;
+
         this.studioUniforms.uShadingMode.value = 2;
-        this.studioUniforms.uOpacity.value = 0.24;
+        this.studioUniforms.uWireframeColor.value.setHex(isDark ? 0x1e3a5f : 0x93c5fd);
+        this.studioUniforms.uOpacity.value = isDark ? 0.11 : 0.13;
         this.baseSolidMaterial.transparent = true;
         this.baseSolidMaterial.depthWrite = false;
+        this.baseSolidMaterial.polygonOffsetFactor = 1.5;
+        this.baseSolidMaterial.polygonOffsetUnits = 1.5;
 
-        this.edgesGroup.visible = true;
-        for (const child of this.edgesGroup.children) {
-          const line = child as THREE.Line;
-          line.visible = true;
-          const hierarchy = line.userData?.edgeHierarchy as string | undefined;
-          if (line.material instanceof THREE.LineBasicMaterial) {
-            if (hierarchy === "top_primary") {
-              line.material.color.setHex(0xf8fafc);
-              line.material.opacity = 0.98;
-              line.material.linewidth = 1.8;
-            } else if (hierarchy === "bottom_visible") {
-              line.material.color.setHex(0x65758a);
-              line.material.opacity = 0.52;
-              line.material.linewidth = 1.0;
-            } else {
-              line.material.color.setHex(0x91a3b8);
-              line.material.opacity = 0.68;
-              line.material.linewidth = 1.15;
+        this.primaryFaceMaterial.transparent = true;
+        this.primaryFaceMaterial.opacity = 0.34;
+
+        // Cores técnicas de engenharia adaptadas para Tema Escuro e Tema Claro
+        this.brepOuterContourMat.color.setHex(isDark ? 0xe0f2fe : 0x0f172a);
+        this.brepFeatureThicknessMat.color.setHex(isDark ? 0x7dd3fc : 0x0369a1);
+        this.brepInternalDetailMat.color.setHex(isDark ? 0x38bdf8 : 0x0284c7);
+        this.brepHiddenXRayMat.color.setHex(isDark ? 0x38bdf8 : 0x0284c7);
+        this.brepHiddenXRayMat.opacity = isDark ? 0.28 : 0.32;
+        this.brepCenterlineAxisMat.color.setHex(isDark ? 0x94a3b8 : 0x475569);
+        this.brepCenterlineAxisMat.opacity = isDark ? 0.42 : 0.50;
+
+        const hasCustomBRep = Boolean(this.currentBRepWireframeData);
+        if (hasCustomBRep) {
+          this.edgesGroup.visible = false;
+          this.brepWireframeGroup.visible = true;
+          if (this.brepLineObjects.outerContour) {
+            this.brepLineObjects.outerContour.visible = this.brepWireframeLayers.showContours;
+          }
+          if (this.brepLineObjects.featureThickness) {
+            this.brepLineObjects.featureThickness.visible = this.brepWireframeLayers.showContours;
+          }
+          if (this.brepLineObjects.internalDetail) {
+            this.brepLineObjects.internalDetail.visible = this.brepWireframeLayers.showContours;
+          }
+          if (this.brepLineObjects.hiddenXRay) {
+            this.brepLineObjects.hiddenXRay.visible = this.brepWireframeLayers.showHiddenXRay;
+          }
+          if (this.brepLineObjects.centerlineAxis) {
+            this.brepLineObjects.centerlineAxis.visible = this.brepWireframeLayers.showAxesCenters;
+          }
+        } else {
+          // Fallback limpo para telas sem DirectTopology3DScene
+          this.brepWireframeGroup.visible = false;
+          this.edgesGroup.visible = true;
+          for (const child of this.edgesGroup.children) {
+            const line = child as THREE.Line;
+            line.visible = true;
+            if (line.material instanceof THREE.LineBasicMaterial) {
+              line.material.color.setHex(isDark ? 0xe0f2fe : 0x0f172a);
+              line.material.opacity = 0.92;
             }
           }
         }
-        this.verticesGroup.visible = true;
-        this.vertexMaterial.color.setHex(0xffffff);
-        this.vertexMaterial.size = 3.6;
+
+        this.verticesGroup.visible = this.selectionType === "vertex";
+        this.vertexMaterial.color.setHex(isDark ? 0xe0f2fe : 0x0f172a);
+        this.vertexMaterial.size = 4.5;
         break;
       }
     }
@@ -1014,12 +1305,38 @@ export class ThreeBRepRenderer {
         }
       } else if (entity.type === "edge") {
         const edge = this.currentShape.edges.edges[entity.index];
-        if (edge) {
-          const edgeGeo = new THREE.BufferGeometry();
-          edgeGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
-          const line = new THREE.Line(edgeGeo, edgeMat);
-          line.frustumCulled = false;
-          this.selectionOverlayGroup.add(line);
+        if (edge && edge.points.length >= 6) {
+          const segPairs: number[] = [];
+          for (let k = 0; k < edge.points.length - 3; k += 3) {
+            segPairs.push(
+              edge.points[k]!,
+              edge.points[k + 1]!,
+              edge.points[k + 2]!,
+              edge.points[k + 3]!,
+              edge.points[k + 4]!,
+              edge.points[k + 5]!,
+            );
+          }
+          if (segPairs.length >= 6) {
+            const fatGeo = new LineSegmentsGeometry();
+            fatGeo.setPositions(new Float32Array(segPairs));
+            const fatLine = new LineSegments2(
+              fatGeo,
+              isPrimary ? this.brepSelectedEdgeMat : this.secondaryEdgeMaterial as unknown as LineMaterial,
+            );
+            if (!isPrimary) {
+              const edgeGeo = new THREE.BufferGeometry();
+              edgeGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
+              const line = new THREE.Line(edgeGeo, edgeMat);
+              line.frustumCulled = false;
+              this.selectionOverlayGroup.add(line);
+              fatGeo.dispose();
+            } else {
+              fatLine.frustumCulled = false;
+              fatLine.renderOrder = 15;
+              this.selectionOverlayGroup.add(fatLine);
+            }
+          }
         }
       } else if (entity.type === "vertex") {
         if (entity.point) {
@@ -1409,6 +1726,7 @@ export class ThreeBRepRenderer {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(W, H, false);
     }
+    this.updateBRepLineResolutions(W, H, safeK);
 
     const alpha = (params.azimuthDeg * Math.PI) / 180;
     const beta = (Math.max(-90, Math.min(90, params.elevationDeg)) * Math.PI) / 180;
@@ -1617,10 +1935,12 @@ export class ThreeBRepRenderer {
       const zScale = Math.max(0.01, Math.min(1, progress3D));
       this.meshGroup.scale.set(1, 1, zScale);
       this.edgesGroup.scale.set(1, 1, zScale);
+      this.brepWireframeGroup.scale.set(1, 1, zScale);
       this.verticesGroup.scale.set(1, 1, zScale);
     } else {
       this.meshGroup.scale.set(1, 1, 1);
       this.edgesGroup.scale.set(1, 1, 1);
+      this.brepWireframeGroup.scale.set(1, 1, 1);
       this.verticesGroup.scale.set(1, 1, 1);
     }
   }
@@ -1663,33 +1983,78 @@ export class ThreeBRepRenderer {
     this.setExtrusionMorphScale(1);
   }
 
+  private getCharacteristicPartRadiusMm(): number {
+    if (this.currentShape?.bounds) {
+      const b = this.currentShape.bounds;
+      const dx = Math.max(0, b.max.x - b.min.x);
+      const dy = Math.max(0, b.max.y - b.min.y);
+      const dz = Math.max(0, b.max.z - b.min.z);
+      return Math.max(10, 0.5 * Math.hypot(dx, dy, dz));
+    }
+    return 60;
+  }
+
   public zoomIn(factor = 0.8): void {
+    const sens = loadZoomSensitivityConfig().multiplier;
+    const camDist = Math.max(1, this.camera.position.distanceTo(this.controls.target));
+    const metrics = computeAdaptiveZoomMetrics({
+      cameraDistanceMm: camDist,
+      characteristicRadiusMm: this.getCharacteristicPartRadiusMm(),
+      userSensitivityMultiplier: sens,
+    });
+    const baseDelta = 1 - factor;
+    const adaptedFactor = Math.max(
+      0.55,
+      Math.min(0.99, 1 - baseDelta * Math.min(1.25, metrics.effectiveFactor)),
+    );
     if (this.isOrtho) {
-      this.orthoCamera.zoom = Math.min(this.orthoCamera.zoom / factor, 15);
+      this.orthoCamera.zoom = Math.min(this.orthoCamera.zoom / adaptedFactor, 40);
       this.orthoCamera.updateProjectionMatrix();
     } else {
       const offset = this.camera.position.clone().sub(this.controls.target);
-      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(factor)));
+      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(adaptedFactor)));
     }
     this.controls.update();
   }
 
   public zoomOut(factor = 1.25): void {
+    const sens = loadZoomSensitivityConfig().multiplier;
+    const camDist = Math.max(1, this.camera.position.distanceTo(this.controls.target));
+    const metrics = computeAdaptiveZoomMetrics({
+      cameraDistanceMm: camDist,
+      characteristicRadiusMm: this.getCharacteristicPartRadiusMm(),
+      userSensitivityMultiplier: sens,
+    });
+    const baseDelta = factor - 1;
+    const adaptedFactor = Math.max(
+      1.01,
+      Math.min(1.85, 1 + baseDelta * Math.min(1.25, metrics.effectiveFactor)),
+    );
     if (this.isOrtho) {
-      this.orthoCamera.zoom = Math.max(this.orthoCamera.zoom / factor, 0.1);
+      this.orthoCamera.zoom = Math.max(this.orthoCamera.zoom / adaptedFactor, 0.05);
       this.orthoCamera.updateProjectionMatrix();
     } else {
       const offset = this.camera.position.clone().sub(this.controls.target);
-      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(factor)));
+      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(adaptedFactor)));
     }
     this.controls.update();
   }
 
   public panCamera(deltaX: number, deltaY: number): void {
+    const sens = loadZoomSensitivityConfig().multiplier;
+    const camDist = Math.max(1, this.camera.position.distanceTo(this.controls.target));
+    const metrics = computeAdaptiveZoomMetrics({
+      cameraDistanceMm: camDist,
+      characteristicRadiusMm: this.getCharacteristicPartRadiusMm(),
+      userSensitivityMultiplier: sens,
+    });
+    const scale = Math.min(1.15, Math.max(0.08, metrics.adaptiveFactor));
     const eye = this.activeCamera.position.clone().sub(this.controls.target);
     const right = new THREE.Vector3().crossVectors(this.activeCamera.up, eye).normalize();
     const up = new THREE.Vector3().crossVectors(eye, right).normalize();
-    const panOffset = right.multiplyScalar(deltaX).add(up.multiplyScalar(deltaY));
+    const panOffset = right
+      .multiplyScalar(deltaX * scale)
+      .add(up.multiplyScalar(deltaY * scale));
     this.camera.position.add(panOffset);
     this.orthoCamera.position.add(panOffset);
     this.controls.target.add(panOffset);
@@ -1861,6 +2226,7 @@ export class ThreeBRepRenderer {
 
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
+    this.updateBRepLineResolutions(width, height);
     if (this.onDemandRender) {
       this.requestRender();
     }
@@ -2055,6 +2421,7 @@ export class ThreeBRepRenderer {
     }
 
     this.clearGeometry();
+    this.clearBRepWireframeObjects();
     this.clearSketchWireframes();
 
     if (this.gridHelper) {
@@ -2078,6 +2445,13 @@ export class ThreeBRepRenderer {
     }
 
     this.baseSolidMaterial.dispose();
+    this.depthPrePassMaterial.dispose();
+    this.brepOuterContourMat.dispose();
+    this.brepFeatureThicknessMat.dispose();
+    this.brepInternalDetailMat.dispose();
+    this.brepHiddenXRayMat.dispose();
+    this.brepCenterlineAxisMat.dispose();
+    this.brepSelectedEdgeMat.dispose();
     this.primaryFaceMaterial.dispose();
     this.secondaryFaceMaterial.dispose();
     this.hoveredFaceMaterial.dispose();
