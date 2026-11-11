@@ -88,10 +88,25 @@ describe("CHAMFER 3D — Quadro 45°, Array Grade/Vão 90° e Shell Orientado pe
 
     const sceneFrame = buildDirectTopology3DScene(updatedEntities, 3);
     assert.equal(sceneFrame.bodies.length, 4);
+    const seenFaceIds = new Set<string>();
+    const seenEdgeIds = new Set<string>();
+    const seenVertexIds = new Set<string>();
     for (const b of sceneFrame.bodies) {
       assert.ok(b.faces.length >= 6, "Cada barra do Quadro 45° deve ter faces 3D selecionáveis");
       assert.ok(b.edges.length >= 8, "Cada barra do Quadro 45° deve ter arestas 3D selecionáveis");
       assert.ok((b.vertices?.length ?? 0) >= 8, "Cada barra do Quadro 45° deve ter vértices 3D");
+      for (const f of b.faces) {
+        assert.equal(seenFaceIds.has(f.faceId), false, `faceId duplicado detectado: ${f.faceId}`);
+        seenFaceIds.add(f.faceId);
+      }
+      for (const ed of b.edges) {
+        assert.equal(seenEdgeIds.has(ed.edgeId), false, `edgeId duplicado detectado: ${ed.edgeId}`);
+        seenEdgeIds.add(ed.edgeId);
+      }
+      for (const vx of b.vertices ?? []) {
+        assert.equal(seenVertexIds.has(vx.vertexId), false, `vertexId duplicado detectado: ${vx.vertexId}`);
+        seenVertexIds.add(vx.vertexId);
+      }
     }
 
     const topBarId = createdIds[0]!;

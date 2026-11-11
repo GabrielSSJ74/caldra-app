@@ -2039,8 +2039,12 @@ export function buildDirectTopology3DScene(
 
         const area = triangleArea3D(q0, q1, q2) + triangleArea3D(q0, q2, q3);
         totalBarAreaMm2 += area;
+        const baseFaceId = `${bodyId}_${faceIdSuffix}`;
+        const uniqueFaceId = facesById.has(baseFaceId)
+          ? `${baseFaceId}_${mIdx}`
+          : baseFaceId;
         const fObj: DirectFace3D = {
-          faceId: `${bodyId}_${faceIdSuffix}`,
+          faceId: uniqueFaceId,
           meshFaceIndex: mIdx,
           bodyId,
           entityId: entId,
@@ -2066,7 +2070,8 @@ export function buildDirectTopology3DScene(
       ];
 
       if (hasBarCornerMod && polyStart3D.length > 4) {
-        // Renderiza as tiras longitudinais suaves (Fillet / Chamfer) agrupadas nas 4 faces principais
+        // Renderiza as tiras longitudinais suaves (Fillet / Chamfer) garantindo faceId único por tira
+        const usedPrimaryBucketSuffix = new Set<number>();
         for (let segIdx = 0; segIdx < profilePolyUZ.length; segIdx++) {
           const nextSeg = (segIdx + 1) % profilePolyUZ.length;
           const p0 = profilePolyUZ[segIdx]!;
@@ -2084,10 +2089,22 @@ export function buildDirectTopology3DScene(
           };
           const bucketIdx =
             Math.abs(nz) >= Math.abs(nu) ? (nz < 0 ? 0 : 2) : nu >= 0 ? 1 : 3;
-          if (bucketIdx === openLongWallIdx && Math.abs(nz) > 0.9 || (bucketIdx === openLongWallIdx && Math.abs(nu) > 0.9)) {
+          if (
+            (bucketIdx === openLongWallIdx && Math.abs(nz) > 0.9) ||
+            (bucketIdx === openLongWallIdx && Math.abs(nu) > 0.9)
+          ) {
             continue;
           }
           const meta = outerRoles[bucketIdx]!;
+          const isPrimaryFlatWall =
+            (Math.abs(nz) > 0.98 || Math.abs(nu) > 0.98) &&
+            !usedPrimaryBucketSuffix.has(bucketIdx);
+          if (isPrimaryFlatWall) {
+            usedPrimaryBucketSuffix.add(bucketIdx);
+          }
+          const segSuffix = isPrimaryFlatWall
+            ? meta.suffix
+            : `${meta.suffix}_fillet_${segIdx}`;
           pushBarQuad(
             polyStart3D[segIdx]!,
             polyEnd3D[segIdx]!,
@@ -2095,7 +2112,7 @@ export function buildDirectTopology3DScene(
             polyStart3D[nextSeg]!,
             meta.role,
             meta.sideIdx,
-            segIdx < 4 ? meta.suffix : `${meta.suffix}_fillet_${segIdx}`,
+            segSuffix,
             meta.label,
             segN,
           );
