@@ -80,6 +80,7 @@ import {
   Trash2,
   Bug,
   CopyCheck,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -239,6 +240,9 @@ export interface ChamferPortraitTopBarProps {
   focus: boolean;
   onToggleFullscreen: () => void;
   onOpenProjectSettings?: () => void;
+  onToggleBenchCalc?: () => void;
+  isBenchCalcOpen?: boolean;
+  isBenchCalcFloating?: boolean;
 }
 
 export function ChamferPortraitTopBar({
@@ -297,6 +301,9 @@ export function ChamferPortraitTopBar({
   focus,
   onToggleFullscreen,
   onOpenProjectSettings,
+  onToggleBenchCalc,
+  isBenchCalcOpen = false,
+  isBenchCalcFloating = false,
 }: ChamferPortraitTopBarProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -1028,6 +1035,54 @@ export function ChamferPortraitTopBar({
               <Redo2 className="size-4" />
             </span>
           </button>
+
+          {/* Botão Rápido [ 🧮 Calc ] com Resgate Determinístico */}
+          {activeMode === "2d" && onToggleBenchCalc && (
+            <button
+              type="button"
+              data-testid="chamfer-portrait-calc-btn"
+              data-cmd-id="global.bench_calc"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("selection");
+                onToggleBenchCalc();
+              }}
+              aria-label="Calculadora Científica e Metalúrgica de Bancada"
+              title={
+                isBenchCalcFloating
+                  ? "Resgatar Calculadora Flutuante para a Direita"
+                  : "Abrir / Fechar Calculadora de Bancada"
+              }
+              className="group relative flex h-[44px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
+            >
+              <span
+                style={
+                  isBenchCalcOpen
+                    ? {
+                        backgroundColor: "rgba(14, 165, 233, 0.22)",
+                        borderColor: "#38BDF8",
+                        color: isDark ? "#7DD3FC" : "#0284C7",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border)",
+                        color: "var(--chamfer-text-primary)",
+                      }
+                }
+                className="chamfer-theme-fade-2s relative flex h-8 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold"
+              >
+                <Calculator className="size-3.5 shrink-0" />
+                <span>Calc</span>
+                {isBenchCalcOpen && isBenchCalcFloating && (
+                  <span
+                    data-testid="bench-calc-floating-dot"
+                    className="size-1.5 rounded-full bg-amber-400"
+                    title="Flutuando"
+                  />
+                )}
+              </span>
+            </button>
+          )}
 
           {/* Botão Rápido Modo Foco Imersivo [ ⛶ Foco ] */}
           <button
@@ -4438,6 +4493,15 @@ export function ChamferPortraitBottomBars({
                 isDark={isDark}
               />
               <CarouselToolItem
+                cmdId="tool.freehand"
+                icon={PenLine}
+                label="Desenho Livre"
+                active={tool === "freehand"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("freehand")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
                 cmdId="tool.point"
                 icon={Dot}
                 label="Ponto"
@@ -4449,7 +4513,7 @@ export function ChamferPortraitBottomBars({
               <CarouselToolItem
                 cmdId="tool.text"
                 icon={Type}
-                label="Texto"
+                label="Texto / Nota"
                 active={tool === "text"}
                 heightPx={itemHeightPx}
                 onClick={() => onPickTool("text")}

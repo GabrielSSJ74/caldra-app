@@ -51,6 +51,15 @@ export type DxfEntity =
       /** 3n+1 pontos de controle. */
       controls: DxfPoint[];
       closed: boolean;
+    } & WithMeta)
+  | ({
+      /** Texto de anotação opcional (excluído por padrão em DXF Laser CNC). */
+      type: "TEXT";
+      layer: string;
+      position: DxfPoint;
+      height: number;
+      text: string;
+      rotation?: number;
     } & WithMeta);
 
 export type DxfLayer = { name: string; color: number; trueColor?: number };
@@ -71,6 +80,7 @@ const SUBCLASS: Record<DxfEntity["type"], string[]> = {
   ARC: ["AcDbCircle", "AcDbArc"],
   ELLIPSE: ["AcDbEllipse"],
   SPLINE: ["AcDbSpline"],
+  TEXT: ["AcDbText"],
 };
 
 function writeXdata(e: DxfEntity): string {
@@ -153,6 +163,18 @@ function writeBody(e: DxfEntity): string {
         g(74, 0) +
         knots.map((k) => g(40, k.toFixed(4))).join("") +
         e.controls.map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4)) + g(30, "0.0")).join("")
+      );
+    }
+    case "TEXT": {
+      const cleanText = e.text.replace(/[\r\n]+/g, " ").trim() || " ";
+      return (
+        g(10, e.position.x.toFixed(4)) +
+        g(20, e.position.y.toFixed(4)) +
+        g(30, "0.0") +
+        g(40, Math.max(0.5, e.height).toFixed(4)) +
+        g(1, cleanText) +
+        (e.rotation ? g(50, e.rotation.toFixed(4)) : "") +
+        g(100, "AcDbText")
       );
     }
   }
@@ -356,13 +378,25 @@ export function importDxf(text: string): DxfDocument {
           entities.push({ type: "SPLINE", layer, controls, closed: (num(70) & 1) === 1 });
         break;
       }
+      case "TEXT": {
+        const txt = d.get(1)?.[0] ?? "";
+        entities.push({
+          type: "TEXT",
+          layer,
+          position: { x: num(10), y: num(20) },
+          height: num(40, 0, 3.5),
+          text: txt,
+          ...(d.has(50) ? { rotation: num(50) } : {}),
+        });
+        break;
+      }
       default:
-        break; // TEXT, INSERT: suporte futuro
+        break; // INSERT: suporte futuro
     }
     current = null;
   };
 
-  const SUPPORTED = ["LINE", "CIRCLE", "ARC", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE"];
+  const SUPPORTED = ["LINE", "CIRCLE", "ARC", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE", "TEXT"];
 
   for (let i = 0; i < pairs.length; i++) {
     const { code, value } = pairs[i]!;

@@ -440,6 +440,7 @@ export function ChamferCadToolbar({
           tool === "polygon" ||
           tool === "ellipse" ||
           tool === "spline" ||
+          tool === "freehand" ||
           tool === "slot" ||
           tool === "point" ||
           tool === "text"
@@ -1403,6 +1404,14 @@ export function ChamferCadToolbar({
                       desc="Curva interpolada suave com ≥128 segmentos"
                     />
                     <FlyoutItem
+                      label="Desenho Livre (Vetorial)"
+                      keyLabel="LIV"
+                      icon={PenLine}
+                      active={tool === "freehand"}
+                      onClick={() => handleSelectTool("freehand", "criar")}
+                      desc="Traço contínuo suavizado em tempo real (Fiel, Suave ou Poligonal)"
+                    />
+                    <FlyoutItem
                       label="Ponto de Apoio"
                       icon={Dot}
                       active={tool === "point"}
@@ -1410,12 +1419,12 @@ export function ChamferCadToolbar({
                       desc="Referência de coordenadas CAD"
                     />
                     <FlyoutItem
-                      label="Texto Técnico"
+                      label="Texto / Nota Técnica"
                       keyLabel="X"
                       icon={Type}
                       active={tool === "text"}
                       onClick={() => handleSelectTool("text", "criar")}
-                      desc="Gravação a laser ou marcação técnica"
+                      desc="Anotação rica justificada, fórmulas nativas ou gravação"
                     />
                     {onOpenPresets && (
                       <FlyoutItem

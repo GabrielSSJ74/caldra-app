@@ -25,6 +25,11 @@ import {
   type TechLayerId,
 } from "@/lib/lab2d/technical";
 import { roleOf, ROLE_BY_LAYER } from "@/lib/lab2d/roles";
+import {
+  computeRichNoteWorldBox,
+  getEntityRichNoteSpec,
+  isRichNoteEntity,
+} from "@/lib/lab2d/chamferRichNoteEngine";
 
 export type LayerId = string;
 
@@ -174,11 +179,23 @@ export function entityPoints(e: Entity): Vec2[] {
       return e.boundaryPts;
     case "path":
       return pathAnchors(e.start, e.segs);
-    case "text":
+    case "text": {
+      if (isRichNoteEntity(e)) {
+        const rb = computeRichNoteWorldBox(e);
+        if (rb) {
+          return [
+            { x: rb.minX, y: rb.minY },
+            { x: rb.maxX, y: rb.minY },
+            { x: rb.maxX, y: rb.maxY },
+            { x: rb.minX, y: rb.maxY },
+          ];
+        }
+      }
       return [
         { x: e.x, y: e.y - e.size },
         { x: e.x + (e.width ?? Math.max(e.size, e.text.length * e.size * 0.6)), y: e.y },
       ];
+    }
   }
 }
 
@@ -497,13 +514,56 @@ export const rotate = (e: Entity, o: Vec2, deg: number) => {
   }
   if (e.type === "text") {
     const cp = rot({ x: e.x, y: e.y });
-    return { ...e, x: cp.x, y: cp.y, rotation: (e.rotation ?? 0) + deg };
+    const nextRot = (e.rotation ?? 0) + deg;
+    if (isRichNoteEntity(e)) {
+      const spec = getEntityRichNoteSpec(e);
+      if (spec) {
+        return {
+          ...e,
+          x: cp.x,
+          y: cp.y,
+          rotation: nextRot,
+          params: {
+            ...(e.params ?? {}),
+            richNote: { ...spec, rotationDeg: nextRot },
+          },
+        };
+      }
+    }
+    return { ...e, x: cp.x, y: cp.y, rotation: nextRot };
   }
   return mapEntity(e, rot);
 };
 
-export const scaleEntity = (e: Entity, o: Vec2, k: number) =>
-  mapEntity(e, (p) => ({ x: o.x + (p.x - o.x) * k, y: o.y + (p.y - o.y) * k }), k);
+export const scaleEntity = (e: Entity, o: Vec2, k: number) => {
+  const mapped = mapEntity(e, (p) => ({ x: o.x + (p.x - o.x) * k, y: o.y + (p.y - o.y) * k }), k);
+  if (mapped.type === "text") {
+    const absK = Math.max(0.05, Math.abs(k));
+    if (isRichNoteEntity(mapped)) {
+      const spec = getEntityRichNoteSpec(mapped);
+      if (spec) {
+        return {
+          ...mapped,
+          size: mapped.size * absK,
+          params: {
+            ...(mapped.params ?? {}),
+            richNote: {
+              ...spec,
+              fontSizeMm: spec.fontSizeMm * absK,
+              widthMm: spec.widthMm * absK,
+            },
+          },
+        };
+      }
+    }
+    return {
+      ...mapped,
+      size: mapped.size * absK,
+      ...(mapped.width ? { width: mapped.width * absK } : {}),
+    };
+  }
+  return mapped;
+};
 
 export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") => {
   const ref = (p: Vec2) => (axis === "x" ? { x: 2 * o.x - p.x, y: p.y } : { x: p.x, y: 2 * o.y - p.y });

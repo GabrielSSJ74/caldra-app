@@ -69,6 +69,7 @@ export function ExportDialog({
   const [profile, setProfile] = useState(DXF_PROFILE_LASER);
   const [roles, setRoles] = useState<Partial<Record<CncRole, boolean>>>({});
   const [leads, setLeads] = useState(true);
+  const [includeAnnotations, setIncludeAnnotations] = useState(false);
   const [showCypcutChecklist, setShowCypcutChecklist] = useState(false);
   const [cypcutValidation, setCypcutValidation] = useState<CypCutValidationState>(
     INITIAL_CYPCUT_VALIDATION_STATE,
@@ -100,6 +101,7 @@ export function ExportDialog({
       roles,
       leads,
       flattenCurves,
+      includeAnnotations,
       metadata: {
         project: projectName,
         plan: planName,
@@ -114,6 +116,7 @@ export function ExportDialog({
       roles,
       leads,
       flattenCurves,
+      includeAnnotations,
       projectName,
       planName,
       material,
@@ -310,6 +313,15 @@ export function ExportDialog({
                 )}
               >
                 {leads ? "☑" : "☐"} Entrada/Saída
+              </button>
+              <button
+                onClick={() => setIncludeAnnotations((v) => !v)}
+                className={cn(
+                  "rounded-full border border-border px-2.5 py-1",
+                  includeAnnotations && "border-accent/50 text-accent",
+                )}
+              >
+                {includeAnnotations ? "☑" : "☐"} Incluir anotações no DXF
               </button>
               {entities.some((e) => e.type === "path") && (
                 <button

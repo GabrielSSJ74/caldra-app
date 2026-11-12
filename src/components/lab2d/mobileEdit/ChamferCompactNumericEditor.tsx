@@ -23,6 +23,10 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { X, Delete, Check, Minus, Plus, Keyboard, Sliders, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
+import {
+  CHAMFER_INJECT_CAD_VALUE_EVENT,
+  type ChamferInjectCadValueDetail,
+} from "@/lib/lab2d/chamferBenchCalculator";
 import type { NumericPropertyDef } from "./types";
 
 interface ChamferCompactNumericEditorProps {
@@ -94,6 +98,22 @@ export function ChamferCompactNumericEditor({
     },
     [onChange, property.min, property.max, property.decimals]
   );
+
+  // Ponte Bidirecional da Mini-Calculadora de Bancada (`[ ↳ Usar no CAD ]`)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onInject = (rawEv: Event) => {
+      const ev = rawEv as CustomEvent<ChamferInjectCadValueDetail>;
+      if (!ev.detail || ev.detail.handled) return;
+      if (!Number.isFinite(ev.detail.value)) return;
+      setIsTyping(false);
+      applyValue(ev.detail.value);
+      triggerHaptic("selection");
+      ev.detail.handled = true;
+    };
+    window.addEventListener(CHAMFER_INJECT_CAD_VALUE_EVENT, onInject);
+    return () => window.removeEventListener(CHAMFER_INJECT_CAD_VALUE_EVENT, onInject);
+  }, [applyValue]);
 
   // Incremento / Decremento por passo ativo (− e +)
   const handleStepChange = (direction: -1 | 1) => {

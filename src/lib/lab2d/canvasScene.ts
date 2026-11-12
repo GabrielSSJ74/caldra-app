@@ -38,6 +38,7 @@ import {
   resolveEntitySolidFeatureType,
   solidMeshToCanvasRenderableMesh,
 } from "./chamferSolidKernel";
+import { drawRichNoteOnCanvas2D, isRichNoteEntity } from "./chamferRichNoteEngine";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -103,6 +104,12 @@ export type SceneOptions = {
   bgStyle?: "padrao" | "suave" | "fluido";
   /** Malha de prévia translúcida em tempo real durante a ferramenta LOFT 3D */
   activeLoftPreviewMesh?: Loft3DMesh | null;
+  /** Traço vetorial em tempo real da ferramenta Desenho Livre (renderizado leve sem recriar índice espacial) */
+  freehandLiveStroke?: {
+    pts: readonly Vec2[];
+    usageRole: "geometry" | "markup";
+    canClose: boolean;
+  } | null;
 };
 
 /**
@@ -857,10 +864,18 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     ctx.globalAlpha = 1;
   }
 
-  // textos por último (custo alto por item, quantidade sempre baixa)
+  // textos e anotações técnicas ricas por último (custo alto por item, quantidade sempre baixa)
   ctx.setLineDash([]);
   for (const e of list) {
     if (e.type !== "text") continue;
+    if (isRichNoteEntity(e)) {
+      drawRichNoteOnCanvas2D(ctx, e, {
+        invScale: inv,
+        isLight: opts.isLight,
+        isSelected: selection.has(e.id),
+      });
+      continue;
+    }
     const rawTextColor = techStyle(e.layer).color;
     const isWhiteOrCut = rawTextColor === "#FFFFFF" || e.layer === "corte";
     ctx.fillStyle = isWhiteOrCut
@@ -881,6 +896,43 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     const natural = Math.max(ctx.measureText(e.text).width, 0.01);
     if (e.width && e.width > 0) ctx.scale(e.width / natural, 1);
     ctx.fillText(e.text, 0, 0);
+    ctx.restore();
+  }
+
+  // Camada leve de prévia ao vivo da ferramenta Desenho Livre (60 FPS, zero rebuild de SpatialIndex)
+  const fhPts = opts.freehandLiveStroke?.pts;
+  if (opts.freehandLiveStroke && Array.isArray(fhPts) && fhPts.length >= 2) {
+    const isMarkup = opts.freehandLiveStroke.usageRole === "markup";
+    ctx.save();
+    ctx.strokeStyle = isMarkup ? "#F59E0B" : "#38BDF8";
+    ctx.lineWidth = 2.2 * inv;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash(isMarkup ? [6 * inv, 4 * inv] : []);
+    ctx.beginPath();
+    ctx.moveTo(fhPts[0]!.x, fhPts[0]!.y);
+    for (let i = 1; i < fhPts.length; i++) {
+      ctx.lineTo(fhPts[i]!.x, fhPts[i]!.y);
+    }
+    ctx.stroke();
+
+    // Marcador de ponto inicial + anel magnético quando apto a fechar contorno
+    ctx.setLineDash([]);
+    ctx.fillStyle = isMarkup ? "#F59E0B" : "#10B981";
+    ctx.beginPath();
+    ctx.arc(fhPts[0]!.x, fhPts[0]!.y, 3.2 * inv, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (opts.freehandLiveStroke.canClose) {
+      const endPt = fhPts[fhPts.length - 1]!;
+      if (Math.hypot(endPt.x - fhPts[0]!.x, endPt.y - fhPts[0]!.y) <= 14 * inv) {
+        ctx.strokeStyle = "#10B981";
+        ctx.lineWidth = 1.8 * inv;
+        ctx.beginPath();
+        ctx.arc(fhPts[0]!.x, fhPts[0]!.y, 7.5 * inv, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
 }

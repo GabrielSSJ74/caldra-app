@@ -21,6 +21,10 @@ import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/Se
 import { resolveAccentHex, resolveAccentContrastText } from "@/components/lab2d/ChamferVirtualCursor";
 import { ReferenceService } from "@/lib/lab2d/referenceService";
 import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
+import {
+  CHAMFER_INJECT_CAD_VALUE_EVENT,
+  type ChamferInjectCadValueDetail,
+} from "@/lib/lab2d/chamferBenchCalculator";
 import { cn } from "@/lib/utils";
 
 export interface ChamferDirectDimensionEditorProps {
@@ -291,6 +295,31 @@ export function ChamferDirectDimensionEditor({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, handleDigit, handleDecimal, handleBackspace, handleClear, handleToggleSign, handleConfirm, onClose]);
+
+  // Ponte Bidirecional da Mini-Calculadora de Bancada (`[ ↳ Usar no CAD ]`)
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const onInject = (rawEv: Event) => {
+      const ev = rawEv as CustomEvent<ChamferInjectCadValueDetail>;
+      if (!ev.detail || ev.detail.handled) return;
+      const incoming = ev.detail.value;
+      if (!Number.isFinite(incoming)) return;
+      if (!isValuePermitted(incoming)) {
+        setErrorMsg(allowZero ? "O valor deve ser ≥ 0." : "Esta medida exige valor > 0.");
+        ev.detail.handled = true;
+        return;
+      }
+      const formatted = String(Number(incoming.toFixed(4))).replace(".", ",");
+      setDisplayStr(formatted);
+      setFreshEntry(false);
+      setErrorMsg(null);
+      onPreviewChange?.(incoming);
+      triggerHaptic("selection");
+      ev.detail.handled = true;
+    };
+    window.addEventListener(CHAMFER_INJECT_CAD_VALUE_EVENT, onInject);
+    return () => window.removeEventListener(CHAMFER_INJECT_CAD_VALUE_EVENT, onInject);
+  }, [open, isValuePermitted, allowZero, onPreviewChange]);
 
   if (!open) return null;
 

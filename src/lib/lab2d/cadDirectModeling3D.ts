@@ -1494,6 +1494,9 @@ export function buildDirectTopology3DScene(
   const kernelFeatureEntities: Entity[] = [];
 
   for (const ent of entities) {
+    if (ent.type === "text" || ent.params?.excludeFrom3D) continue;
+    const fhMeta = ent.params?.freehand as { usageRole?: string } | undefined;
+    if (fhMeta?.usageRole === "markup") continue;
     if (isLoft3DEntity(ent)) {
       loftEntities.push(ent);
       continue;

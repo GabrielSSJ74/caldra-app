@@ -29,6 +29,7 @@ export const PREVIEW_LAYER_COLOR: Record<string, string> = {
   LEAD_OUT: MARK_COLOR,
   REFERENCE: REFERENCE_COLOR,
   DIMENSION: REFERENCE_COLOR,
+  ANOTACOES: REFERENCE_COLOR,
 };
 
 const PREVIEW_FALLBACK = "#111827";
@@ -85,6 +86,12 @@ function boundsOf(entities: DxfEntity[]): Box | null {
         const rx = Math.hypot(e.majorEnd.x, e.majorEnd.y);
         grow(box, { x: e.center.x - rx, y: e.center.y - rx });
         grow(box, { x: e.center.x + rx, y: e.center.y + rx });
+        break;
+      }
+      case "TEXT": {
+        const approxW = Math.max(e.height, e.text.length * e.height * 0.58);
+        grow(box, e.position);
+        grow(box, { x: e.position.x + approxW, y: e.position.y + e.height });
         break;
       }
     }
@@ -157,6 +164,8 @@ function pathOf(e: DxfEntity): string | null {
       const sweep = (e.endAngle - e.startAngle + 360) % 360;
       return `M ${f(a.x)} ${f(a.y)} A ${f(e.radius)} ${f(e.radius)} 0 ${sweep > 180 ? 1 : 0} 1 ${f(b.x)} ${f(b.y)}`;
     }
+    case "TEXT":
+      return null;
   }
 }
 
@@ -172,6 +181,14 @@ export function previewDxfSvg(doc: DxfDocument): DxfPreview {
 
   const body = doc.entities
     .map((e) => {
+      if (e.type === "TEXT") {
+        const fill = PREVIEW_LAYER_COLOR[e.layer] ?? PREVIEW_FALLBACK;
+        const escaped = e.text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<text x="${f(e.position.x)}" y="${f(-e.position.y)}" fill="${fill}" font-family="monospace" font-size="${f(e.height)}" transform="scale(1,-1)">${escaped}</text>`;
+      }
       const d = pathOf(e);
       if (!d) return "";
       const stroke = PREVIEW_LAYER_COLOR[e.layer] ?? PREVIEW_FALLBACK;

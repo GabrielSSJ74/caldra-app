@@ -57,6 +57,8 @@ export interface ChamferPrecisionLoupeProps {
   draft?: Entity | null;
   /** Pontos pendentes (ex: polilinha) */
   pendingPoints?: Vec2[];
+  /** Traço ao vivo da ferramenta Desenho Livre em coordenadas do mundo (mm) */
+  freehandLivePoints?: readonly Vec2[];
   /** Passo da grade */
   grid: number;
   showGrid: boolean;
@@ -218,6 +220,7 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
     entities,
     draft,
     pendingPoints = [],
+    freehandLivePoints = [],
     grid,
     showGrid,
     isDark = true,
@@ -452,6 +455,22 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
         renderEntityOnLoupe(draft, true);
       }
 
+      if (freehandLivePoints.length >= 2) {
+        ctx.save();
+        ctx.strokeStyle = "#38BDF8";
+        ctx.lineWidth = 1.9;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(freehandLivePoints[0]!.x * loupeZoom, freehandLivePoints[0]!.y * loupeZoom);
+        for (let i = 1; i < freehandLivePoints.length; i++) {
+          ctx.lineTo(freehandLivePoints[i]!.x * loupeZoom, freehandLivePoints[i]!.y * loupeZoom);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // 2c.2 Marcos Geométricos / Âncoras (A–E), Divisores ÷N e Encontros de Guias na Lente 2.5x
       const refState = ReferenceService.getState();
       for (const anchor of refState.anchors) {
@@ -589,6 +608,7 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
       entities,
       draft,
       pendingPoints,
+      freehandLivePoints,
       grid,
       showGrid,
       isDark,

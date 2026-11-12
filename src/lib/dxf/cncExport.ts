@@ -51,6 +51,8 @@ export type CncExportOptions = {
   leads: boolean;
   /** Achatar curvas Bézier em polilinha (máquinas antigas). */
   flattenCurves: boolean;
+  /** Incluir opcionalmente anotações técnicas como TEXT na layer ANOTACOES (desativado por padrão). */
+  includeAnnotations?: boolean;
 };
 
 export const DEFAULT_CNC_OPTIONS: CncExportOptions = {
@@ -58,6 +60,7 @@ export const DEFAULT_CNC_OPTIONS: CncExportOptions = {
   roles: { CUT: true, RECORTE: true, MARK: true, BEND: true, REFERENCE: false, DIMENSION: false },
   leads: true,
   flattenCurves: false,
+  includeAnnotations: false,
 };
 
 /** DXF é Y para cima; o modelo do CHAMFER é Y para baixo. */
@@ -473,7 +476,29 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
   const preparedEntities = weldConnectedCutChains(entities, 0.05);
 
   for (const e of preparedEntities) {
-    if (e.type === "text") continue; // textos técnicos não vão para o arquivo de corte
+    if (e.type === "text") {
+      if (!opts.includeAnnotations) continue; // textos técnicos não vão para o arquivo de corte por padrão
+      const noteLayer = registerLayer("ANOTACOES");
+      const rawRich = (e.params as { richNote?: { runs?: { text?: string }[]; fontSizeMm?: number; rotationDeg?: number } } | undefined)?.richNote;
+      const fullText = rawRich?.runs?.length
+        ? rawRich.runs.map((r) => r.text ?? "").join("")
+        : e.text;
+      const fontH = Math.max(1, rawRich?.fontSizeMm ?? e.size ?? 4);
+      const rotDeg = -(rawRich?.rotationDeg ?? 0);
+      const lines = fullText.split(/\r?\n/).filter((ln) => ln.trim().length > 0);
+      lines.forEach((ln, idx) => {
+        const pt = m({ x: e.x, y: e.y + idx * fontH * 1.35 });
+        out.push({
+          type: "TEXT",
+          layer: noteLayer,
+          position: pt,
+          height: fontH,
+          text: ln,
+          ...(Math.abs(rotDeg) > 1e-4 ? { rotation: rotDeg } : {}),
+        });
+      });
+      continue;
+    }
     const role = roleOf(e);
     if (!role || !(ENTITY_ROLES as ManufacturingRole[]).includes(role)) continue;
     if (!opts.roles[role as CncRole]) continue;
@@ -918,13 +943,14 @@ export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPre
     },
   );
   if (cypcut) {
+    const mfgEntitiesCount = doc.entities.filter((e) => e.type !== "TEXT").length;
     rows.push({
       label: "Estrutura CypCut (FS_CYPCUT)",
       value:
-        tagged === doc.entities.length && appIdsOf(doc).includes(CYPCUT_APPID)
+        tagged === mfgEntitiesCount && appIdsOf(doc).includes(CYPCUT_APPID)
           ? `${tagged} entidades · ${CYPCUT_MAPPED_ROLES.map((r) => CYPCUT_CHANNEL[r]).join("/")}`
           : "incompleta",
-      ok: tagged === doc.entities.length && doc.entities.length > 0,
+      ok: tagged === mfgEntitiesCount && mfgEntitiesCount > 0,
     });
     for (const role of CYPCUT_MAPPED_ROLES)
       rows.push({

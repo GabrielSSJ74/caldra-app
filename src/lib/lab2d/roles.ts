@@ -69,18 +69,21 @@ export const ROLE_BY_LAYER: Record<string, ManufacturingRole> = {
   ref_cotas_campo: "DIMENSION",
   ref_hipoteses: "REFERENCE",
   cota: "DIMENSION",
+  anotacoes: "DIMENSION",
 };
 
 const metaOf = (e: Entity): CncMeta => (e as { cnc?: CncMeta }).cnc ?? {};
 
 /** Papel de fabricação da entidade, ou null quando não classificada. */
 export function roleOf(e: Entity): ManufacturingRole | null {
+  if (e.type === "text") return "DIMENSION";
+  const fh = e.params?.freehand as { usageRole?: string } | undefined;
+  if (fh?.usageRole === "markup") return "REFERENCE";
   const explicit = metaOf(e).role;
   if (explicit) return explicit;
   const byLayer = ROLE_BY_LAYER[e.layer as LayerId];
   if (byLayer) return byLayer;
-  // texto técnico nunca é corte: na ausência de classificação é cota
-  return e.type === "text" ? "DIMENSION" : null;
+  return null;
 }
 
 /** Entidades sem papel explícito nem camada semântica conhecida. */

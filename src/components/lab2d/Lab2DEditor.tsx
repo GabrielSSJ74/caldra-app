@@ -66,6 +66,7 @@ import {
   Sliders,
   Sparkles,
   Zap,
+  Calculator,
 } from "lucide-react";
 import { getChamferSettings, type ChamferSettings } from "@/lib/lab2d/projectSettings";
 import { useSettings } from "@/lib/settings/SettingsProvider";
@@ -591,6 +592,34 @@ import {
   ChamferPrumoSpatialUI,
   PrumoErrorBoundary,
 } from "./ChamferPrumoSpatialUI";
+import {
+  applyDeterministicBenchRescueToggle,
+  loadPersistedBenchCalcState,
+  savePersistedBenchCalcState,
+  type BenchPersistedState,
+} from "@/lib/lab2d/chamferBenchCalculator";
+import {
+  buildRichNoteEntity,
+  getEntityRichNoteSpec,
+  hitTestRichNoteGlyphsMm,
+  isRichNoteEntity,
+  type RichNoteSpec,
+} from "@/lib/lab2d/chamferRichNoteEngine";
+import {
+  appendFreehandSample,
+  buildFreehandVectorEntity,
+  computeFreehandLiveMetrics,
+  type FreehandPrimitiveSuggestion,
+  type FreehandSmoothingMode,
+  type FreehandUsageRole,
+} from "@/lib/lab2d/chamferFreehandEngine";
+import { ChamferBenchCalculator } from "./ChamferBenchCalculator";
+import {
+  ChamferRichNoteEditorOverlay,
+  ChamferRichNoteCanvasHandles,
+  type RichNoteEditorSession,
+} from "./ChamferRichNoteEditorOverlay";
+import { ChamferFreehandSubBar } from "./ChamferFreehandSubBar";
 
 export type Tool =
   | "select"
@@ -606,6 +635,7 @@ export type Tool =
   | "polygon"
   | "ellipse"
   | "spline"
+  | "freehand"
   | "point"
   | "text"
   | "measure"
@@ -770,10 +800,15 @@ function getOperationFeedback(
         command: "PONTO",
         instruction: "Clique na coordenada desejada para criar ponto de referência",
       };
+    case "freehand":
+      return {
+        command: "DESENHO LIVRE",
+        instruction: "Arraste na prancheta para traçar vetor suavizado em tempo real (Fiel, Suave ou Poligonal)",
+      };
     case "text":
       return {
-        command: "TEXTO",
-        instruction: "Clique onde deseja posicionar o texto técnico de marcação",
+        command: "TEXTO / NOTA",
+        instruction: "Toque onde deseja inserir a Anotação Técnica rica / Fórmula nativa",
       };
     case "trim":
       return {
@@ -1333,6 +1368,66 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [textOpen, setTextOpen] = useState(false);
   const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+  /* MINI-CALCULADORA DE BANCADA, NOTAS RICAS & DESENHO LIVRE VETORIAL */
+  const [benchCalcState, setBenchCalcState] = useState<BenchPersistedState>(() =>
+    loadPersistedBenchCalcState(),
+  );
+  useEffect(() => {
+    savePersistedBenchCalcState(benchCalcState);
+  }, [benchCalcState]);
+  const handleToggleBenchCalc = useCallback(() => {
+    setBenchCalcState((prev) => applyDeterministicBenchRescueToggle(prev));
+  }, []);
+
+  const [richNoteSession, setRichNoteSession] = useState<RichNoteEditorSession | null>(null);
+  const createDefaultRichNoteSpec = useCallback(
+    (): RichNoteSpec => ({
+      widthMm: 95,
+      fontSizeMm: 6,
+      rotationDeg: 0,
+      textAlign: "left",
+      lineHeight: 1.35,
+      categoryLayer: "Observação",
+      boxStyle: "card",
+      isFormula: false,
+      runs: [{ text: "" }],
+    }),
+    [],
+  );
+  const openRichNoteEditorForEntity = useCallback((ent: Entity) => {
+    if (ent.type !== "text") return;
+    const spec = getEntityRichNoteSpec(ent);
+    if (!spec) return;
+    setRichNoteSession({
+      mode: "edit",
+      entityId: ent.id,
+      anchorWorld: { x: ent.x, y: ent.y },
+      layer: ent.layer || "anotacoes",
+      initialSpec: spec,
+    });
+  }, []);
+
+  const [freehandMode, setFreehandMode] = useState<FreehandSmoothingMode>("suave");
+  const [freehandTolerancePx, setFreehandTolerancePx] = useState<number>(1.5);
+  const [freehandAutoClose, setFreehandAutoClose] = useState<boolean>(false);
+  const [freehandUsageRole, setFreehandUsageRole] = useState<FreehandUsageRole>("geometry");
+  const [freehandLivePts, setFreehandLivePts] = useState<Vec2[]>([]);
+  const freehandRawPtsRef = useRef<Vec2[]>([]);
+  const freehandStartSnapRef = useRef<Vec2 | null>(null);
+  const freehandDrawingRef = useRef<boolean>(false);
+  const [freehandSuggestion, setFreehandSuggestion] = useState<{
+    entityId: string;
+    data: FreehandPrimitiveSuggestion;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!freehandSuggestion) return;
+    const timer = window.setTimeout(() => {
+      setFreehandSuggestion(null);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [freehandSuggestion]);
 
   /* MOTOR LOFT 3D MULTISSEÇÃO E ELEVAÇÃO +Z (GIZMO 3D) */
   const [loftSectionIds, setLoftSectionIds] = useState<string[]>([]);
@@ -2780,7 +2875,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           const normD = (ux / rx) ** 2 + (uy / ry) ** 2;
           d = Math.abs(Math.sqrt(normD) - 1) * Math.min(rx, ry);
         } else if (e.type === "text") {
-          d = dist(p, { x: e.x, y: e.y });
+          if (isRichNoteEntity(e)) {
+            const richDist = hitTestRichNoteGlyphsMm(p, e, tol);
+            d = richDist === null ? Infinity : richDist;
+          } else {
+            d = dist(p, { x: e.x, y: e.y });
+          }
         } else if (e.type === "point") {
           if (isPersistentDatumEntity(e)) {
             const spec = getPersistentDatumSpec(e);
@@ -3141,6 +3241,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         gridStep: Math.max(15, grid * 2.5),
         bgStyle,
         activeLoftPreviewMesh,
+        freehandLiveStroke:
+          freehandLivePts.length >= 2
+            ? {
+                pts: freehandLivePts,
+                usageRole: freehandUsageRole,
+                canClose: computeFreehandLiveMetrics(
+                  freehandLivePts,
+                  10 / Math.max(0.2, view.k),
+                ).canClose,
+              }
+            : null,
       });
 
       // Nota (Seção 1.1): A Mira Principal (Retículo + Haste Elástica + Anel de Toque)
@@ -3173,6 +3284,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       grid,
       activeLoftPreviewMesh,
       activeTouchScreenPos,
+      freehandLivePts,
+      freehandUsageRole,
     ],
   );
 
@@ -5065,6 +5178,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     swipeTrimFenceRef.current = [];
     setSwipeTrimCutPreview([]);
     setOverlappingCandidates([]);
+    if (freehandDrawingRef.current || freehandRawPtsRef.current.length > 0) {
+      freehandDrawingRef.current = false;
+      freehandRawPtsRef.current = [];
+      freehandStartSnapRef.current = null;
+      setFreehandLivePts([]);
+    }
 
     const now = performance.now();
     gestureCooldownUntilRef.current = Math.max(gestureCooldownUntilRef.current, now + 150);
@@ -5838,28 +5957,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       triggerHaptic("tap");
       return;
     }
+    if (tool === "freehand") {
+      const startSnap =
+        snapOn && (smartSnap ?? snapHit) ? { ...(smartSnap ?? snapHit)!.p } : null;
+      const startWorld = startSnap ?? { ...p };
+      freehandStartSnapRef.current = startSnap;
+      freehandDrawingRef.current = true;
+      freehandRawPtsRef.current = [startWorld];
+      setFreehandLivePts([startWorld]);
+      setFreehandSuggestion(null);
+      triggerHaptic("tap");
+      return;
+    }
     if (tool === "text") {
-      if (!textSpec) {
-        setTextOpen(true);
+      if (textSpec) {
+        commit((list) => [
+          ...list,
+          {
+            id: uid(),
+            layer: activeLayer,
+            type: "text",
+            x: p.x,
+            y: p.y,
+            text: textSpec.text,
+            size: textSpec.height,
+            width: textSpec.width,
+            bold: textSpec.bold,
+            italic: textSpec.italic,
+          },
+        ]);
+        setTextSpec(null);
+        setTool("select");
         return;
       }
-      commit((list) => [
-        ...list,
-        {
-          id: uid(),
-          layer: activeLayer,
-          type: "text",
-          x: p.x,
-          y: p.y,
-          text: textSpec.text,
-          size: textSpec.height,
-          width: textSpec.width,
-          bold: textSpec.bold,
-          italic: textSpec.italic,
-        },
-      ]);
-      setTextSpec(null);
-      setTool("select");
+      setRichNoteSession({
+        mode: "create",
+        anchorWorld: { x: p.x, y: p.y },
+        layer: "anotacoes",
+        initialSpec: createDefaultRichNoteSpec(),
+      });
+      triggerHaptic("tap");
       return;
     }
     if (tool === "arc") {
@@ -6286,6 +6423,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
     }
 
+    if (tool === "freehand" && freehandDrawingRef.current && ptrsRef.current.size === 1) {
+      const nativeEv = ev.nativeEvent as PointerEvent;
+      const coalesced =
+        typeof nativeEv.getCoalescedEvents === "function" ? nativeEv.getCoalescedEvents() : [];
+      const minStepMm = Math.max(0.05, 0.35 / Math.max(0.2, view.k));
+      let nextPts = freehandRawPtsRef.current;
+      if (coalesced.length > 0) {
+        for (const ce of coalesced) {
+          const wPt = toWorld({
+            clientX: ce.clientX,
+            clientY: ce.clientY,
+            pointerType: ce.pointerType || pType,
+          });
+          nextPts = appendFreehandSample(nextPts, wPt, minStepMm);
+        }
+      } else {
+        const wPt = toWorld(ev);
+        nextPts = appendFreehandSample(nextPts, wPt, minStepMm);
+      }
+      if (nextPts !== freehandRawPtsRef.current) {
+        freehandRawPtsRef.current = nextPts;
+        setFreehandLivePts(nextPts);
+      }
+    }
+
     if (dragEntityRef.current && dragEntityRef.current.unlocked && (!ev.pointerId || dragEntityRef.current.pointerId === ev.pointerId)) {
       const drag = dragEntityRef.current;
       const canvasRect = (canvasViewportRef.current ?? svgRef.current)?.getBoundingClientRect();
@@ -6472,6 +6634,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "construction_line" ||
       tool === "polyline" ||
       tool === "spline" ||
+      tool === "freehand" ||
       tool === "rect" ||
       tool === "rrect" ||
       tool === "circle" ||
@@ -7209,6 +7372,45 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return;
       }
     }
+    if (tool === "freehand" && freehandDrawingRef.current) {
+      const rawPts = freehandRawPtsRef.current;
+      const startSnap = freehandStartSnapRef.current;
+      freehandDrawingRef.current = false;
+      freehandRawPtsRef.current = [];
+      freehandStartSnapRef.current = null;
+      setFreehandLivePts([]);
+
+      if (rawPts.length >= 2) {
+        const activeEndSnap =
+          snapOn && (smartSnap ?? snapHit) ? { ...(smartSnap ?? snapHit)!.p } : null;
+        const built = buildFreehandVectorEntity({
+          rawPointsWorld: rawPts,
+          cameraZoomK: view.k,
+          tolerancePx: freehandTolerancePx,
+          mode: freehandMode,
+          usageRole: freehandUsageRole,
+          orthoOn,
+          startSnapWorld: startSnap,
+          endSnapWorld: activeEndSnap,
+          forceClose: freehandAutoClose,
+          closeSnapRadiusMm: 10 / Math.max(0.2, view.k),
+          activeLayer,
+          strokeColor: activeStrokeColor,
+        });
+        if (built) {
+          commit((list) => [...list, built.entity]);
+          triggerHaptic("success");
+          if (built.suggestion) {
+            setFreehandSuggestion({
+              entityId: built.entity.id,
+              data: built.suggestion,
+            });
+          }
+        }
+      }
+      return;
+    }
+
     // Finaliza Swipe-to-Trim se o usuário arrastou uma cerca de corte sobre segmentos
     if ((tool === "smart_trim" || tool === "trim") && swipeTrimFenceRef.current.length >= 2) {
       const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
@@ -7938,7 +8140,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       // mantendo a perspectiva 3D escolhida na tela (Seção 5.3)
       setIsOrbitToolActive(false);
       orbitDragRef.current = null;
-      if (id === "text") setTextOpen(true);
+      if (id === "text") {
+        toast.info("Toque na prancheta onde deseja inserir a Anotação Técnica / Fórmula.");
+      }
       if (id === "divide") {
         if (selected.length >= 1 && canDivideEntity(selected[0])) {
           setDivideTargetEntity(selected[0]);
@@ -8451,17 +8655,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onEditText: () => {
                   const current = selected[0];
                   if (!current || current.type !== "text") return;
-                  setEditingTextId(current.id);
-                  setTextSpec({
-                    text: current.text,
-                    width:
-                      current.width ??
-                      Math.max(current.size, current.text.length * current.size * 0.6),
-                    height: current.size,
-                    bold: !!current.bold,
-                    italic: !!current.italic,
-                  });
-                  setTextOpen(true);
+                  openRichNoteEditorForEntity(current);
                 },
               }
             : {})}
@@ -8810,6 +9004,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           activeStrokeColor={activeStrokeColor}
           onSelectColorAndLayer={handleSelectColorAndLayer}
           onOpenProjectSettings={() => setProjectSettingsOpen(true)}
+          onToggleBenchCalc={handleToggleBenchCalc}
+          isBenchCalcOpen={benchCalcState.open}
+          isBenchCalcFloating={benchCalcState.dockMode === "floating"}
         />
       )}
 
@@ -9459,6 +9656,53 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   <span>CORTE/BOM</span>
                 </button>
               </div>
+            )}
+
+            {/* BOTÃO RÁPIDO MINI-CALCULADORA DE BANCADA [ 🧮 Calc ] COM RESGATE DETERMINÍSTICO */}
+            {activeMode === "2d" && !solidOpen && (
+              <button
+                type="button"
+                data-testid="chamfer-landscape-calc-btn"
+                data-cmd-id="global.bench_calc"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  handleToggleBenchCalc();
+                }}
+                title={
+                  benchCalcState.open && benchCalcState.dockMode === "floating"
+                    ? "Resgatar Calculadora Flutuante para a Direita"
+                    : "Abrir / Fechar Mini-Calculadora Científica & Metalúrgica de Bancada"
+                }
+                aria-label="Calculadora Científica e Metalúrgica de Bancada"
+                style={
+                  benchCalcState.open
+                    ? {
+                        backgroundColor: "rgba(14, 165, 233, 0.22)",
+                        borderColor: "#38BDF8",
+                        color: isDark ? "#7DD3FC" : "#0284C7",
+                        padding: "0 7px",
+                        gap: "4px",
+                      }
+                    : {
+                        backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
+                        borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
+                        color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
+                        padding: "0 7px",
+                        gap: "4px",
+                      }
+                }
+                className="relative flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
+              >
+                <Calculator className="size-3.5 shrink-0 text-[#38BDF8]" />
+                <span>Calc</span>
+                {benchCalcState.open && benchCalcState.dockMode === "floating" && (
+                  <span
+                    data-testid="landscape-calc-floating-dot"
+                    className="size-1.5 rounded-full bg-amber-400"
+                    title="Calculadora em modo flutuante — clique para resgatar à direita"
+                  />
+                )}
+              </button>
             )}
 
             {/* BOTÃO DE MODO FOCO RÁPIDO [ ⛶ Foco ] */}
@@ -10758,6 +11002,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               const hit = hitTest(toWorld(e, true));
               if (hit) {
                 setSelection([hit.id]);
+                if (hit.type === "text") {
+                  openRichNoteEditorForEntity(hit);
+                  triggerHaptic("action");
+                  return;
+                }
                 setActiveSidebarTab("propriedades");
                 if (isLandscape) {
                   setMobileEditorOpenManual(true);
@@ -14032,6 +14281,69 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </div>
             )}
 
+          {/* ALÇAS INTERATIVAS EM TEMPO REAL PARA NOTA TÉCNICA SELECIONADA (REFLOW DE LARGURA + ROTAÇÃO) */}
+          {activeMode === "2d" &&
+            !solidOpen &&
+            !richNoteSession &&
+            selected.length === 1 &&
+            selected[0]?.type === "text" && (
+              <ChamferRichNoteCanvasHandles
+                entity={selected[0]}
+                view={view}
+                isDark={isDark}
+                onLivePreviewSpec={(entityId, nextSpec, nextAnchor) => {
+                  setEntities((list) =>
+                    list.map((ent) =>
+                      ent.id === entityId && ent.type === "text"
+                        ? buildRichNoteEntity(
+                            ent.id,
+                            nextAnchor ?? { x: ent.x, y: ent.y },
+                            nextSpec,
+                            ent.layer || "anotacoes",
+                            ent.params,
+                          )
+                        : ent,
+                    ),
+                  );
+                }}
+                onCommitSpec={(entityId, nextSpec, nextAnchor) => {
+                  commit((list) =>
+                    list.map((ent) =>
+                      ent.id === entityId && ent.type === "text"
+                        ? buildRichNoteEntity(
+                            ent.id,
+                            nextAnchor ?? { x: ent.x, y: ent.y },
+                            nextSpec,
+                            ent.layer || "anotacoes",
+                            ent.params,
+                          )
+                        : ent,
+                    ),
+                  );
+                }}
+                onOpenEditor={(ent) => openRichNoteEditorForEntity(ent)}
+                onDuplicate={(ent) => {
+                  if (ent.type !== "text") return;
+                  const spec = getEntityRichNoteSpec(ent);
+                  if (!spec) return;
+                  const dup = buildRichNoteEntity(
+                    uid(),
+                    { x: ent.x + 12, y: ent.y + 12 },
+                    spec,
+                    ent.layer || "anotacoes",
+                  );
+                  commit((list) => [...list, dup]);
+                  setSelection([dup.id]);
+                  toast.success("Nota técnica duplicada.");
+                }}
+                onDelete={(ent) => {
+                  commit((list) => list.filter((x) => x.id !== ent.id));
+                  setSelection([]);
+                  toast.info("Nota técnica removida.");
+                }}
+              />
+            )}
+
           {/* INTERFACE ESPACIAL "PRUMO" (ZERO BARRAS DE FERRAMENTAS — 5 INSTRUMENTOS SUSPENSOS + RESPIRO) */}
           {uiShellMode === "prumo" && !solidOpen && (
             <PrumoErrorBoundary onFallbackToCompact={() => handleSetUiShellMode("compact")}>
@@ -14230,6 +14542,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onToggleTheme={toggleTheme}
                 focus={focus}
                 onToggleFocus={() => setFocus((f) => !f)}
+                onToggleBenchCalc={handleToggleBenchCalc}
+                isBenchCalcOpen={benchCalcState.open}
+                isBenchCalcFloating={benchCalcState.dockMode === "floating"}
                 activeDirect3DTool={activeDirect3DTool}
                 onSelectDirect3DTool={(next3DTool) => {
                   setActiveDirect3DTool(next3DTool);
@@ -17046,12 +17361,185 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           entities={entities}
           draft={draft}
           pendingPoints={pending}
+          freehandLivePoints={freehandLivePts}
           grid={grid}
           showGrid={showGrid}
           isDark={isDark}
           pinned={loupePinned}
           onTogglePinned={toggleLoupePinned}
-          rightOffset={rightSidebarOpen ? 300 : undefined}
+          rightOffset={
+            rightSidebarOpen
+              ? 300
+              : benchCalcState.open && benchCalcState.dockMode === "docked_right"
+                ? 282
+                : undefined
+          }
+        />
+      )}
+
+      {/* SUB-BARRA CONTEXTUAL E TELEMETRIA DA FERRAMENTA DESENHO LIVRE VETORIAL */}
+      {activeMode === "2d" && !solidOpen && (
+        <ChamferFreehandSubBar
+          visible={tool === "freehand"}
+          isDark={isDark}
+          topOffsetPx={focus || uiShellMode === "prumo" ? 52 : 54}
+          mode={freehandMode}
+          onChangeMode={setFreehandMode}
+          tolerancePx={freehandTolerancePx}
+          onChangeTolerancePx={setFreehandTolerancePx}
+          autoClose={freehandAutoClose}
+          onToggleAutoClose={() => setFreehandAutoClose((v) => !v)}
+          usageRole={freehandUsageRole}
+          onChangeUsageRole={setFreehandUsageRole}
+          liveMetrics={
+            freehandLivePts.length >= 2
+              ? computeFreehandLiveMetrics(freehandLivePts, 10 / Math.max(0.2, view.k))
+              : null
+          }
+          suggestion={freehandSuggestion}
+          onAcceptSuggestion={() => {
+            if (!freehandSuggestion) return;
+            const { entityId, data } = freehandSuggestion;
+            commit((list) =>
+              list.map((ent) => {
+                if (ent.id !== entityId) return ent;
+                if (data.kind === "circle") {
+                  return {
+                    id: ent.id,
+                    layer: ent.layer,
+                    type: "circle",
+                    cx: data.cx,
+                    cy: data.cy,
+                    r: data.r,
+                    cnc: { role: "CUT" },
+                  };
+                }
+                const x0 = data.x;
+                const y0 = data.y;
+                const x1 = Number((data.x + data.widthMm).toFixed(3));
+                const y1 = Number((data.y + data.heightMm).toFixed(3));
+                return {
+                  id: ent.id,
+                  layer: ent.layer,
+                  type: "polyline",
+                  closed: true,
+                  pts: [
+                    { x: x0, y: y0 },
+                    { x: x1, y: y0 },
+                    { x: x1, y: y1 },
+                    { x: x0, y: y1 },
+                  ],
+                  cnc: { role: "CUT" },
+                };
+              }),
+            );
+            setFreehandSuggestion(null);
+            toast.success(`Convertido: ${data.label}`);
+          }}
+          onDismissSuggestion={() => setFreehandSuggestion(null)}
+          onExitTool={() => setTool("select")}
+        />
+      )}
+
+      {/* EDITOR RICO DE ANOTAÇÕES TÉCNICAS E FÓRMULAS NATIVAS */}
+      <ChamferRichNoteEditorOverlay
+        session={richNoteSession}
+        angleMode={benchCalcState.angleMode}
+        ansValue={benchCalcState.ans}
+        isDark={isDark}
+        onCancel={() => {
+          setRichNoteSession(null);
+        }}
+        onCommit={(spec) => {
+          if (!richNoteSession) return;
+          if (richNoteSession.mode === "edit" && richNoteSession.entityId) {
+            const targetId = richNoteSession.entityId;
+            commit((list) =>
+              list.map((ent) =>
+                ent.id === targetId && ent.type === "text"
+                  ? buildRichNoteEntity(
+                      ent.id,
+                      richNoteSession.anchorWorld,
+                      spec,
+                      ent.layer || "anotacoes",
+                      ent.params,
+                    )
+                  : ent,
+              ),
+            );
+            setSelection([targetId]);
+            toast.success("Anotação técnica atualizada.");
+          } else {
+            const created = buildRichNoteEntity(
+              uid(),
+              richNoteSession.anchorWorld,
+              spec,
+              richNoteSession.layer || "anotacoes",
+            );
+            commit((list) => [...list, created]);
+            setSelection([created.id]);
+            setTool("select");
+            toast.success("Anotação técnica inserida na prancheta.");
+          }
+          setRichNoteSession(null);
+        }}
+      />
+
+      {/* MINI-CALCULADORA CIENTÍFICA & METALÚRGICA DE BANCADA (FIXA À DIREITA <-> FLUTUANTE) */}
+      {activeMode === "2d" && !solidOpen && (
+        <ChamferBenchCalculator
+          state={benchCalcState}
+          onChangeState={setBenchCalcState}
+          selectedEntities={selected}
+          isDark={isDark}
+          topOffsetPx={focus || uiShellMode === "prumo" ? 50 : 50}
+          viewportWidth={verticalLayout.viewportWidth}
+          viewportHeight={verticalLayout.viewportHeight}
+          onSendToTechnicalNote={({ memoryLine }) => {
+            if (richNoteSession) {
+              setRichNoteSession((prev) => {
+                if (!prev) return null;
+                const existingRuns = prev.initialSpec.runs;
+                const hasText = existingRuns.some((r) => r.text.trim().length > 0);
+                return {
+                  ...prev,
+                  initialSpec: {
+                    ...prev.initialSpec,
+                    isFormula: true,
+                    categoryLayer: "Fórmula",
+                    runs: hasText
+                      ? [...existingRuns, { text: `\n${memoryLine}`, bold: true }]
+                      : [{ text: memoryLine, bold: true }],
+                  },
+                };
+              });
+              toast.success("Memória de cálculo adicionada à nota aberta.");
+              return;
+            }
+
+            // Insere diretamente um cartão de Nota de Fórmula no centro visível da prancheta!
+            const centerScreenX = (canvasSize.w || 800) * 0.5;
+            const centerScreenY = (canvasSize.h || 600) * 0.5;
+            const worldCenter = {
+              x: Number(((centerScreenX - view.tx) / Math.max(0.05, view.k) - 45).toFixed(2)),
+              y: Number(((centerScreenY - view.ty) / Math.max(0.05, view.k) - 12).toFixed(2)),
+            };
+            const noteSpec: RichNoteSpec = {
+              widthMm: 105,
+              fontSizeMm: 6,
+              rotationDeg: 0,
+              textAlign: "left",
+              lineHeight: 1.35,
+              categoryLayer: "Fórmula",
+              boxStyle: "card",
+              isFormula: true,
+              runs: [{ text: memoryLine, bold: true }],
+            };
+            const created = buildRichNoteEntity(uid(), worldCenter, noteSpec, "anotacoes");
+            commit((list) => [...list, created]);
+            setSelection([created.id]);
+            toast.success("Memória de cálculo enviada para Nota Técnica no CAD!");
+          }}
         />
       )}
 

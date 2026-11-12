@@ -56,6 +56,7 @@ export type DxfExportRequest = {
   roles?: Partial<Record<CncRole, boolean>>;
   leads?: boolean;
   flattenCurves?: boolean;
+  includeAnnotations?: boolean;
   metadata?: DxfMetadata;
 };
 
@@ -79,6 +80,7 @@ export function optionsFrom(req: DxfExportRequest): CncExportOptions {
     roles: { ...base.roles, ...req.roles },
     leads: req.leads ?? base.leads,
     flattenCurves: req.flattenCurves ?? base.flattenCurves,
+    includeAnnotations: req.includeAnnotations ?? base.includeAnnotations ?? false,
   };
 }
 

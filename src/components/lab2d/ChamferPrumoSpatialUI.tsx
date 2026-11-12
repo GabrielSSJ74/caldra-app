@@ -75,6 +75,7 @@ import {
   Anchor,
   ClipboardList,
   Pin,
+  Calculator,
 } from "lucide-react";
 import type { Tool } from "./Lab2DEditor";
 import type { Entity } from "@/lib/lab2d/core";
@@ -275,6 +276,9 @@ export interface ChamferPrumoSpatialUIProps {
   onToggleTheme: () => void;
   focus: boolean;
   onToggleFocus: () => void;
+  onToggleBenchCalc?: () => void;
+  isBenchCalcOpen?: boolean;
+  isBenchCalcFloating?: boolean;
 
   // Modelagem Direta 3D (quando activeMode === "3d")
   activeDirect3DTool?: DirectModeling3DTool;
@@ -308,6 +312,7 @@ const TOOL_SHORT_CODES: Record<string, string> = {
   polygon: "HEX",
   ellipse: "ELI",
   spline: "SPL",
+  freehand: "LIV",
   slot: "OBL",
   point: "PTO",
   text: "TXT",
@@ -417,6 +422,9 @@ export function ChamferPrumoSpatialUI({
   onToggleTheme,
   focus,
   onToggleFocus,
+  onToggleBenchCalc,
+  isBenchCalcOpen = false,
+  isBenchCalcFloating = false,
   activeDirect3DTool = "select_3d",
   onSelectDirect3DTool,
   view,
@@ -783,6 +791,15 @@ export function ChamferPrumoSpatialUI({
         action: () => activate2DTool("spline", "spline"),
       },
       {
+        id: "freehand",
+        code3: "LIV",
+        label: "Desenho Livre (Vetorial)",
+        groupId: "criar",
+        icon: PenLine,
+        isActive: tool === "freehand",
+        action: () => activate2DTool("freehand", "freehand"),
+      },
+      {
         id: "construction_line",
         code3: "INF",
         label: "Linha Infinita (XLine)",
@@ -803,7 +820,7 @@ export function ChamferPrumoSpatialUI({
       {
         id: "text",
         code3: "TXT",
-        label: "Texto Técnico / Gravação",
+        label: "Texto / Nota Técnica",
         groupId: "criar",
         icon: Type,
         shortcut: "T",
@@ -1944,6 +1961,39 @@ export function ChamferPrumoSpatialUI({
           <span className="hidden sm:inline">Compacta</span>
         </button>
 
+        {/* [ 🧮 Calc ] — Mini-Calculadora de Bancada com Resgate Determinístico */}
+        {activeMode === "2d" && onToggleBenchCalc && (
+          <button
+            type="button"
+            data-testid="prumo-island-calc-btn"
+            onClick={() => {
+              triggerHaptic("selection");
+              onToggleBenchCalc();
+            }}
+            title={
+              isBenchCalcFloating
+                ? "Resgatar Calculadora Flutuante para a Direita"
+                : "Abrir / Fechar Mini-Calculadora Científica & Metalúrgica"
+            }
+            className={cn(
+              "relative flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-[9.5px] font-bold cursor-pointer transition-colors",
+              isBenchCalcOpen
+                ? isDark
+                  ? "border-[#38BDF8] bg-[rgba(14,165,233,0.24)] text-[#7DD3FC]"
+                  : "border-sky-600 bg-sky-600 text-white"
+                : isDark
+                  ? "border-[#334361] bg-[#232E45] text-[#E2E8F0] hover:border-[#38BDF8]"
+                  : "border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-200",
+            )}
+          >
+            <Calculator className="size-3" />
+            <span>Calc</span>
+            {isBenchCalcOpen && isBenchCalcFloating && (
+              <span className="size-1.5 rounded-full bg-amber-400" />
+            )}
+          </button>
+        )}
+
         {/* [ ✦ Hub ] */}
         <button
           type="button"
@@ -2122,6 +2172,25 @@ export function ChamferPrumoSpatialUI({
               <span>CORTE/BOM</span>
             </button>
           </div>
+
+          {activeMode === "2d" && onToggleBenchCalc && (
+            <button
+              type="button"
+              data-testid="prumo-hub-calc-btn"
+              onClick={() => {
+                setHubOpen(false);
+                onToggleBenchCalc();
+              }}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 py-2 text-[9.5px] font-bold text-cyan-300 hover:bg-cyan-500/25 cursor-pointer"
+            >
+              <Calculator className="size-3.5" />
+              <span>
+                {isBenchCalcFloating
+                  ? "Resgatar Calculadora de Bancada"
+                  : "Calculadora Científica & Metalúrgica"}
+              </span>
+            </button>
+          )}
 
           {/* Ações Rápidas do Hub */}
           <div className="grid grid-cols-2 gap-1.5 pt-0.5">
