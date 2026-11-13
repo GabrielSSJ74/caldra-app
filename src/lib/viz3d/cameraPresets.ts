@@ -68,10 +68,11 @@ export function cameraForView(id: ViewPresetId): Camera {
 }
 
 /** Modos de aresta: só apresentação; as entidades continuam as mesmas. */
-export type EdgeMode = "shaded" | "shaded-edges" | "wireframe";
+export type EdgeMode = "shaded" | "shaded-edges" | "wireframe" | "solid";
 
 export const EDGE_MODES: readonly { id: EdgeMode; label: string; title: string }[] = [
-  { id: "shaded", label: "SOMB", title: "Somente superfícies sombreadas" },
-  { id: "shaded-edges", label: "SOMB+AR", title: "Superfícies com arestas técnicas" },
-  { id: "wireframe", label: "ARAME", title: "Somente arestas (aramado)" },
+  { id: "shaded", label: "SOMB", title: "Somente superfícies sombreadas (modo SOMB original preservado)" },
+  { id: "shaded-edges", label: "SOMB+AR", title: "Superfícies sombreadas com arestas técnicas B-Rep CHAMFER 3D" },
+  { id: "wireframe", label: "ARAME", title: "Arame técnico B-Rep invariante em espaço de tela" },
+  { id: "solid", label: "SOLID", title: "Sólido volumétrico metálico CHAMFER 3D com espessura física" },
 ] as const;

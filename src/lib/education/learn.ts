@@ -25,8 +25,10 @@ const FIELD_MEANING: Record<string, string> = {
   b: "Lado B da seção quadrada/retangular.",
   l: "Comprimento reto do trecho.",
   angle: "Ângulo do corte ou da mudança de direção, em graus.",
+  ang: "Ângulo total de deflexão da curva.",
   r: "Raio de curvatura medido na linha de centro do tubo.",
-  n: "Quantidade de elementos (gomos, furos ou segmentos).",
+  n: "Quantidade de segmentos que compõem a curva.",
+  gomos: "Quantidade de segmentos que compõem a curva.",
   segments: "Quantidade de gomos que compõem a curva.",
   holes: "Quantidade de furos distribuídos na circunferência de furação.",
 };

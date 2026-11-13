@@ -3,8 +3,8 @@ import { displayMm, parseLength } from "@/lib/units/parse";
 import { cn } from "@/lib/utils";
 
 /**
- * Campo numérico com entrada inteligente de unidades.
- * Aceita "12,7", "12.7", "1/2", "2 3/8", 5" — valor interno sempre em mm.
+ * Campo numérico com entrada inteligente de unidades (Região C — Engenharia Industrial).
+ * Aceita "12,7", "12.7", "1/2", "2 3/8", 5" — valor interno sempre em mm/graus/unidades.
  */
 export function SmartNumberInput({
   value,
@@ -58,10 +58,10 @@ export function SmartNumberInput({
     <span className="block">
       <span
         className={cn(
-          "flex items-center overflow-hidden rounded-lg border bg-background/50 transition-all duration-140 [transition-timing-function:var(--ease-natural)] touch-manipulation",
+          "flex items-center overflow-hidden rounded-xl border bg-[#0B1120] transition-all duration-150 touch-manipulation",
           invalid || error
             ? "border-destructive focus-within:ring-1 focus-within:ring-destructive/50"
-            : "border-line focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/40 focus-within:shadow-xs",
+            : "border-slate-400/20 focus-within:border-[#38BDF8] focus-within:ring-1 focus-within:ring-[#38BDF8]/40",
           className,
         )}
       >
@@ -82,13 +82,13 @@ export function SmartNumberInput({
             setText(String(value));
             onBlur?.();
           }}
-          className="w-full min-w-0 bg-transparent px-2.5 py-2.5 font-mono text-[15px] outline-none touch-manipulation"
+          className="w-full min-w-0 bg-transparent px-3 py-2 font-mono text-[18px] font-bold text-[#F8FAFC] outline-none touch-manipulation"
         />
-        <span className="border-l border-line px-2 font-mono text-[10px] text-muted-foreground">
+        <span className="border-l border-slate-400/20 px-2.5 py-2 font-mono text-[11px] font-semibold text-slate-400">
           {unit}
         </span>
       </span>
-      {equiv && <span className="mt-1 block font-mono text-[10px] text-accent">{equiv}</span>}
+      {equiv && <span className="mt-1 block font-mono text-[10px] text-[#38BDF8]">{equiv}</span>}
       {error && <span className="mt-1 block text-[10px] text-destructive">{error}</span>}
     </span>
   );

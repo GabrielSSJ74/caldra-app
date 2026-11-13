@@ -248,9 +248,6 @@ export function SquareToRoundStudio({
                 selectedRef={selRef}
                 onSelectRef={setSelRef}
               />
-              <span className="pointer-events-none absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
-                Vista 2D · mm
-              </span>
             </VisualizationViewport>
 
             <div>

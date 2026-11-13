@@ -1,10 +1,10 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
-import { findGeometry } from "@/lib/geometry/catalog";
-import { SquareToRoundStudio } from "@/components/chameleon/SquareToRoundStudio";
 import { GeometryStudio } from "@/components/chameleon/GeometryStudio";
-import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
+import { SquareToRoundStudio } from "@/components/chameleon/SquareToRoundStudio";
+import { findGeometry } from "@/lib/geometry/catalog";
 import { getCustom } from "@/lib/library/store";
+import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 type Search = {
   projeto?: string | undefined;
@@ -70,7 +70,7 @@ function GeometryPage() {
   const custom = modelo ? getCustom(modelo) : undefined;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-[calc(135px+env(safe-area-inset-bottom))]">
       {project && part && (
         <div className="rounded-xl border border-line bg-background/40 px-3 py-2">
           <p className="t-eyebrow">
@@ -89,7 +89,7 @@ function GeometryPage() {
           </p>
         </div>
       )}
-      <Header name={part?.name ?? geometry.name} meta={`${geometry.level} · ${geometry.method}`} />
+      <Header name={part?.name ?? geometry.name} meta={`${geometry.level} • ${geometry.method}`} />
       {geometry.slug === "quadrado-redondo" ? (
         <SquareToRoundStudio
           initialValues={custom?.values}
@@ -131,20 +131,31 @@ function GeometryPage() {
   );
 }
 
+/**
+ * Região A — Cabeçalho Técnico da Seção (Compacto e Alinhado).
+ * Botão de retorno >= 44px, título principal 22px extra-bold #F8FAFC e subtítulo técnico em caixa alta.
+ */
 function Header({ name, meta }: { name: string; meta: string }) {
   return (
-    <div>
+    <header
+      data-testid="section-technical-header"
+      className="flex items-center gap-3 rounded-2xl border border-slate-400/15 bg-[#11192B]/90 px-3 py-2.5 shadow-sm"
+    >
       <Link
         to="/tracagem"
         aria-label="Voltar à galeria"
-        className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-accent"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-400/20 bg-[#0B1120] text-slate-300 transition-colors hover:border-sky-400/50 hover:text-sky-300"
       >
-        <ChevronLeft className="size-4" />
+        <ChevronLeft className="size-5" />
       </Link>
-      <h1 className="mt-1 font-display text-xl font-semibold lg:text-2xl">{name}</h1>
-      <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
-        {meta}
-      </p>
-    </div>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate font-display text-[22px] leading-tight font-extrabold text-[#F8FAFC]">
+          {name}
+        </h1>
+        <p className="mt-0.5 truncate font-mono text-[10px] font-semibold tracking-[0.14em] text-sky-300/90 uppercase">
+          {meta}
+        </p>
+      </div>
+    </header>
   );
 }

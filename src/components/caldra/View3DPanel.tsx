@@ -1,97 +1,447 @@
-/**
- * VISUALIZAÇÃO 3D COMO CAMADA, NÃO COMO ETAPA.
- *
- * O 3D deixou de ser uma aba do fluxo (Geometria → Planificação → Fabricação)
- * e virou uma alternância dentro da própria área de resultado: a mesma peça,
- * vista em 2D ou em 3D. O modelo só é carregado quando o 3D é ligado.
- */
-
-import { Component, useEffect, useState, type ReactNode } from "react";
-import type { WireModel } from "@/lib/viz3d/wire";
+import { Compass, Layers, Maximize2, Move, RotateCcw, Ruler, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { GeometryRef } from "@/lib/geometry/refs";
+import { cn } from "@/lib/utils";
+import { auditModel } from "@/lib/viz3d/audit";
 import {
   DEFAULT_VIEW,
   EDGE_MODES,
+  type EdgeMode,
   EXTENDED_VIEW_PRESETS,
   VIEW_PRESETS,
-  type EdgeMode,
   type ViewPresetId,
 } from "@/lib/viz3d/cameraPresets";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import {
-  Activity,
-  Layers,
-  Maximize2,
-  Minimize2,
-  Move,
-  Rotate3d,
-  RotateCcw,
-  Spline,
-} from "lucide-react";
-import { Viz3DDiagnosticModal } from "./Viz3DDiagnosticModal";
+import type { WireModel } from "@/lib/viz3d/wire";
 import { Wire3D } from "./Wire3D";
 
-/** Sincronização de seleção 3D ↔ geometria canônica (Fase F). */
-export type SelectionSync = {
+export type VisualizationMode = "2d" | "3d";
+
+export type SelectionBinding = {
   refForEdge?: ((index: number) => GeometryRef | null) | undefined;
   refForFace?: ((index: number) => GeometryRef | null) | undefined;
   highlightRef?: GeometryRef | readonly GeometryRef[] | null | undefined;
   onSelectRef?: ((ref: GeometryRef | null) => void) | undefined;
 };
 
-export type VisualizationMode = "2d" | "3d";
+type PanelProps = {
+  model: WireModel;
+  unfold: number;
+  onUnfold: (v: number) => void;
+  onPlanificar?: () => void;
+  className?: string;
+  selection?: SelectionBinding | undefined;
+  mode?: VisualizationMode;
+  onModeChange?: ((m: VisualizationMode) => void) | undefined;
+};
 
-type ErrorBoundaryProps = { children: ReactNode };
-type ErrorBoundaryState = { hasError: boolean; error: Error | null };
+/** Seletor segmentado [ 2D | 3D ] integrado na barra superior estruturada */
+function ModeSegmentedSwitch({
+  mode,
+  onModeChange,
+}: {
+  mode: VisualizationMode;
+  onModeChange?: ((m: VisualizationMode) => void) | undefined;
+}) {
+  if (!onModeChange) return null;
+  return (
+    <div
+      role="tablist"
+      aria-label="Alternar visualização 2D e 3D"
+      className="inline-flex shrink-0 items-center rounded-lg border border-slate-400/20 bg-[#0B1120] p-0.5 font-mono text-[10px] font-bold"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "2d"}
+        onClick={() => onModeChange("2d")}
+        className={cn(
+          "h-6 rounded-md px-2.5 transition-colors",
+          mode === "2d"
+            ? "bg-sky-400 text-slate-950 shadow-sm"
+            : "text-slate-300 hover:text-white",
+        )}
+      >
+        2D
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "3d"}
+        onClick={() => onModeChange("3d")}
+        className={cn(
+          "h-6 rounded-md px-2.5 transition-colors",
+          mode === "3d"
+            ? "bg-sky-400 text-slate-950 shadow-sm"
+            : "text-slate-300 hover:text-white",
+        )}
+      >
+        3D
+      </button>
+    </div>
+  );
+}
 
-/** Protege a aplicação contra crashes em tempo de renderização 3D */
-export class View3DErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  override state: ErrorBoundaryState = { hasError: false, error: null };
+function Structured3DStage({
+  model,
+  unfold,
+  onUnfold,
+  selection,
+  mode = "3d",
+  onModeChange,
+  expanded,
+  onToggleExpand,
+}: {
+  model: WireModel;
+  unfold: number;
+  onUnfold: (v: number) => void;
+  selection?: SelectionBinding | undefined;
+  mode?: VisualizationMode;
+  onModeChange?: ((m: VisualizationMode) => void) | undefined;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}) {
+  const [view, setView] = useState<ViewPresetId>(DEFAULT_VIEW);
+  const [viewNonce, setViewNonce] = useState(0);
+  const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded");
+  const [dragMode, setDragMode] = useState<"orbit" | "pan">("orbit");
+  const [showExtendedViews, setShowExtendedViews] = useState(false);
+  const [showDiag, setShowDiag] = useState(false);
+  const [thickLayer, setThickLayer] = useState(false);
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
+  const audit = useMemo(() => (showDiag ? auditModel(model) : null), [model, showDiag]);
 
-  override componentDidCatch(error: Error, errorInfo: unknown) {
-    console.error("View3D caught render error:", error, errorInfo);
-  }
-
-  handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+  const selectView = (id: ViewPresetId) => {
+    setView(id);
+    setViewNonce((n) => n + 1);
   };
 
-  override render() {
-    if (this.state.hasError) {
-      return (
-        <div className="grid size-full place-items-center p-4 text-center">
-          <div className="max-w-xs space-y-2 rounded-lg border border-line bg-card/95 p-4 shadow-sm backdrop-blur">
-            <p className="font-mono text-xs font-semibold text-destructive">
-              Visualização 3D indisponível
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              Ocorreu uma falha no cálculo ou renderização da malha 3D.
-            </p>
-            <Button
+  const resetCamera = () => {
+    setView(DEFAULT_VIEW);
+    setViewNonce((n) => n + 1);
+    onUnfold(0);
+  };
+
+  return (
+    <div
+      data-testid="viewer-3d-structured"
+      className={cn(
+        "flex flex-col overflow-hidden rounded-2xl border border-slate-400/20 bg-[#0D1322] shadow-lg",
+        expanded ? "h-full w-full" : "w-full",
+      )}
+    >
+      {/* BARRAS SUPERIORES DO VISUALIZADOR (MODO 3D) */}
+      <div
+        data-testid="viewer-topbar-3d"
+        className="flex flex-col border-b border-slate-400/15 bg-[#11192B]"
+      >
+        {/* Linha 1 (Topo do Visualizador): [ ISO | FR | LAT | SUP | + ] à esquerda + [ 2D | 3D ] à direita */}
+        <div className="flex items-center justify-between gap-2 border-b border-slate-400/10 px-3 py-1.5">
+          <div
+            role="group"
+            aria-label="Perspectivas ortográficas e isométrica"
+            className="flex flex-wrap items-center gap-0.5 rounded-lg border border-slate-400/15 bg-[#0B1120] p-0.5 font-mono text-[10px]"
+          >
+            {(showExtendedViews ? EXTENDED_VIEW_PRESETS : VIEW_PRESETS).map((v) => {
+              const active = view === v.id;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => selectView(v.id)}
+                  aria-pressed={active}
+                  title={v.title}
+                  className={cn(
+                    "h-6 rounded-md px-2 font-bold transition-colors",
+                    active
+                      ? "bg-sky-400 text-slate-950"
+                      : "text-slate-300 hover:bg-slate-800/70 hover:text-white",
+                  )}
+                >
+                  {v.label}
+                </button>
+              );
+            })}
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              onClick={this.handleRetry}
-              className="h-7 font-mono text-[10px] uppercase text-accent"
+              onClick={() => setShowExtendedViews((s) => !s)}
+              title={showExtendedViews ? "Menos vistas" : "Todas as vistas (TRAS, DIR, ESQ, INF)"}
+              className="h-6 rounded-md px-1.5 font-bold text-slate-400 hover:bg-slate-800/70 hover:text-white"
             >
-              Tentar novamente
-            </Button>
+              {showExtendedViews ? "−" : "+"}
+            </button>
+          </div>
+
+          <ModeSegmentedSwitch mode={mode} onModeChange={onModeChange} />
+        </div>
+
+        {/* Linha 2 (Sub-barra Técnica Compacta): [ SOMB | SOMB+AR | ARAME | SOLID ] + [ Órbita | Pan | DIAG ] */}
+        <div className="flex flex-wrap items-center justify-between gap-1 px-2.5 py-1.5">
+          <div
+            role="group"
+            aria-label="Modos de visualização 3D"
+            className="inline-flex items-center gap-0.5 rounded-lg border border-slate-400/15 bg-[#0B1120] p-0.5 font-mono text-[9.5px]"
+          >
+            {EDGE_MODES.map((m) => {
+              const active = edgeMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setEdgeMode(m.id)}
+                  aria-pressed={active}
+                  title={m.title}
+                  className={cn(
+                    "h-6 rounded-md px-1.5 font-bold transition-colors",
+                    active
+                      ? "bg-sky-400 text-slate-950"
+                      : "text-slate-300 hover:bg-slate-800/70 hover:text-white",
+                  )}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            role="group"
+            aria-label="Controles rápidos de interação 3D"
+            className="inline-flex items-center gap-1 font-mono text-[9.5px]"
+          >
+            <div className="inline-flex items-center rounded-lg border border-slate-400/15 bg-[#0B1120] p-0.5">
+              <button
+                type="button"
+                onClick={() => setDragMode("orbit")}
+                aria-pressed={dragMode === "orbit"}
+                title="Modo Órbita (Rotacionar 360°)"
+                className={cn(
+                  "inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-semibold transition-colors",
+                  dragMode === "orbit"
+                    ? "bg-sky-400 text-slate-950"
+                    : "text-slate-300 hover:text-white",
+                )}
+              >
+                <Compass className="size-3" />
+                <span>Órbita</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDragMode("pan")}
+                aria-pressed={dragMode === "pan"}
+                title="Modo Pan (Mover peça livremente)"
+                className={cn(
+                  "inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-semibold transition-colors",
+                  dragMode === "pan"
+                    ? "bg-sky-400 text-slate-950"
+                    : "text-slate-300 hover:text-white",
+                )}
+              >
+                <Move className="size-3" />
+                <span>Pan</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowDiag((d) => !d)}
+              aria-pressed={showDiag}
+              title="Diagnóstico geométrico da malha 3D"
+              className={cn(
+                "h-6 rounded-lg border px-1.5 font-bold transition-colors",
+                showDiag
+                  ? "border-sky-400 bg-sky-400/20 text-sky-300"
+                  : "border-slate-400/15 bg-[#0B1120] text-slate-400 hover:text-slate-200",
+              )}
+            >
+              DIAG
+            </button>
           </div>
         </div>
-      );
-    }
-    return this.props.children;
-  }
+      </div>
+
+      {/* ÁREA ÚTIL DO CANVAS 3D (Zero Botões Flutuantes Sobre a Peça) */}
+      <div
+        data-testid="viewer-canvas-3d"
+        className={cn(
+          "relative flex w-full items-center justify-center bg-[#0D1322]",
+          expanded ? "min-h-0 flex-1" : "h-[248px] sm:h-[268px]",
+        )}
+      >
+        <Wire3D
+          model={model}
+          interactive
+          autoSpin={false}
+          mode={dragMode}
+          unfold={unfold}
+          view={view}
+          viewNonce={viewNonce}
+          edgeMode={edgeMode}
+          showRefLines={thickLayer ? true : undefined}
+          refForEdge={selection?.refForEdge}
+          refForFace={selection?.refForFace}
+          highlightRef={selection?.highlightRef}
+          onSelectRef={selection?.onSelectRef}
+          className="h-full w-full"
+        />
+
+        {showDiag && audit && (
+          <div className="pointer-events-auto absolute top-2 left-2 z-20 max-w-[270px] rounded-xl border border-slate-400/25 bg-[#0B1120]/95 p-2.5 font-mono text-[10px] text-slate-300 shadow-xl backdrop-blur">
+            <div className="mb-1 flex items-center justify-between border-b border-slate-400/20 pb-1 font-bold text-slate-100">
+              <span>AUDITORIA 3D ({model.shadingStyle?.toUpperCase()})</span>
+              <span
+                className={
+                  audit.degenerate === 0 && audit.badNormals === 0
+                    ? "text-emerald-400"
+                    : "text-amber-400"
+                }
+              >
+                {audit.degenerate === 0 && audit.badNormals === 0 ? " ÍNTEGRO" : " ALERTA"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+              <span>Faces: {audit.faces}</span>
+              <span>Triâng.: {audit.triangles}</span>
+              <span>Vértices: {audit.vertices}</span>
+              <span>Arestas: {audit.edges}</span>
+              <span>Degeneradas: {audit.degenerate}</span>
+              <span>Duplicadas: {audit.duplicates}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* BARRA INFERIOR DE RODAPÉ DO VISUALIZADOR 3D (Eliminação da colisão na barra 360°) */}
+      <div
+        data-testid="viewer-footer-3d"
+        className="flex items-center justify-between gap-3 border-t border-slate-400/15 bg-[#11192B] px-3 py-2"
+      >
+        {/* Esquerda: Rótulo 360° + Slider com largura controlada (flex: 1, max-width: 52%) */}
+        <div className="flex max-w-[52%] flex-1 items-center gap-2">
+          <span className="shrink-0 font-mono text-[10px] font-bold text-slate-300">
+            {unfold > 0.02 ? `${Math.round(unfold * 100)}%` : "360°"}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.02}
+            value={unfold}
+            onChange={(e) => onUnfold(Number(e.target.value))}
+            aria-label="Revolução 360° e abertura da peça"
+            className="h-1.5 min-w-[72px] flex-1 cursor-pointer accent-sky-400"
+          />
+        </div>
+
+        {/* Direita: Grupo alinhado com os 3 botões circulares (34px × 34px) */}
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={resetCamera}
+            aria-label="Restaurar câmera"
+            title="Restaurar câmera padrão"
+            className="flex size-[34px] items-center justify-center rounded-full border border-slate-400/20 bg-[#0B1120] text-slate-300 transition-colors hover:border-sky-400/50 hover:text-white"
+          >
+            <RotateCcw className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setThickLayer((t) => !t)}
+            aria-pressed={thickLayer}
+            aria-label="Camadas e parede"
+            title="Alternar eixos e camadas de parede"
+            className={cn(
+              "flex size-[34px] items-center justify-center rounded-full border transition-colors",
+              thickLayer
+                ? "border-sky-400 bg-sky-400 text-slate-950"
+                : "border-slate-400/20 bg-[#0B1120] text-slate-300 hover:border-sky-400/50 hover:text-white",
+            )}
+          >
+            <Layers className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            aria-label={expanded ? "Fechar visualização expandida" : "Expandir visualizador"}
+            title={expanded ? "Fechar visualização expandida (Esc)" : "Expandir visualizador"}
+            className="flex size-[34px] items-center justify-center rounded-full border border-slate-400/20 bg-[#0B1120] text-slate-300 transition-colors hover:border-sky-400/50 hover:text-white"
+          >
+            {expanded ? <X className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
- * Área principal única da Traçagem. O 3D é montado somente no primeiro uso e
- * depois permanece vivo, preservando câmera, zoom e orientação ao voltar ao 2D.
+ * Painel 3D com suporte a expansão em tela cheia.
+ */
+export function View3DPanel({
+  model,
+  unfold,
+  onUnfold,
+  className,
+  selection,
+  mode = "3d",
+  onModeChange,
+}: PanelProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
+
+  return (
+    <>
+      <div className={cn("relative w-full", className)}>
+        <Structured3DStage
+          model={model}
+          unfold={unfold}
+          onUnfold={onUnfold}
+          selection={selection}
+          mode={mode}
+          onModeChange={onModeChange}
+          expanded={false}
+          onToggleExpand={() => setExpanded(true)}
+        />
+      </div>
+
+      {expanded && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Visualização 3D em tela cheia"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-md sm:p-6"
+          onClick={() => setExpanded(false)}
+        >
+          <div
+            className="relative h-[86vh] w-full max-w-4xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Structured3DStage
+              model={model}
+              unfold={unfold}
+              onUnfold={onUnfold}
+              selection={selection}
+              mode={mode}
+              onModeChange={onModeChange}
+              expanded
+              onToggleExpand={() => setExpanded(false)}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Região B — Card Visualizador Geométrico 2D / 3D (Zero Botões Flutuantes Sobre a Peça).
  */
 export function VisualizationViewport({
   mode,
@@ -100,358 +450,83 @@ export function VisualizationViewport({
   unfold,
   onUnfold,
   onPlanificar,
-  allow3d = true,
   selection,
-  showGeneratrices,
-  onToggleGeneratrices,
   children,
+  className,
+  showGeneratrices = true,
+  onToggleGeneratrices,
 }: {
   mode: VisualizationMode;
-  onModeChange: (mode: VisualizationMode) => void;
-  model: WireModel;
-  unfold: number;
-  onUnfold: (value: number) => void;
-  onPlanificar: () => void;
-  allow3d?: boolean;
-  selection?: SelectionSync | undefined;
-  showGeneratrices?: boolean;
-  onToggleGeneratrices?: () => void;
-  children: ReactNode;
-}) {
-  const [mounted3d, setMounted3d] = useState(mode === "3d");
-
-  useEffect(() => {
-    if (mode === "3d") setMounted3d(true);
-  }, [mode]);
-
-  const activeMode: VisualizationMode = allow3d ? mode : "2d";
-
-  return (
-    <div className="grid-bg relative h-[300px] overflow-hidden rounded-xl border border-line bg-background/40 lg:h-[420px]">
-      <div className={cn("size-full", activeMode !== "2d" && "invisible absolute inset-0")}>
-        {children}
-      </div>
-      {mounted3d && allow3d && (
-        <div className={cn("size-full", activeMode !== "3d" && "invisible absolute inset-0")}>
-          <View3DErrorBoundary>
-            <View3DPanel
-              model={model}
-              unfold={unfold}
-              onUnfold={onUnfold}
-              onPlanificar={onPlanificar}
-              selection={selection}
-            />
-          </View3DErrorBoundary>
-        </div>
-      )}
-      <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5">
-        {activeMode === "2d" && onToggleGeneratrices && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            title="Exibir ou ocultar geratrizes interativas na representação 2D"
-            aria-pressed={showGeneratrices}
-            onClick={onToggleGeneratrices}
-            className={cn(
-              "h-7 rounded-md border border-line bg-background/85 px-2 font-mono text-[10px] uppercase shadow-sm backdrop-blur transition-colors gap-1",
-              showGeneratrices
-                ? "border-accent/40 bg-accent/15 text-accent font-semibold"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Spline className="size-3" />
-            GERATRIZES
-          </Button>
-        )}
-        {allow3d && (
-          <div
-            className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur"
-            role="group"
-            aria-label="Modo de visualização"
-          >
-            {(["2d", "3d"] as const).map((item) => (
-              <Button
-                key={item}
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-pressed={activeMode === item}
-                onClick={() => onModeChange(item)}
-                className={cn(
-                  "h-7 min-w-11 px-2 font-mono text-[10px] uppercase shadow-none",
-                  activeMode === item && "bg-accent/15 text-accent font-semibold",
-                )}
-              >
-                {item.toUpperCase()}
-              </Button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function View3DPanel({
-  model,
-  unfold,
-  onUnfold,
-  onPlanificar,
-  selection,
-}: {
+  onModeChange: (m: VisualizationMode) => void;
   model: WireModel;
   unfold: number;
   onUnfold: (v: number) => void;
-  onPlanificar: () => void;
-  selection?: SelectionSync | undefined;
+  onPlanificar?: () => void;
+  selection?: SelectionBinding | undefined;
+  children?: ReactNode;
+  className?: string;
+  showGeneratrices?: boolean;
+  onToggleGeneratrices?: () => void;
 }) {
-  const [view, setView] = useState<ViewPresetId>(DEFAULT_VIEW);
-  const [viewNonce, setViewNonce] = useState(0);
-  const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
-  const [interactionMode, setInteractionMode] = useState<"orbit" | "pan">("orbit");
-  const [showExtendedViews, setShowExtendedViews] = useState(false);
-  const [showDiagnostic, setShowDiagnostic] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const presetsToRender = showExtendedViews ? EXTENDED_VIEW_PRESETS : VIEW_PRESETS;
+  if (mode === "3d") {
+    return (
+      <View3DPanel
+        model={model}
+        unfold={unfold}
+        onUnfold={onUnfold}
+        onPlanificar={onPlanificar}
+        selection={selection}
+        mode={mode}
+        onModeChange={onModeChange}
+        className={className}
+      />
+    );
+  }
 
   return (
     <div
+      data-testid="viewer-2d-structured"
       className={cn(
-        "grid-bg-fine relative overflow-hidden bg-gradient-to-b from-[#090B0F] to-[#050608]",
-        isExpanded
-          ? "fixed inset-3 z-50 rounded-2xl border border-zinc-700/90 shadow-2xl"
-          : "size-full",
+        "flex flex-col overflow-hidden rounded-2xl border border-slate-400/20 bg-[#0D1322] shadow-lg",
+        className,
       )}
     >
-      {/* Grade pontilhada técnica + luz radial superior-esquerda */}
+      {/* BARRA SUPERIOR DO VISUALIZADOR (MODO 2D) */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-25"
-        style={{
-          backgroundImage:
-            "radial-gradient(#38bdf8 0.75px, transparent 0.75px), radial-gradient(#f59e0b 0.5px, transparent 0.5px)",
-          backgroundSize: "20px 20px, 40px 40px",
-          backgroundPosition: "0 0, 10px 10px",
-        }}
-      />
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at 26% 22%, rgba(148, 163, 184, 0.14) 0%, rgba(15, 23, 42, 0.04) 48%, transparent 75%)",
-        }}
-      />
-
-      <Wire3D
-        interactive
-        mode={interactionMode}
-        unfold={unfold}
-        model={model}
-        view={view}
-        viewNonce={viewNonce}
-        edgeMode={edgeMode}
-        refForEdge={selection?.refForEdge}
-        refForFace={selection?.refForFace}
-        highlightRef={selection?.highlightRef}
-        onSelectRef={selection?.onSelectRef}
-        className="relative z-10 size-full text-foreground/80"
-      />
-
-      {/* Controles de Vista, Arestas e Ferramentas Técnicas */}
-      <div className="absolute top-2 left-2 z-20 flex flex-col gap-1.5 max-w-[calc(100%-120px)]">
-        {/* Barra de Vistas */}
-        <div
-          className="flex flex-wrap items-center gap-0.5 rounded-md border border-zinc-800/90 bg-zinc-950/85 p-0.5 shadow-sm backdrop-blur"
-          role="group"
-          aria-label="Vistas padrão da câmera"
-        >
-          {presetsToRender.map((preset) => (
-            <Button
-              key={preset.id}
-              type="button"
-              size="sm"
-              variant="ghost"
-              title={preset.title}
-              aria-pressed={view === preset.id}
-              onClick={() => {
-                setView(preset.id);
-                setViewNonce((n) => n + 1);
-              }}
-              className={cn(
-                "h-6 min-w-7 px-1.5 font-mono text-[9px] uppercase shadow-none text-zinc-300",
-                view === preset.id && "bg-amber-500/20 text-amber-400 font-semibold",
-              )}
-            >
-              {preset.label}
-            </Button>
-          ))}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            title={showExtendedViews ? "Menos vistas" : "Todas as vistas (ISO, FR, TRAS, LAT, DIR, ESQ, SUP, INF)"}
-            onClick={() => setShowExtendedViews((v) => !v)}
-            className="h-6 px-1 font-mono text-[9px] text-zinc-400 hover:text-amber-400 shadow-none"
-          >
-            {showExtendedViews ? "–" : "+"}
-          </Button>
-        </div>
-
-        {/* Barra de Modos de Aresta e Ferramentas */}
-        <div className="flex flex-wrap items-center gap-1">
-          <div
-            className="flex rounded-md border border-zinc-800/90 bg-zinc-950/85 p-0.5 shadow-sm backdrop-blur"
-            role="group"
-            aria-label="Modo de aresta técnica"
-          >
-            {EDGE_MODES.map((item) => (
-              <Button
-                key={item.id}
-                type="button"
-                size="sm"
-                variant="ghost"
-                title={item.title}
-                aria-pressed={edgeMode === item.id}
-                onClick={() => setEdgeMode(item.id)}
-                className={cn(
-                  "h-6 px-1.5 font-mono text-[9px] uppercase shadow-none text-zinc-300",
-                  edgeMode === item.id && "bg-amber-500/20 text-amber-400 font-semibold",
-                )}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
-
-          {/* Ferramentas de Interação: Girar / Mover */}
-          <div
-            className="flex rounded-md border border-zinc-800/90 bg-zinc-950/85 p-0.5 shadow-sm backdrop-blur"
-            role="group"
-            aria-label="Navegação espacial"
-          >
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              title="Girar modelo (Órbita 3D 360°)"
-              aria-pressed={interactionMode === "orbit"}
-              onClick={() => setInteractionMode("orbit")}
-              className={cn(
-                "h-6 px-1.5 font-mono text-[9px] uppercase shadow-none gap-1 text-zinc-300",
-                interactionMode === "orbit" && "bg-amber-500/20 text-amber-400 font-semibold",
-              )}
-            >
-              <Rotate3d className="size-3" />
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              title="Mover modelo (Pan espacial)"
-              aria-pressed={interactionMode === "pan"}
-              onClick={() => setInteractionMode("pan")}
-              className={cn(
-                "h-6 px-1.5 font-mono text-[9px] uppercase shadow-none gap-1 text-zinc-300",
-                interactionMode === "pan" && "bg-amber-500/20 text-amber-400 font-semibold",
-              )}
-            >
-              <Move className="size-3" />
-            </Button>
-          </div>
-
-          {/* Central de Diagnóstico */}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            title="Abrir Central de Diagnóstico e Auditoria 3D"
-            onClick={() => setShowDiagnostic(true)}
-            className="h-6 px-2 rounded-md border border-zinc-800/90 bg-zinc-950/85 font-mono text-[9px] text-zinc-300 hover:text-amber-400 uppercase shadow-none gap-1"
-          >
-            <Activity className="size-3" />
-            DIAG
-          </Button>
-        </div>
-      </div>
-
-      <Viz3DDiagnosticModal
-        model={model}
-        isOpen={showDiagnostic}
-        onClose={() => setShowDiagnostic(false)}
-      />
-
-      {/* Controle de Planificação (inferior esquerdo) */}
-      <div className="absolute left-3 right-32 bottom-2.5 z-20 flex items-center gap-2.5">
-        <span className="font-mono text-[9px] text-zinc-400 uppercase">360°</span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={unfold * 100}
-          onChange={(e) => onUnfold(Number(e.target.value) / 100)}
-          aria-label="Abrir peça"
-          className="h-1 flex-1 accent-amber-400"
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={onPlanificar}
-          className="h-6 px-2 font-mono text-[9px] text-amber-400 hover:text-amber-300 uppercase shadow-none"
-        >
-          Planificar
-        </Button>
-      </div>
-
-      {/* Barra de Ferramentas Flutuante (Bottom-Right do Visor: 3 botões circulares escuros com ícones dourados/brancos) */}
-      <div
-        className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1.5"
-        role="group"
-        aria-label="Controles flutuantes do visor 3D"
+        data-testid="viewer-topbar-2d"
+        className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400/15 bg-[#11192B] px-3 py-2"
       >
-        <button
-          type="button"
-          onClick={() => {
-            setView(DEFAULT_VIEW);
-            setViewNonce((n) => n + 1);
-          }}
-          className="flex size-8 items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-900/90 text-amber-400 shadow-lg backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-zinc-800 active:scale-95 cursor-pointer"
-          title="Resetar Rotação / Vista Padrão"
-          aria-label="Resetar Rotação / Vista Padrão"
-        >
-          <RotateCcw className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            setEdgeMode((m) => (m === "shaded-edges" ? "wireframe" : "shaded-edges"))
-          }
-          className={cn(
-            "flex size-8 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-95 cursor-pointer",
-            edgeMode === "shaded-edges"
-              ? "border-amber-500/50 bg-zinc-900/90 text-amber-400 hover:bg-zinc-800"
-              : "border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-zinc-600 hover:bg-zinc-800",
+        <div className="flex items-center gap-2.5">
+          <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-slate-300 uppercase">
+            VISTA 2D • MM
+          </span>
+          {onToggleGeneratrices && (
+            <button
+              type="button"
+              onClick={onToggleGeneratrices}
+              aria-pressed={showGeneratrices}
+              className={cn(
+                "inline-flex h-6 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                showGeneratrices
+                  ? "border-sky-400/60 bg-sky-400/15 text-sky-300"
+                  : "border-slate-400/20 bg-[#0B1120] text-slate-400 hover:text-slate-200",
+              )}
+              title="Mostrar/ocultar geratrizes numeradas na projeção 2D"
+            >
+              <Ruler className="size-3" />
+              <span>GERATRIZES</span>
+            </button>
           )}
-          title="Alternar Modo de Camadas / Wireframe vs. Sólido"
-          aria-label="Alternar Modo de Camadas / Wireframe vs. Sólido"
-        >
-          <Layers className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsExpanded((v) => !v)}
-          className={cn(
-            "flex size-8 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-95 cursor-pointer",
-            isExpanded
-              ? "border-amber-500/50 bg-zinc-900/90 text-amber-400 hover:bg-zinc-800"
-              : "border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-zinc-600 hover:bg-zinc-800",
-          )}
-          title={isExpanded ? "Recolher Tela Cheia" : "Tela Cheia / Expandir"}
-          aria-label={isExpanded ? "Recolher Tela Cheia" : "Tela Cheia / Expandir"}
-        >
-          {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-        </button>
+        </div>
+        <ModeSegmentedSwitch mode={mode} onModeChange={onModeChange} />
+      </div>
+
+      {/* ÁREA ÚTIL DO DESENHO 2D (Fundo técnico limpo sem grid e sem botões sobrepostos) */}
+      <div
+        data-testid="viewer-canvas-2d"
+        className="relative flex h-[248px] w-full items-center justify-center bg-[#0D1322] sm:h-[268px]"
+      >
+        {children}
       </div>
     </div>
   );

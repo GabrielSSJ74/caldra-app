@@ -1,32 +1,38 @@
 /**
- * RENDERER CALDRA — apresentação da geometria paramétrica.
+ * RENDERER CALDRA — apresentação da geometria paramétrica + adaptador B-Rep CHAMFER CAD 3D.
  *
  * Recebe GEOMETRIA (malha + arestas + bounds em mm), nunca parâmetros.
  * Câmera, rotação, zoom e enquadramento vivem aqui; a peça nunca é alterada
- * por interação. Sombreamento por normal real (key + fill + rim), superfície
- * interna com material próprio e espessura visível nas aberturas.
+ * por interação.
+ *
+ * Modos de visualização:
+ * - SOMB ("shaded"): 100% preservado (intacto).
+ * - SOMB+AR ("shaded-edges"): Superfície sombreada + arestas técnicas B-Rep sem triangulação.
+ * - ARAME ("wireframe"): Arame Técnico B-Rep invariante em espaço de tela com casca fantasma X-Ray e arestas ocultas atenuadas.
+ * - SOLID ("solid"): Sólido volumétrico metálico CHAMFER 3D com espessura física e iluminação de estúdio de 3 pontos.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { GeometryRef } from "@/lib/geometry/refs";
 import type { Vec3 } from "@/lib/geometry/types";
-import { centerOf, fitRadius, type Camera, type WireModel } from "@/lib/viz3d/wire";
+import { cn } from "@/lib/utils";
+import { cameraForView, type EdgeMode, type ViewPresetId } from "@/lib/viz3d/cameraPresets";
+import { entityIndexOf, pickEdgeIndex, pickFaceIndex, refLabel } from "@/lib/viz3d/selection";
 import { FACE_MATERIALS } from "@/lib/viz3d/shading";
 import { TECHNICAL_LIGHTING } from "@/lib/viz3d/technicalConfig";
 import {
-  VISIBILITY_POLICY,
   compareSurfaceDepth,
   deduplicateEdges,
   filterEdgesForMode,
+  type ProjectedLine,
+  type ProjectedTriangle,
   projectLine,
   toCameraPoint,
-  visibleLineSegments,
-  type ProjectedTriangle,
+  VISIBILITY_POLICY,
   type VisibilityPolicy,
+  visibleLineSegments,
 } from "@/lib/viz3d/visibility";
-import { entityIndexOf, pickEdgeIndex, pickFaceIndex, refLabel } from "@/lib/viz3d/selection";
-import type { GeometryRef } from "@/lib/geometry/refs";
-import { cameraForView, type EdgeMode, type ViewPresetId } from "@/lib/viz3d/cameraPresets";
-import { cn } from "@/lib/utils";
+import { type Camera, centerOf, type EntityKind, fitRadius, type WireModel } from "@/lib/viz3d/wire";
 
 type Props = {
   model: WireModel;
@@ -154,7 +160,10 @@ export function Wire3D({
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
-      setCam((c) => ({ ...c, zoom: Math.min(4.5, Math.max(0.35, c.zoom * Math.exp(-dy * 0.0015))) }));
+      setCam((c) => ({
+        ...c,
+        zoom: Math.min(4.5, Math.max(0.35, c.zoom * Math.exp(-dy * 0.0015))),
+      }));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -171,9 +180,9 @@ export function Wire3D({
   }, [model]);
 
   const k = 1 - unfold * 0.9;
-  const { faces, edges, refs } = useMemo(() => {
+  const { faces, edges, hiddenWireEdges, refs } = useMemo(() => {
     if (!model || !model.faces || !model.bounds) {
-      return { faces: [], edges: [], refs: [] };
+      return { faces: [], edges: [], hiddenWireEdges: [], refs: [] };
     }
     const kk = fit.scale * cam.zoom;
     const panX = cam.panX ?? 0;
@@ -197,7 +206,7 @@ export function Wire3D({
     const BIAS: Record<string, number> = { inner: -0.6, cap: -0.3, rim: 0.3, outer: 0 };
     const span = Math.max(1e-6, fitRadius(model.bounds));
 
-    type Tri = ProjectedTriangle & { d: string; fill: string };
+    type Tri = ProjectedTriangle & { d: string; fill: string; solidFill: string };
     const f: Tri[] = [];
 
     model.faces.forEach((face, idx) => {
@@ -213,11 +222,6 @@ export function Wire3D({
       const ny = cn.y;
       const nz = cn.z;
       // Visibilidade determinística das superfícies:
-      // - A parede interna só é observável quando sua normal (que aponta para
-      //   dentro da peça) está voltada ao observador (nz > 0), vista através da boca.
-      // - A parede externa (normal apontando para fora) só é visível quando
-      //   voltada ao observador (nz >= -0.03) na peça montada, evitando que faces
-      //   traseiras encubram a parede interna ou conflitem com as frontais.
       if (face.kind === "inner" && nz <= 0) return;
       if (face.kind === "outer" && unfold < 0.05 && nz < -0.03) return;
       if (face.kind === "rim" && unfold < 0.05 && mn.y < -0.5 && cam.pitch > 0.05) return;
@@ -240,7 +244,31 @@ export function Wire3D({
         0.1 * rim +
         radialBoost;
       const pct = Math.max(4, Math.min(96, lum * 100));
+      // Paint original (100% preservado para SOMB e SOMB+AR)
       const paint = `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`;
+
+      // Shading metálico de estúdio 3-pontos CHAMFER 3D para o novo modo SOLID
+      const envHemisphere = 0.5 + 0.5 * (ny * s);
+      const studioSpec = Math.pow(key, 20) * 0.36 + Math.pow(Math.max(0, nz * s), 12) * 0.14;
+      const studioRim = Math.pow(1 - Math.abs(nz), 2.4) * 0.22;
+      const solidLum =
+        face.kind === "inner"
+          ? 0.12 + 0.52 * (0.65 * key + 0.35 * fill)
+          : face.kind === "rim"
+            ? 0.78 + 0.2 * key
+            : 0.18 +
+              0.68 * (0.72 * Math.pow(key, 0.9) + 0.28 * fill) +
+              0.12 * envHemisphere +
+              studioSpec +
+              studioRim +
+              radialBoost * 0.85;
+      const solidPct = Math.max(6, Math.min(98, solidLum * 100));
+      const solidBase =
+        face.kind === "inner" ? "#071324" : face.kind === "rim" ? "#38BDF8" : "#0F2942";
+      const solidHi =
+        face.kind === "inner" ? "#1E3A5F" : face.kind === "rim" ? "#E0F2FE" : "#BAE6FD";
+      const solidPaint = `color-mix(in oklab, ${solidHi} ${solidPct.toFixed(1)}%, ${solidBase})`;
+
       const bias = ((BIAS[face.kind] ?? 0) + (face.g ?? 0) * 0.75) * span * 0.002;
 
       const depths = cs.map((point) => point.z + bias);
@@ -248,8 +276,6 @@ export function Wire3D({
       const maxDepth = Math.max(...depths);
       const centerDepth = depths.reduce((acc, depth) => acc + depth, 0) / depths.length;
       const a = cs[0]!;
-      // Rim compartilha o passe 2 com outer (com leve bias positivo para vencer empates locais na borda)
-      // para que a borda da base traseira nunca seja desenhada por cima da parede frontal.
       const passIndex = face.kind === "inner" ? 0 : face.kind === "cap" ? 1 : 2;
 
       for (let i = 1; i + 1 < cs.length; i++) {
@@ -262,7 +288,9 @@ export function Wire3D({
         const ys = [pA.y, pB.y, pC.y];
         f.push({
           id: `face:${idx}:${i - 1}`,
-          d: [a, b, c].map((p) => `${(p.x * kk + panX).toFixed(2)},${(-p.y * kk + panY).toFixed(2)}`).join(" "),
+          d: [a, b, c]
+            .map((p) => `${(p.x * kk + panX).toFixed(2)},${(-p.y * kk + panY).toFixed(2)}`)
+            .join(" "),
           pts: [pA, pB, pC],
           minX: Math.min(...xs),
           maxX: Math.max(...xs),
@@ -275,6 +303,7 @@ export function Wire3D({
           pass: passIndex,
           kind: face.kind,
           fill: paint,
+          solidFill: solidPaint,
         });
       }
     });
@@ -283,15 +312,7 @@ export function Wire3D({
     f.sort(compareSurfaceDepth);
 
     // 1. Filtragem global por modo de visualização 3D:
-    // SOMB: 0 arestas (superfície contínua limpa)
-    // SOMB+AR: somente arestas reais/tecnicamente significativas (sem triangulação interna)
-    // ARAME: estrutura completa, incluindo malha matemática
-    const filtered = filterEdgesForMode(
-      model.edges,
-      model.edgeKinds,
-      model.edgeTags,
-      edgeMode,
-    );
+    const filtered = filterEdgesForMode(model.edges, model.edgeKinds, model.edgeTags, edgeMode);
 
     // 2. Deduplicação na camada de apresentação:
     const deduped = deduplicateEdges(
@@ -303,9 +324,11 @@ export function Wire3D({
     );
 
     // 3. Oclusão de profundidade e projeção:
-    // No modo SOMB+AR, a superfície frontal metálica oclui arestas traseiras (elimina linhas flutuantes)
     const effectiveVisibility =
-      lineVisibility ?? (edgeMode === "shaded-edges" ? "real-occlusion" : "technical-persistent");
+      lineVisibility ??
+      (edgeMode === "shaded-edges" || edgeMode === "solid"
+        ? "real-occlusion"
+        : "technical-persistent");
 
     // Apenas faces externas atuam como oclusores para as linhas (sem auto-oclusão das bordas rim)
     const occluders = f.filter(
@@ -313,29 +336,60 @@ export function Wire3D({
     );
 
     const depthEpsilon = span * 3.5e-3;
-    const e =
-      edgeMode === "shaded"
-        ? model.edges.flatMap((edge, index) => {
-            const kind = model.edgeKinds?.[index];
-            if (kind !== "REAL_BOUNDARY") return [];
-            return visibleLineSegments(
-              projectLine(`edge:${index}`, edge, cp, kk, panX, panY),
-              "real-occlusion",
-              occluders,
-              depthEpsilon,
-            );
-          })
-        : deduped.edges.flatMap((edge, index) => {
-            const origIndex = deduped.originalIndices[index] ?? index;
-            return visibleLineSegments(
-              projectLine(`edge:${origIndex}`, edge, cp, kk, panX, panY),
-              effectiveVisibility,
-              occluders,
-              depthEpsilon,
-            );
-          });
+    type StyledEdge = ProjectedLine & { kind?: EntityKind | undefined };
 
-    const shouldShowRefs = showRefLines ?? (edgeMode !== "shaded");
+    let e: StyledEdge[] = [];
+    let hiddenWire: StyledEdge[] = [];
+
+    if (edgeMode === "shaded") {
+      // MODO SOMB: 100% IDÊNTICO AO ORIGINAL
+      e = model.edges.flatMap((edge, index) => {
+        const kind = model.edgeKinds?.[index];
+        if (kind !== "REAL_BOUNDARY") return [];
+        return visibleLineSegments(
+          projectLine(`edge:${index}`, edge, cp, kk, panX, panY),
+          "real-occlusion",
+          occluders,
+          depthEpsilon,
+        );
+      });
+    } else if (edgeMode === "wireframe") {
+      // MODO ARAME TÉCNICO B-REP CHAMFER 3D:
+      // 1) Passada de fundo (GreaterDepth / arestas traseiras ocultas com opacidade 0.25)
+      hiddenWire = deduped.edges.map((edge, index) => {
+        const origIndex = deduped.originalIndices[index] ?? index;
+        const kind = deduped.kinds[index] ?? "REAL_EDGE";
+        return {
+          ...projectLine(`hidden:${origIndex}`, edge, cp, kk, panX, panY),
+          kind,
+        };
+      });
+      // 2) Passada frontal (LessEqualDepth / arestas frontais visíveis com hierarquia B-Rep)
+      e = deduped.edges.flatMap((edge, index) => {
+        const origIndex = deduped.originalIndices[index] ?? index;
+        const kind = deduped.kinds[index] ?? "REAL_EDGE";
+        return visibleLineSegments(
+          projectLine(`edge:${origIndex}`, edge, cp, kk, panX, panY),
+          "real-occlusion",
+          occluders,
+          depthEpsilon,
+        ).map((seg) => ({ ...seg, kind }));
+      });
+    } else {
+      // MODO SOMB+AR ("shaded-edges") e MODO SOLID ("solid"):
+      e = deduped.edges.flatMap((edge, index) => {
+        const origIndex = deduped.originalIndices[index] ?? index;
+        const kind = deduped.kinds[index] ?? "REAL_EDGE";
+        return visibleLineSegments(
+          projectLine(`edge:${origIndex}`, edge, cp, kk, panX, panY),
+          effectiveVisibility,
+          occluders,
+          depthEpsilon,
+        ).map((seg) => ({ ...seg, kind }));
+      });
+    }
+
+    const shouldShowRefs = showRefLines ?? (edgeMode !== "shaded" && edgeMode !== "solid");
     const r = shouldShowRefs
       ? (model.refLines ?? []).flatMap((edge, index) =>
           visibleLineSegments(
@@ -347,7 +401,7 @@ export function Wire3D({
         )
       : [];
 
-    return { faces: f, edges: e, refs: r };
+    return { faces: f, edges: e, hiddenWireEdges: hiddenWire, refs: r };
   }, [model, cam, fit, k, lineVisibility, edgeMode, showRefLines]);
 
   const maxDepth = Math.max(1, ...edges.flatMap((e) => [Math.abs(e.z1), Math.abs(e.z2)]));
@@ -418,7 +472,8 @@ export function Wire3D({
     if (!interactive && ev.pointerType === "touch") return; // toque continua servindo ao card
     if (inertiaRaf.current) cancelAnimationFrame(inertiaRaf.current);
     velocity.current = { vx: 0, vy: 0 };
-    const isPan = ev.button === 1 || ev.button === 2 || ev.shiftKey || ev.ctrlKey || mode === "pan";
+    const isPan =
+      ev.button === 1 || ev.button === 2 || ev.shiftKey || ev.ctrlKey || mode === "pan";
     dragMode.current = isPan ? "pan" : "orbit";
     drag.current = { x: ev.clientX, y: ev.clientY };
     downAt.current = { x: ev.clientX, y: ev.clientY };
@@ -457,6 +512,7 @@ export function Wire3D({
     <svg
       ref={host}
       viewBox={`${-VB / 2} ${-VB / 2} ${VB} ${VB}`}
+      data-edge-mode={edgeMode}
       className={cn(
         "select-none",
         interactive
@@ -520,20 +576,48 @@ export function Wire3D({
       }}
     >
       <g>
+        {/* MODO ARAME: Casca Fantasma X-Ray (opacity: 0.10, depthWrite: false) */}
+        {edgeMode === "wireframe" && (
+          <g data-layer="xray-ghost-shell" opacity={0.1}>
+            {faces
+              .filter((f) => f.kind === "outer" || f.kind === "rim")
+              .map((f) => (
+                <polygon
+                  key={`xray:${f.id}`}
+                  points={f.d}
+                  fill="#38BDF8"
+                  stroke="none"
+                />
+              ))}
+          </g>
+        )}
+
+        {/* SUPERFÍCIES SOMBREADAS (SOMB intacto, SOMB+AR e novo SOLID metálico) */}
         {edgeMode !== "wireframe" &&
-          faces.map((f) => (
-            <polygon
-              key={f.id}
-              data-entity-id={f.id}
-              data-category="surface"
-              points={f.d}
-              fill={f.kind === "rim" && edgeMode === "shaded" ? "#F8FAFC" : f.fill}
-              stroke={f.kind === "rim" && edgeMode === "shaded" ? "#F8FAFC" : f.fill}
-              strokeWidth={f.kind === "rim" && edgeMode === "shaded" ? 0.75 : 0.4}
-              strokeLinejoin="round"
-            />
-          ))}
-        {(showRefLines ?? (edgeMode !== "shaded")) &&
+          faces.map((f) => {
+            const isSolid = edgeMode === "solid";
+            const faceFill =
+              f.kind === "rim" && edgeMode === "shaded"
+                ? "#F8FAFC"
+                : isSolid
+                  ? f.solidFill
+                  : f.fill;
+            return (
+              <polygon
+                key={f.id}
+                data-entity-id={f.id}
+                data-category="surface"
+                points={f.d}
+                fill={faceFill}
+                stroke={faceFill}
+                strokeWidth={f.kind === "rim" && edgeMode === "shaded" ? 0.75 : isSolid ? 0.55 : 0.4}
+                strokeLinejoin="round"
+              />
+            );
+          })}
+
+        {/* LINHAS DE REFERÊNCIA (Eixos de Centro) */}
+        {(showRefLines ?? (edgeMode !== "shaded" && edgeMode !== "solid")) &&
           refs.map((e) => (
             <line
               key={e.id}
@@ -543,33 +627,134 @@ export function Wire3D({
               y1={e.y1.toFixed(2)}
               x2={e.x2.toFixed(2)}
               y2={e.y2.toFixed(2)}
-              stroke="var(--solid-edge)"
-              strokeWidth={0.45}
-              strokeOpacity={0.28}
+              stroke={edgeMode === "wireframe" ? "#94A3B8" : "var(--solid-edge)"}
+              strokeWidth={edgeMode === "wireframe" ? 1.0 : 0.45}
+              vectorEffect={edgeMode === "wireframe" ? "non-scaling-stroke" : undefined}
+              strokeOpacity={edgeMode === "wireframe" ? 0.42 : 0.28}
               strokeDasharray="4 3 1 3"
             />
           ))}
-        {edges.map((e) => (
-          <line
-            key={e.id}
-            data-entity-id={e.id}
-            data-category="edge"
-            x1={e.x1.toFixed(2)}
-            y1={e.y1.toFixed(2)}
-            x2={e.x2.toFixed(2)}
-            y2={e.y2.toFixed(2)}
-            stroke={edgeMode === "shaded" ? "#F8FAFC" : "var(--solid-edge)"}
-            strokeWidth={edgeMode === "shaded" ? 0.95 : edgeMode === "wireframe" ? 0.65 : 0.78}
-            strokeOpacity={
-              edgeMode === "shaded"
-                ? 0.92
-                : edgeMode === "wireframe"
-                  ? (0.5 + 0.45 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)
-                  : (0.62 + 0.32 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)
-            }
-            strokeLinecap="round"
-          />
-        ))}
+
+        {/* MODO ARAME: Passada Traseira / Oculta (GreaterDepth, tracejada / opacidade 0.25) */}
+        {edgeMode === "wireframe" && (
+          <g data-layer="wireframe-hidden-edges">
+            {hiddenWireEdges.map((e) => (
+              <line
+                key={e.id}
+                x1={e.x1.toFixed(2)}
+                y1={e.y1.toFixed(2)}
+                x2={e.x2.toFixed(2)}
+                y2={e.y2.toFixed(2)}
+                stroke="#38BDF8"
+                strokeWidth={0.95}
+                vectorEffect="non-scaling-stroke"
+                strokeOpacity={0.25}
+                strokeDasharray="3.5 2.5"
+                strokeLinecap="round"
+              />
+            ))}
+          </g>
+        )}
+
+        {/* ARESTAS VISÍVEIS (SOMB intacto, SOMB+AR B-Rep, ARAME B-Rep invariante e SOLID chanfros sutis) */}
+        {edges.map((e) => {
+          if (edgeMode === "shaded") {
+            // MODO SOMB: 100% IDÊNTICO AO ORIGINAL
+            return (
+              <line
+                key={e.id}
+                data-entity-id={e.id}
+                data-category="edge"
+                x1={e.x1.toFixed(2)}
+                y1={e.y1.toFixed(2)}
+                x2={e.x2.toFixed(2)}
+                y2={e.y2.toFixed(2)}
+                stroke="#F8FAFC"
+                strokeWidth={0.95}
+                strokeOpacity={0.92}
+                strokeLinecap="round"
+              />
+            );
+          }
+
+          const isPrimaryBRep =
+            e.kind === "REAL_BOUNDARY" ||
+            e.kind === "JOINT" ||
+            e.kind === "BEND_EDGE" ||
+            e.kind === "INTERSECTION";
+
+          if (edgeMode === "solid") {
+            return (
+              <line
+                key={e.id}
+                data-entity-id={e.id}
+                data-category="edge"
+                x1={e.x1.toFixed(2)}
+                y1={e.y1.toFixed(2)}
+                x2={e.x2.toFixed(2)}
+                y2={e.y2.toFixed(2)}
+                stroke={e.kind === "REAL_BOUNDARY" ? "#E0F2FE" : "#7DD3FC"}
+                strokeWidth={e.kind === "REAL_BOUNDARY" ? 1.25 : 0.95}
+                vectorEffect="non-scaling-stroke"
+                strokeOpacity={e.kind === "REAL_BOUNDARY" ? 0.55 : 0.36}
+                strokeLinecap="round"
+              />
+            );
+          }
+
+          if (edgeMode === "wireframe") {
+            return (
+              <line
+                key={e.id}
+                data-entity-id={e.id}
+                data-category="edge"
+                data-brep-kind={e.kind ?? "REAL_EDGE"}
+                x1={e.x1.toFixed(2)}
+                y1={e.y1.toFixed(2)}
+                x2={e.x2.toFixed(2)}
+                y2={e.y2.toFixed(2)}
+                stroke={
+                  e.kind === "REAL_BOUNDARY" || e.kind === "INTERSECTION"
+                    ? "#E0F2FE"
+                    : e.kind === "JOINT" || e.kind === "BEND_EDGE"
+                      ? "#7DD3FC"
+                      : "#38BDF8"
+                }
+                strokeWidth={isPrimaryBRep ? 1.8 : 1.0}
+                vectorEffect="non-scaling-stroke"
+                strokeOpacity={isPrimaryBRep ? 0.96 : 0.78}
+                strokeLinecap="round"
+              />
+            );
+          }
+
+          // Modo SOMB+AR ("shaded-edges") — superfície sombreada + arestas técnicas B-Rep
+          const depthFactor = ((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth);
+          return (
+            <line
+              key={e.id}
+              data-entity-id={e.id}
+              data-category="edge"
+              data-brep-kind={e.kind ?? "REAL_EDGE"}
+              x1={e.x1.toFixed(2)}
+              y1={e.y1.toFixed(2)}
+              x2={e.x2.toFixed(2)}
+              y2={e.y2.toFixed(2)}
+              stroke={
+                e.kind === "REAL_BOUNDARY" || e.kind === "INTERSECTION"
+                  ? "#E0F2FE"
+                  : e.kind === "JOINT" || e.kind === "BEND_EDGE"
+                    ? "#7DD3FC"
+                    : "#38BDF8"
+              }
+              strokeWidth={isPrimaryBRep ? 1.55 : 1.0}
+              vectorEffect="non-scaling-stroke"
+              strokeOpacity={(isPrimaryBRep ? 0.92 : 0.64 + 0.24 * depthFactor).toFixed(3)}
+              strokeLinecap="round"
+            />
+          );
+        })}
+
         {hasHighlight && (selectedEdges.length > 0 || selectedFaces.length > 0) && (
           <g data-category="selection" pointerEvents="none">
             {selectedFaces.map((f) => (
@@ -612,7 +797,9 @@ export function Wire3D({
                 paintOrder="stroke"
               >
                 {highlightRefs.length === 1
-                  ? (highlightRefs[0] ? refLabel(highlightRefs[0]) : "")
+                  ? highlightRefs[0]
+                    ? refLabel(highlightRefs[0])
+                    : ""
                   : `${highlightRefs.length} entidades · ${highlightRefs[0] ? refLabel(highlightRefs[0]) : ""}`}
               </text>
             )}
