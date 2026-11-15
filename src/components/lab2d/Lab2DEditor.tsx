@@ -423,6 +423,7 @@ const ChamferUnified3DViewport = lazyWithRetry(() =>
 );
 import {
   buildDirectTopology3DScene,
+  consolidateStitchedLoopsInEntities2D,
   formatSubElementTelemetry3D,
   hitTestSubElement3DInScreenSpace,
   type DirectModeling3DTool,
@@ -1983,6 +1984,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setTool("select");
         setPending([]);
         setDraft(null);
+        setPendingDraftShape(null);
         setPortraitDrawerOpen(false);
         setDivideEditorOpen(false);
         setMobileEditorOpenManual(false);
@@ -1990,9 +1992,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setRenderStyle3D((prev) =>
           prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded-edges" : prev,
         );
+        // Costura automaticamente segmentos abertos conectados (ex.: Esquadro em "L") em contornos fechados sólidos 3D
+        setEntities((prev) => {
+          const { entities: consolidated, stitchedCount } =
+            consolidateStitchedLoopsInEntities2D(prev, 2.0);
+          if (stitchedCount > 0) {
+            const synced = syncAssociativeGeometricMarks(consolidated);
+            ReferenceService.syncWithEntities(synced);
+            return synced;
+          }
+          return prev;
+        });
         setSelection((prevSel) => {
           if (prevSel.length > 0) return prevSel;
-          const firstDrawable = entities.find((e) => e.type !== "point" && e.type !== "text");
+          const { entities: consolidated } = consolidateStitchedLoopsInEntities2D(entities, 2.0);
+          const firstDrawable = consolidated.find((e) => e.type !== "point" && e.type !== "text");
           return firstDrawable ? [firstDrawable.id] : prevSel;
         });
       }
@@ -2014,10 +2028,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setTool("select");
       setPending([]);
       setDraft(null);
+      setPendingDraftShape(null);
       setActiveDirect3DTool(nextTool);
       setActiveMode("3d");
       setSolidOpen(false);
       setIsOrbitToolActive(true);
+      setEntities((prev) => {
+        const { entities: consolidated, stitchedCount } =
+          consolidateStitchedLoopsInEntities2D(prev, 2.0);
+        if (stitchedCount > 0) {
+          const synced = syncAssociativeGeometricMarks(consolidated);
+          ReferenceService.syncWithEntities(synced);
+          return synced;
+        }
+        return prev;
+      });
       setRenderStyle3D((prev) =>
         prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded-edges" : prev,
       );
@@ -3037,6 +3062,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
   const initialFitDoneRef = useRef(false);
+  const isTransitioningLayoutRef = useRef(false);
+  const isTransitioningLayoutTimerRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const el = canvasRef.current;
@@ -3048,6 +3075,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const nextH = Math.round(r.height);
         setCanvasSize((prev) => {
           if (prev.w === nextW && prev.h === nextH) return prev;
+          if (isTransitioningLayoutRef.current) {
+            return { w: nextW, h: nextH };
+          }
           const prevPortrait = prev.w > 20 && prev.h > 20 && prev.w < prev.h;
           const nextPortrait = nextW < nextH;
           if (
@@ -8372,25 +8402,191 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const verticalLayout = useVerticalLayout();
   const isLandscape = !verticalLayout.isVerticalCompactActive;
 
+  // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
+  // Inicia sempre recolhida (open = false) para preservar área máxima de desenho; abre exclusivamente pela seta (<) ou botões da doca (Seção 1.3)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
+  // Bottom Sheet Compacto em modo retrato para painéis longos (Propriedades, Camadas, Corte, Cotas, Eng. Reversa)
+  const [portraitDrawerOpen, setPortraitDrawerOpen] = useState(false);
+
   // Modo de Casca da Interface do CHAMFER CAD: "compact" (Padrão Consolidado) | "prumo" (Interface Espacial Zero Barras)
   const [uiShellMode, setUiShellMode] = useState<ChamferUiShellMode>(() =>
     loadPersistedUiShellMode(),
   );
+  const [uiShellTransitionDir, setUiShellTransitionDir] = useState<
+    "to-prumo" | "to-compact" | null
+  >(null);
+  const uiShellTransitionTimerRef = useRef<number | null>(null);
+  const smartAutoFitRafRef = useRef<number | null>(null);
+  const pendingLayoutGlideRef = useRef<{
+    targetMode: ChamferUiShellMode;
+    beforeRect: { left: number; top: number; width: number; height: number } | null;
+    prevView: { k: number; tx: number; ty: number };
+  } | null>(null);
+
+  // Animação monotônica única de câmera (Single-Pass Smooth Glide 500ms easeInOutCubic — Zero Vai e Vem)
+  useLayoutEffect(() => {
+    const glide = pendingLayoutGlideRef.current;
+    if (!glide) return;
+    pendingLayoutGlideRef.current = null;
+
+    if (smartAutoFitRafRef.current !== null) {
+      cancelAnimationFrame(smartAutoFitRafRef.current);
+      smartAutoFitRafRef.current = null;
+    }
+    if (arrayFrameAnimRafRef.current !== null) {
+      cancelAnimationFrame(arrayFrameAnimRafRef.current);
+      arrayFrameAnimRafRef.current = null;
+    }
+
+    const el = canvasRef.current ?? canvasViewportRef.current ?? svgRef.current;
+    const afterDomRect = el?.getBoundingClientRect();
+    const beforeRect = glide.beforeRect;
+
+    const oldW = Math.max(
+      200,
+      beforeRect?.width || canvasSize.w || (typeof window !== "undefined" ? window.innerWidth : 1024),
+    );
+    const oldH = Math.max(
+      160,
+      beforeRect?.height || canvasSize.h || (typeof window !== "undefined" ? window.innerHeight : 640),
+    );
+    const newW = Math.max(200, afterDomRect?.width || oldW);
+    const newH = Math.max(160, afterDomRect?.height || oldH);
+
+    // Compensa o deslocamento físico imediato do elemento <canvas> na tela quando as barras montam/desmontam
+    const dxLayout =
+      beforeRect && afterDomRect ? beforeRect.left - afterDomRect.left : 0;
+    const dyLayout =
+      beforeRect && afterDomRect ? beforeRect.top - afterDomRect.top : 0;
+
+    const startZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, glide.prevView.k || 1));
+    const startPanX = glide.prevView.tx + dxLayout;
+    const startPanY = glide.prevView.ty + dyLayout;
+
+    // Ponto focal do mundo que estava no centro visual antes da transição
+    const focalWorldX = (oldW / 2 - glide.prevView.tx) / startZoom;
+    const focalWorldY = (oldH / 2 - glide.prevView.ty) / startZoom;
+
+    // Variação contínua e unidirecional: sobe suavemente na PRUMO (* 1.08), desce suavemente na Compacta (/ 1.08)
+    const zoomFactor = glide.targetMode === "prumo" ? 1.08 : 1 / 1.08;
+    const targetZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, startZoom * zoomFactor));
+    const targetPanX = newW / 2 - focalWorldX * targetZoom;
+    const targetPanY = newH / 2 - focalWorldY * targetZoom;
+
+    if (
+      !Number.isFinite(targetZoom) ||
+      !Number.isFinite(targetPanX) ||
+      !Number.isFinite(targetPanY)
+    ) {
+      return;
+    }
+
+    setCanvasSize((prev) => {
+      const rw = Math.round(newW);
+      const rh = Math.round(newH);
+      return prev.w === rw && prev.h === rh ? prev : { w: rw, h: rh };
+    });
+
+    const initialSyncView = { k: startZoom, tx: startPanX, ty: startPanY };
+    viewRef.current = initialSyncView;
+    setView(initialSyncView);
+
+    const startTime = performance.now();
+    const durationMs = 500;
+    // Curva estritamente monotônica easeInOutCubic: f(t) = 3t^2 - 2t^3 (derivada >= 0 em [0,1], zero overshoot/bounce)
+    const easeInOutCubic = (t: number) => 3 * t * t - 2 * t * t * t;
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, Math.max(0, elapsed / durationMs));
+      const f = easeInOutCubic(t);
+
+      const nextView = {
+        k: startZoom + (targetZoom - startZoom) * f,
+        tx: startPanX + (targetPanX - startPanX) * f,
+        ty: startPanY + (targetPanY - startPanY) * f,
+      };
+      viewRef.current = nextView;
+      setView(nextView);
+
+      if (t < 1) {
+        smartAutoFitRafRef.current = requestAnimationFrame(step);
+      } else {
+        smartAutoFitRafRef.current = null;
+      }
+    };
+
+    smartAutoFitRafRef.current = requestAnimationFrame(step);
+  }, [uiShellMode, canvasSize.w, canvasSize.h]);
 
   const handleSetUiShellMode = useCallback(
     (nextMode: ChamferUiShellMode) => {
-      setUiShellMode(nextMode);
-      savePersistedUiShellMode(nextMode);
-      if (verticalLayout.isVerticalViewport) {
-        verticalLayout.setLayoutPreference(nextMode);
+      if (nextMode === uiShellMode) {
+        return;
       }
-      toast.info(
-        nextMode === "prumo"
-          ? `📐 Interface ${UI_NAME} ativada — Zero Barras de Ferramentas (100% Canvas + Instrumentos Suspensos).`
-          : "Interface Compacta ativada — padrão consolidado.",
-      );
+      if (uiShellTransitionTimerRef.current !== null) {
+        window.clearTimeout(uiShellTransitionTimerRef.current);
+        uiShellTransitionTimerRef.current = null;
+      }
+      if (smartAutoFitRafRef.current !== null) {
+        cancelAnimationFrame(smartAutoFitRafRef.current);
+        smartAutoFitRafRef.current = null;
+      }
+      if (arrayFrameAnimRafRef.current !== null) {
+        cancelAnimationFrame(arrayFrameAnimRafRef.current);
+        arrayFrameAnimRafRef.current = null;
+      }
+      if (isTransitioningLayoutTimerRef.current !== null) {
+        window.clearTimeout(isTransitioningLayoutTimerRef.current);
+        isTransitioningLayoutTimerRef.current = null;
+      }
+
+      // Trava de Destino Único (Single-Pass Animation Lock) durante os 520ms da transição
+      isTransitioningLayoutRef.current = true;
+      isTransitioningLayoutTimerRef.current = window.setTimeout(() => {
+        isTransitioningLayoutRef.current = false;
+        isTransitioningLayoutTimerRef.current = null;
+      }, 520);
+
+      const el = canvasRef.current ?? canvasViewportRef.current ?? svgRef.current;
+      const domRect = el?.getBoundingClientRect();
+      pendingLayoutGlideRef.current = {
+        targetMode: nextMode,
+        beforeRect: domRect
+          ? {
+              left: domRect.left,
+              top: domRect.top,
+              width: domRect.width,
+              height: domRect.height,
+            }
+          : null,
+        prevView: viewRef.current ?? { k: 1, tx: 0, ty: 0 },
+      };
+
+      if (nextMode === "prumo") {
+        setUiShellTransitionDir("to-prumo");
+        setUiShellMode("prumo");
+        savePersistedUiShellMode("prumo");
+        if (verticalLayout.isVerticalViewport) {
+          verticalLayout.setLayoutPreference("prumo");
+        }
+        uiShellTransitionTimerRef.current = window.setTimeout(() => {
+          setUiShellTransitionDir(null);
+        }, 380);
+      } else {
+        setUiShellTransitionDir("to-compact");
+        setUiShellMode("compact");
+        savePersistedUiShellMode("compact");
+        if (verticalLayout.isVerticalViewport) {
+          verticalLayout.setLayoutPreference("compact");
+        }
+        uiShellTransitionTimerRef.current = window.setTimeout(() => {
+          setUiShellTransitionDir(null);
+        }, 380);
+      }
     },
-    [verticalLayout],
+    [uiShellMode, verticalLayout],
   );
 
   // Visibilidade das Réguas Técnicas (18px <-> 0px ao tocar no canto "MM")
@@ -8420,13 +8616,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [statusSecondaryLevelOpen, setStatusSecondaryLevelOpen] = useState(false);
   // Popover compacto [ ✨ IA & BOM ▾ ] para telas estreitas (< 640px)
   const [aiBomPopoverOpen, setAiBomPopoverOpen] = useState(false);
-
-  // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
-  // Inicia sempre recolhida (open = false) para preservar área máxima de desenho; abre exclusivamente pela seta (<) ou botões da doca (Seção 1.3)
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
-  const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
-  // Bottom Sheet Compacto em modo retrato para painéis longos (Propriedades, Camadas, Corte, Cotas, Eng. Reversa)
-  const [portraitDrawerOpen, setPortraitDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (!isLandscape) {
@@ -8463,10 +8652,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return entities;
   }, [pendingDraftShape, draft, selected, entities]);
 
-  // Auto-Enquadramento Dinâmico e Fluido da Peça à Esquerda (Desativado no 3D para manter câmera 100% fixa)
+  // Auto-Enquadramento Dinâmico e Fluido da Peça à Esquerda (Desativado no 3D e durante transições Compacta <-> PRUMO)
   useSmartFraming({
     isOpen:
       !is3DCameraActive &&
+      uiShellTransitionDir === null &&
       Boolean(
         mobileEditorOpen ||
           directDimEditor?.open ||
@@ -9010,7 +9200,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {!focus && uiShellMode !== "prumo" && isLandscape && (
+      {!focus && (uiShellMode !== "prumo" || uiShellTransitionDir === "to-prumo") && isLandscape && (
         <header
           ref={topBarRef}
           data-testid="chamfer-landscape-topbar"
@@ -9033,6 +9223,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             boxShadow: isDark
               ? "0 4px 16px rgba(0, 0, 0, 0.28)"
               : "0 2px 10px rgba(15, 23, 42, 0.04)",
+            transition:
+              "transform 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 340ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transform:
+              uiShellTransitionDir === "to-prumo"
+                ? "translate3d(0, -14px, 0) scaleX(0.92)"
+                : "translate3d(0, 0, 0) scaleX(1)",
+            opacity: uiShellTransitionDir === "to-prumo" ? 0 : 1,
+            pointerEvents: uiShellTransitionDir === "to-prumo" ? "none" : undefined,
+            position: uiShellTransitionDir === "to-prumo" ? "absolute" : "relative",
+            top: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
+            left: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
+            right: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
+            zIndex: 42,
           }}
           className={cn(
             "chamfer-theme-fade-2s flex shrink-0 w-full items-center justify-between border-b shadow-xs backdrop-blur-md select-none",
@@ -10205,8 +10408,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               : "gap-0 p-0",
         )}
       >
-        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (OCULTA NO MODO PRUMO ZERO BARRAS) */}
-        {!focus && uiShellMode !== "prumo" && (isLandscape || activeMode === "3d") && (
+        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (COREOGRAFIA DE TRANSIÇÃO COMPACTA <-> PRUMO 380ms) */}
+        {!focus &&
+          (uiShellMode !== "prumo" || uiShellTransitionDir === "to-prumo") &&
+          (isLandscape || activeMode === "3d") && (
+          <div
+            style={{
+              transition:
+                "transform 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 340ms cubic-bezier(0.22, 1, 0.36, 1)",
+              transform:
+                uiShellTransitionDir === "to-prumo"
+                  ? "translate3d(-16px, 140px, 0) scale(0.45)"
+                  : "translate3d(0, 0, 0) scale(1)",
+              transformOrigin: "bottom left",
+              opacity: uiShellTransitionDir === "to-prumo" ? 0 : 1,
+              pointerEvents: uiShellTransitionDir === "to-prumo" ? "none" : undefined,
+              position: uiShellTransitionDir === "to-prumo" ? "absolute" : "relative",
+              left: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
+              top: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
+              bottom: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
+              zIndex: 42,
+              display: "flex",
+            }}
+          >
           <ChamferCadToolbar
             tool={tool}
             onPickTool={pickTool}
@@ -10393,6 +10617,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             activeStrokeColor={activeStrokeColor}
             onSelectStrokeColor={handleSelectColorAndLayer}
           />
+          </div>
         )}
 
         {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM RETRATO E NO MODO PRUMO) */}
@@ -12227,8 +12452,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* OVERLAY DE COTAS VIVAS, REFERÊNCIA DE CRIAÇÃO DE LINHA (AZUL) E REFERÊNCIA DE PONTO DE ENCONTRO (ROXA) */}
-              {(() => {
+              {/* OVERLAY DE COTAS VIVAS, REFERÊNCIA DE CRIAÇÃO DE LINHA (AZUL) E REFERÊNCIA DE PONTO DE ENCONTRO (ROXA) — EXCLUSIVO DO MODO 2D */}
+              {activeMode === "2d" &&
+                !isInPlaceSolid3DActive &&
+                !orbitProjection2D.isTilted &&
+                (() => {
                 const selectedSingleLine =
                   selection.length === 1 && pending.length === 0
                     ? entities.find((e) => e.id === selection[0] && e.type === "line")
@@ -13147,7 +13375,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               referenceState.landmarks.length > 0 ||
               referenceState.spanDivision !== null ||
               referenceState.guides.length > 0) && (
-              <div className="pointer-events-auto absolute top-7 left-7 z-35 flex items-center">
+              <div
+                className={cn(
+                  "pointer-events-auto absolute left-7 z-35 flex items-center",
+                  uiShellMode === "prumo" ? "top-[52px]" : "top-7",
+                )}
+              >
                 <ChamferGeometricAnchorBar
                   visible={true}
                   isCapturingReference={false}
@@ -13216,7 +13449,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             accentColor={themeColors.accent}
             isLandscape={isLandscape}
             hasTopCommandBanner={
-              isLandscape && (divideEditorOpen || tool === "fillet" || tool === "chamfer")
+              uiShellMode === "prumo" ||
+              (isLandscape && (divideEditorOpen || tool === "fillet" || tool === "chamfer"))
             }
           />
 
@@ -13552,11 +13786,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 ),
               );
             }}
+            uiShellMode={uiShellMode}
           />
           )}
 
-          {/* BARRA UNIFICADA DE MEDIDAS EM TEMPO REAL E CONFIRMAÇÃO (60 FPS AO VIVO + PÓS-SOLTURA) */}
-          {!solidOpen && activeMode === "2d" && (() => {
+          {/* BARRA UNIFICADA DE MEDIDAS EM TEMPO REAL E CONFIRMAÇÃO (60 FPS AO VIVO + PÓS-SOLTURA) — EXCLUSIVA DO MODO 2D PLANO PARA ZERO COLISÃO COM BARRAS 3D */}
+          {!solidOpen &&
+            activeMode === "2d" &&
+            !isInPlaceSolid3DActive &&
+            !orbitProjection2D.isTilted &&
+            tool !== "loft_3d" &&
+            (() => {
             const hasSubmodeBar =
               tool === "polyline" ||
               tool === "rect" ||
@@ -13598,7 +13838,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   ? createSelectedEntityDraftState(selected[0])
                   : null);
 
-            const topStackOffsetPx = hasSubmodeBar ? 50 : 24;
+            const topStackOffsetPx =
+              uiShellMode === "prumo"
+                ? hasSubmodeBar
+                  ? 82
+                  : 52
+                : hasSubmodeBar
+                  ? 50
+                  : 24;
 
             return (
               <div
@@ -13908,6 +14155,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             width={canvasSize.w}
             height={canvasSize.h}
             activeMode={activeMode}
+            uiShellMode={uiShellMode}
             renderStyle3D={renderStyle3D}
             brepWireframeLayers={brepWireframeLayers}
             onChangeBrepWireframeLayers={handleChangeBrepWireframeLayers}
@@ -14150,8 +14398,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           {(isOrbitToolActive || activeMode === "3d") && (
             <div
               className={cn(
-                "pointer-events-none absolute left-4 z-35 flex flex-col items-start gap-1.5",
-                activeMode === "3d" ? "bottom-4" : "bottom-12",
+                "pointer-events-none absolute left-4 z-35 flex flex-col items-start gap-1.5 transition-all duration-300",
+                uiShellMode === "prumo"
+                  ? "bottom-24"
+                  : activeMode === "3d"
+                    ? "bottom-4"
+                    : "bottom-12",
               )}
             >
               <ChamferAxesGizmo3D
@@ -14344,8 +14596,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               />
             )}
 
-          {/* INTERFACE ESPACIAL "PRUMO" (ZERO BARRAS DE FERRAMENTAS — 5 INSTRUMENTOS SUSPENSOS + RESPIRO) */}
-          {uiShellMode === "prumo" && !solidOpen && (
+          {/* INTERFACE ESPACIAL "PRUMO" (ZERO BARRAS DE FERRAMENTAS — 5 INSTRUMENTOS SUSPENSOS + RESPIRO + COREOGRAFIA 380ms) */}
+          {(uiShellMode === "prumo" || uiShellTransitionDir === "to-compact") && !solidOpen && (
             <PrumoErrorBoundary onFallbackToCompact={() => handleSetUiShellMode("compact")}>
               <ChamferPrumoSpatialUI
                 isDark={isDark}
@@ -14353,6 +14605,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 viewportHeight={canvasSize.h || verticalLayout.viewportHeight}
                 isLandscape={isLandscape}
                 uiShellMode={uiShellMode}
+                isExitingToCompact={uiShellTransitionDir === "to-compact"}
                 onChangeUiShellMode={handleSetUiShellMode}
                 projectName={project?.name ?? "Projeto 26"}
                 saveStatus={saveStatus}

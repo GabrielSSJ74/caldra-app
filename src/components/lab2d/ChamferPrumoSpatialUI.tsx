@@ -296,6 +296,8 @@ export interface ChamferPrumoSpatialUIProps {
     diameterMm?: number | undefined;
     editSelectedEntity?: boolean | undefined;
   }) => void;
+  /** Quando true, anima o retorno de PRUMO -> COMPACTA (Ancoragem de Bancada, 380ms) */
+  isExitingToCompact?: boolean;
 }
 
 const TOOL_SHORT_CODES: Record<string, string> = {
@@ -430,6 +432,7 @@ export function ChamferPrumoSpatialUI({
   view,
   isDrawingOrGesturing,
   onCommitNumericInput,
+  isExitingToCompact = false,
 }: ChamferPrumoSpatialUIProps) {
   // 1. Posição do Polegar (Esquerda padrão em Paisagem, Direita padrão em Retrato, com override manual)
   const [handOverride, setHandOverride] = useState<PrumoHandSide | null>(() => {
@@ -458,6 +461,59 @@ export function ChamferPrumoSpatialUI({
 
   // 2. Estado do Leque Concêntrico de 2 Arcos, Mesa de Ferramentas, Hub, Vista e Satélite
   const [fanOpen, setFanOpen] = useState(false);
+  const [fanCollapsing, setFanCollapsing] = useState(false);
+  const [choreoEntered, setChoreoEntered] = useState(false);
+  const [ringRotated45, setRingRotated45] = useState(false);
+  const [calibrationPulseActive, setCalibrationPulseActive] = useState(false);
+
+  // Coreografia de entrada COMPACTA -> PRUMO (380ms cubic-bezier(0.22, 1, 0.36, 1) + giro de 45° do anel + pulso óptico #38BDF8 de 28px em 350ms)
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
+      setChoreoEntered(true);
+    });
+    const settleTimer = window.setTimeout(() => {
+      setRingRotated45(true);
+      setCalibrationPulseActive(true);
+    }, 320);
+    const pulseEndTimer = window.setTimeout(() => {
+      setCalibrationPulseActive(false);
+    }, 700);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.clearTimeout(settleTimer);
+      window.clearTimeout(pulseEndTimer);
+    };
+  }, []);
+
+  // Se PRUMO estiver saindo para COMPACTA e o Leque estiver aberto, recolhe em 140ms para o Núcleo
+  useEffect(() => {
+    if (isExitingToCompact && fanOpen) {
+      setFanCollapsing(true);
+      const t = window.setTimeout(() => {
+        setFanOpen(false);
+        setFanCollapsing(false);
+      }, 140);
+      return () => window.clearTimeout(t);
+    }
+  }, [isExitingToCompact, fanOpen]);
+
+  const handleRequestSwitchToCompact = () => {
+    triggerHaptic("selection");
+    setHubOpen(false);
+    setViewPopoverOpen(false);
+    setPrecisionGridOpen(false);
+    if (fanOpen) {
+      setFanCollapsing(true);
+      window.setTimeout(() => {
+        setFanOpen(false);
+        setFanCollapsing(false);
+        onChangeUiShellMode("compact");
+      }, 140);
+    } else {
+      onChangeUiShellMode("compact");
+    }
+  };
+
   const [activeGroupId, setActiveGroupId] = useState<PrumoGroupId>("criar");
   const [innerScrollRad, setInnerScrollRad] = useState(0);
   const [outerScrollRad, setOuterScrollRad] = useState(0);
@@ -1798,10 +1854,12 @@ export function ChamferPrumoSpatialUI({
   }, [selectedEntities, pendingCount, view, viewportWidth, viewportHeight]);
 
   const isNarrowScreen = viewportWidth < 370;
+  const isCollapsedState = !choreoEntered || isExitingToCompact;
   const peripheralOpacityStyle: React.CSSProperties = {
-    opacity: respiroActive ? 0.25 : 1,
-    pointerEvents: respiroActive ? "none" : "auto",
-    transition: "opacity 150ms cubic-bezier(0.16, 1, 0.3, 1)",
+    opacity: isExitingToCompact ? 0 : respiroActive ? 0.25 : choreoEntered ? 1 : 0,
+    pointerEvents: respiroActive || isExitingToCompact ? "none" : "auto",
+    transition:
+      "opacity 380ms cubic-bezier(0.22, 1, 0.36, 1), transform 380ms cubic-bezier(0.22, 1, 0.36, 1)",
   };
 
   // Modo Foco Total (⛶ Foco): esconde todos os instrumentos exceto o botão discreto de restauração (44px) no canto do Núcleo
@@ -1840,8 +1898,23 @@ export function ChamferPrumoSpatialUI({
       data-testid="chamfer-prumo-spatial-shell"
       data-ui-shell={UI_NAME}
       data-respiro={respiroActive ? "true" : "false"}
+      data-choreo-state={isExitingToCompact ? "exiting" : choreoEntered ? "settled" : "entering"}
       className="pointer-events-none absolute inset-0 z-40 overflow-hidden select-none"
     >
+      {/* Keyframes da Onda de Calibração Óptica do Núcleo PRUMO (expande 28px em 350ms e desaparece) */}
+      <style>{`
+        @keyframes prumoOpticalCalibrationWave {
+          0% {
+            transform: scale(1);
+            opacity: 0.92;
+          }
+          100% {
+            transform: scale(2.0);
+            opacity: 0;
+          }
+        }
+      `}</style>
+
       {/* =====================================================================
           INSTRUMENTO 3.1 — ILHA DE COMANDO SUPERIOR ESQUERDA + CARTÃO "✦ HUB"
           top: 10px, left: 22px, height: 34px, max-width <= 55%
@@ -1855,10 +1928,14 @@ export function ChamferPrumoSpatialUI({
           left: 22,
           height: 34,
           maxWidth: isNarrowScreen ? "58%" : "55%",
+          transformOrigin: "left center",
+          transform: isCollapsedState
+            ? "translate3d(24px, -8px, 0) scaleX(1.12) scaleY(0.94)"
+            : "translate3d(0, 0, 0) scaleX(1) scaleY(1)",
         }}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
-        className=" flex items-center gap-1 rounded-full border px-2 font-mono text-[10px] overflow-x-auto scrollbar-none whitespace-nowrap"
+        className="pointer-events-auto absolute flex items-center gap-1 rounded-full border px-2 font-mono text-[10px] overflow-x-auto scrollbar-none whitespace-nowrap"
       >
         {/* [ ← ] Sair */}
         <button
@@ -1941,14 +2018,11 @@ export function ChamferPrumoSpatialUI({
           </button>
         </div>
 
-        {/* [ ◫ Compacta ] — Volta para a UI Compacta com 1 toque */}
+        {/* [ ◫ Compacta ] — Volta para a UI Compacta com 1 toque e coreografia suave */}
         <button
           type="button"
           data-testid="prumo-island-switch-compact-btn"
-          onClick={() => {
-            triggerHaptic("selection");
-            onChangeUiShellMode("compact");
-          }}
+          onClick={handleRequestSwitchToCompact}
           title="Voltar para a Interface Compacta com 1 toque"
           className={cn(
             "flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-[9.5px] font-bold cursor-pointer transition-colors",
@@ -2062,11 +2136,7 @@ export function ChamferPrumoSpatialUI({
               <button
                 type="button"
                 data-testid="prumo-hub-select-compact"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChangeUiShellMode("compact");
-                  setHubOpen(false);
-                }}
+                onClick={handleRequestSwitchToCompact}
                 className={cn(
                   "rounded-md px-2.5 py-1 text-[10px] font-bold cursor-pointer",
                   uiShellMode === "compact"
@@ -2299,10 +2369,14 @@ export function ChamferPrumoSpatialUI({
           top: 10,
           right: 16,
           height: 34,
+          transformOrigin: "right center",
+          transform: isCollapsedState
+            ? "translate3d(-24px, -8px, 0) scaleX(1.12) scaleY(0.94)"
+            : "translate3d(0, 0, 0) scaleX(1) scaleY(1)",
         }}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
-        className="absolute flex items-center gap-1 rounded-full border px-2 font-mono text-[10px]"
+        className="pointer-events-auto absolute flex items-center gap-1 rounded-full border px-2 font-mono text-[10px]"
       >
         <button
           type="button"
@@ -2678,10 +2752,14 @@ export function ChamferPrumoSpatialUI({
           right: effectiveHandSide === "left" ? 16 : undefined,
           height: 32,
           maxWidth: isNarrowScreen ? "calc(100vw - 180px)" : "calc(100vw - 210px)",
+          transformOrigin: effectiveHandSide === "left" ? "right bottom" : "left bottom",
+          transform: isCollapsedState
+            ? "translate3d(0, 14px, 0) scaleX(1.12) scaleY(0.9)"
+            : "translate3d(0, 0, 0) scaleX(1) scaleY(1)",
         }}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
-        className="absolute flex items-center gap-1 overflow-x-auto scrollbar-none rounded-full border px-2.5 font-mono text-[10px] tabular-nums whitespace-nowrap"
+        className="pointer-events-auto absolute flex items-center gap-1 overflow-x-auto scrollbar-none rounded-full border px-2.5 font-mono text-[10px] tabular-nums whitespace-nowrap"
       >
         {!isNarrowScreen && (
           <>
@@ -2884,12 +2962,19 @@ export function ChamferPrumoSpatialUI({
           E O LEQUE CONCÊNTRICO DE 2 ARCOS (R1 = 112px, R2 = 182px)
           ===================================================================== */}
 
-      {/* LEQUE CONCÊNTRICO DE 2 ARCOS (Renderizado quando fanOpen === true) */}
+      {/* LEQUE CONCÊNTRICO DE 2 ARCOS (Renderizado quando fanOpen === true; recolhe em 140ms para o Núcleo ao sair) */}
       {fanOpen && !respiroActive && (
         <div
           data-testid="prumo-concentric-fan"
           data-r1={innerArcLayout.radiusPx}
           data-r2={outerArcLayout.radiusPx}
+          style={{
+            transformOrigin: `${coreCenter.x}px ${coreCenter.y}px`,
+            transform: fanCollapsing || isExitingToCompact ? "scale(0.18)" : "scale(1)",
+            opacity: fanCollapsing || isExitingToCompact ? 0 : 1,
+            transition:
+              "transform 140ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
           onPointerMove={handleArcScrollPointerMove}
           onPointerUp={handleArcScrollPointerUp}
           onPointerCancel={handleArcScrollPointerUp}
@@ -3107,11 +3192,34 @@ export function ChamferPrumoSpatialUI({
         data-testid="prumo-core-cluster"
         style={{
           opacity: peripheralOpacityStyle.opacity,
-          transition: peripheralOpacityStyle.transition,
+          transformOrigin: `${coreCenter.x}px ${coreCenter.y}px`,
+          transform: isCollapsedState
+            ? `translate3d(${effectiveHandSide === "left" ? "-18px" : "18px"}, -110px, 0) scale(0.76)`
+            : "translate3d(0, 0, 0) scale(1)",
+          transition:
+            "opacity 380ms cubic-bezier(0.22, 1, 0.36, 1), transform 380ms cubic-bezier(0.22, 1, 0.36, 1)",
           pointerEvents: "none",
         }}
         className="pointer-events-none absolute inset-0 z-45"
       >
+        {/* Onda fina azul-ciano (#38BDF8) de calibração óptica que expande 28px (de r=28px para r=56px) e desaparece em 350ms */}
+        {calibrationPulseActive && (
+          <div
+            data-testid="prumo-core-calibration-pulse"
+            style={{
+              width: 56,
+              height: 56,
+              left: coreCenter.x - 28,
+              top: coreCenter.y - 28,
+              borderColor: "#38BDF8",
+              borderWidth: "1.5px",
+              boxShadow: "0 0 12px rgba(56, 189, 248, 0.55)",
+              animation: "prumoOpticalCalibrationWave 350ms cubic-bezier(0.22, 1, 0.36, 1) forwards",
+            }}
+            className="pointer-events-none absolute rounded-full border"
+          />
+        )}
+
         {/* Botão Principal do Núcleo (Calibre Óptico com Anel Graduado 15° / 45°) */}
         <button
           type="button"
@@ -3139,9 +3247,13 @@ export function ChamferPrumoSpatialUI({
             }}
             className="relative flex flex-col items-center justify-center rounded-full border shadow-xl transition-transform active:scale-95"
           >
-            {/* Anel Graduado com Marcações a cada 15° (Maiores a cada 45°) */}
+            {/* Anel Graduado com Marcações a cada 15° (Maiores a cada 45°) — gira 45° com inércia suave ao assentar */}
             <svg
               viewBox="0 0 56 56"
+              style={{
+                transform: ringRotated45 ? "rotate(45deg)" : "rotate(0deg)",
+                transition: "transform 420ms cubic-bezier(0.22, 1, 0.36, 1)",
+              }}
               className="pointer-events-none absolute inset-0 size-full"
               aria-hidden="true"
             >

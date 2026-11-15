@@ -37,6 +37,7 @@ import {
   type Entity,
   type Vec2,
 } from "@/lib/lab2d/core";
+import { flattenPath } from "@/lib/lab2d/bezier";
 import type { WorkplaneOrbitProjection2D } from "@/lib/lab2d/orbit3dController";
 import {
   resolveContactAndAlignmentSnaps3D,
@@ -82,6 +83,7 @@ import {
   applyDirectShell3DToEntities,
   applyDirectTransform3DToEntities,
   buildDirectTopology3DScene,
+  closeAndExtrudeOpenTrace3D,
   executeMetalStructure10StepBenchmark,
   formatSubElementTelemetry3D,
   generateTechnicalDrawingViews2DFrom3D,
@@ -89,6 +91,7 @@ import {
   projectPoint3DToCanvasViewMm,
   resolveFaceShellCapDirection3D,
   resolveShellOpenCapsFromSelection3D,
+  thickenAndExtrudeOpenTraceWall3D,
   type ActiveParametricNumpadSession,
   type BooleanMode3D,
   type DirectBody3D,
@@ -248,6 +251,7 @@ export interface Chamfer3DGizmoAndLoftOverlayProps {
   renderStyle3D?: EdgeMode;
   brepWireframeLayers?: BRepWireframeLayerConfig;
   onChangeBrepWireframeLayers?: (next: BRepWireframeLayerConfig) => void;
+  uiShellMode?: "compact" | "prumo";
 
   isDark?: boolean;
 }
@@ -328,10 +332,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   renderStyle3D = "shaded-edges",
   brepWireframeLayers: brepWireframeLayersProp,
   onChangeBrepWireframeLayers,
+  uiShellMode = "compact",
   isDark = true,
 }) => {
   const rootOverlayRef = useRef<HTMLDivElement>(null);
   const numpadRef = useRef<HTMLDivElement>(null);
+  const [selectedOpenTraceId3D, setSelectedOpenTraceId3D] = useState<string | null>(null);
 
   const selection = useMemo(
     () => selectionProp ?? (selectedIds ? Array.from(selectedIds) : []),
@@ -1819,6 +1825,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 "side_normal",
                 parsed,
                 primaryFace.normal,
+                referenceFrame3D,
+                primaryFace.sideIndex,
               ),
             resolvedIds,
           );
@@ -1845,6 +1853,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               parsed,
               primaryFace?.normal ?? null,
               referenceFrame3D,
+              primaryFace?.sideIndex ?? null,
             ),
           resolvedIds,
         );
@@ -3590,6 +3599,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               "side_normal",
               currentDeltaMm,
               refFace.normal,
+              "wcs",
+              refFace.sideIndex,
             );
             applyLivePreview(nextEntities, session.targetIds);
           } else {
@@ -4122,7 +4133,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           data-chamfer-hud="true"
           style={{
             ...themeSurfaceStyle,
-            top: activeMode === "3d" ? "10px" : "34px",
+            top: uiShellMode === "prumo" ? "52px" : activeMode === "3d" ? "10px" : "34px",
             maxWidth: "calc(100% - 28px)",
           }}
           onWheel={(ev) => ev.stopPropagation()}
@@ -4524,7 +4535,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               data-testid="chamfer-3d-multiselect-action-bar"
               style={{
                 ...themeSurfaceStyle,
-                top: activeMode === "3d" ? "48px" : "72px",
+                top: uiShellMode === "prumo" ? "90px" : activeMode === "3d" ? "48px" : "72px",
                 maxWidth: "calc(100% - 28px)",
               }}
               onPointerDown={(ev) => ev.stopPropagation()}
@@ -4763,7 +4774,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           data-testid="chamfer-3d-loft-top-prompt"
           style={{
             ...themeSurfaceStyle,
-            top: activeMode === "3d" ? "10px" : "34px",
+            top: uiShellMode === "prumo" ? "52px" : activeMode === "3d" ? "10px" : "34px",
             maxWidth: "calc(100% - 24px)",
           }}
           onPointerDown={(ev) => {
@@ -4841,7 +4852,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           data-testid="chamfer-3d-profile-creator-popover"
           style={{
             ...themeSurfaceStyle,
-            top: activeMode === "3d" ? "50px" : "74px",
+            top: uiShellMode === "prumo" ? "92px" : activeMode === "3d" ? "50px" : "74px",
             maxWidth: "calc(100% - 24px)",
           }}
           onPointerDown={(ev) => ev.stopPropagation()}
@@ -4963,7 +4974,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           data-testid="chamfer-3d-contextual-guide-banner"
           style={{
             ...themeSurfaceStyle,
-            top: activeMode === "3d" ? "12px" : "36px",
+            top: uiShellMode === "prumo" ? "52px" : activeMode === "3d" ? "12px" : "36px",
             maxWidth: "calc(100% - 24px)",
           }}
           onPointerDown={(ev) => ev.stopPropagation()}
@@ -6727,6 +6738,112 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             });
           });
         })()}
+
+          {/* ================================================================= */}
+          {/* A2. LINHAS E POLILINHAS GENUINAMENTE ABERTAS NO PLANO DE TRABALHO 3D */}
+          {/* Renderizadas em Ciano Técnico (#38BDF8, 2px) com seleção p/ conversão */}
+          {/* ================================================================= */}
+          {(scene.openTraceEntities ?? []).map((openEnt) => {
+            const z0 = Number(openEnt.elevationZ ?? openEnt.params?.elevationZ ?? 0);
+            let pts2D: Vec2[] = [];
+            if (openEnt.type === "line") {
+              pts2D = [
+                { x: openEnt.x1, y: openEnt.y1 },
+                { x: openEnt.x2, y: openEnt.y2 },
+              ];
+            } else if (openEnt.type === "polyline") {
+              pts2D = openEnt.pts;
+            } else if (openEnt.type === "arc") {
+              let sweep = openEnt.a1 - openEnt.a0;
+              if (Math.abs(sweep) < 1e-4) sweep = Math.PI;
+              for (let i = 0; i <= 24; i++) {
+                const a = openEnt.a0 + (sweep * i) / 24;
+                pts2D.push({
+                  x: openEnt.cx + Math.cos(a) * openEnt.r,
+                  y: openEnt.cy + Math.sin(a) * openEnt.r,
+                });
+              }
+            } else if (openEnt.type === "path") {
+              pts2D = flattenPath(openEnt.start, openEnt.segs, openEnt.closed, 10);
+            }
+            if (pts2D.length < 2) return null;
+
+            const isOpenSelected =
+              selectedOpenTraceId3D === openEnt.id || selection.includes(openEnt.id);
+            const screenPts = pts2D
+              .map((p) => {
+                const s = toScreen({ x: p.x, y: p.y, z: z0 });
+                return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+              })
+              .join(" ");
+
+            return (
+              <g
+                key={`open_trace_3d_${openEnt.id}`}
+                data-testid={`chamfer-3d-open-trace-${openEnt.id}`}
+                className="pointer-events-auto cursor-pointer"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("selection");
+                  setSelectedOpenTraceId3D(openEnt.id);
+                  setSubSel({
+                    faceIds: [],
+                    edgeIds: [],
+                    vertexIds: [],
+                    bodyIds: [],
+                    selectionScope: "auto",
+                    activePivot3D: {
+                      x: pts2D[0]!.x,
+                      y: pts2D[0]!.y,
+                      z: z0,
+                    },
+                    activeHingeEdgeId: null,
+                  });
+                  onSelectEntities?.([openEnt.id]);
+                }}
+              >
+                <polyline
+                  points={screenPts}
+                  fill="none"
+                  stroke="rgba(0,0,0,0.001)"
+                  strokeWidth={20}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ pointerEvents: "stroke" }}
+                />
+                <polyline
+                  points={screenPts}
+                  fill="none"
+                  stroke={isOpenSelected ? "#00E5FF" : "#38BDF8"}
+                  strokeWidth={isOpenSelected ? 3.2 : 2.0}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={isOpenSelected ? undefined : "6 3"}
+                  style={{ pointerEvents: "none" }}
+                />
+                {pts2D.map((pt, idx) => {
+                  if (idx !== 0 && idx !== pts2D.length - 1) return null;
+                  const sp = toScreen({ x: pt.x, y: pt.y, z: z0 });
+                  return (
+                    <circle
+                      key={idx}
+                      cx={sp.x}
+                      cy={sp.y}
+                      r={isOpenSelected ? 4.2 : 3.0}
+                      fill={isOpenSelected ? "#00E5FF" : "#38BDF8"}
+                      stroke="#0B1220"
+                      strokeWidth={1.2}
+                      style={{ pointerEvents: "none" }}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
 
           {/* ================================================================= */}
           {/* B. HIT-TARGETS INTERATIVOS PARA TODAS AS ARESTAS 3D DA CENA      */}
@@ -9393,6 +9510,105 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                               : `0.0 mm`
                             : `${primaryBody.extrudeHeightMm.toFixed(1)} mm`}
                 </span>
+              </button>
+            </div>
+          );
+        })()}
+
+      {/* =====================================================================
+          3A-OPEN. BARRA DE CONVERSÃO 1-TOQUE PARA LINHAS / POLILINHAS ABERTAS NO 3D
+          ===================================================================== */}
+      {is3DEnvironment &&
+        (() => {
+          const openList = scene.openTraceEntities ?? [];
+          const activeOpenEnt =
+            openList.find((e) => e.id === selectedOpenTraceId3D) ??
+            openList.find((e) => selection.includes(e.id)) ??
+            null;
+          if (!activeOpenEnt) return null;
+          return (
+            <div
+              data-testid="chamfer-3d-open-trace-conversion-bar"
+              style={{
+                ...themeSurfaceStyle,
+                bottom: uiShellMode === "prumo" ? "76px" : "58px",
+              }}
+              onPointerDown={(ev) => {
+                ev.stopPropagation();
+                ev.preventDefault();
+              }}
+              onClick={(ev) => ev.stopPropagation()}
+              className="pointer-events-auto absolute left-1/2 z-40 flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-2xl border border-cyan-400/75 px-3 py-1.5 font-mono text-[10px] font-bold shadow-2xl backdrop-blur-xl"
+            >
+              <span className="shrink-0 rounded-full border border-cyan-400/50 bg-cyan-500/20 px-2 py-0.5 text-[9.5px] font-extrabold text-cyan-300">
+                TRAÇO ABERTO 3D
+              </span>
+              <button
+                type="button"
+                data-testid="chamfer-3d-close-and-extrude-btn"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("action");
+                  const targetId = activeOpenEnt.id;
+                  let closedId: string | null = targetId;
+                  onCommitEntities?.((prev) => {
+                    const res = closeAndExtrudeOpenTrace3D(prev, targetId, sheetThickness);
+                    closedId = res.closedEntityId ?? targetId;
+                    return res.updatedEntities;
+                  }, [targetId]);
+                  setSelectedOpenTraceId3D(null);
+                  if (closedId) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: [`body_${closedId}`],
+                      selectionScope: "body",
+                      activePivot3D: null,
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.([closedId]);
+                  }
+                }}
+                className="shrink-0 rounded-full border border-cyan-400 bg-cyan-500/25 hover:bg-cyan-500/40 px-2.5 py-1 text-[10px] font-extrabold text-cyan-100 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                ⬠ Fechar Contorno e Extrudar Sólido
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-thicken-wall-extrude-btn"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("action");
+                  const targetId = activeOpenEnt.id;
+                  let closedId: string | null = targetId;
+                  onCommitEntities?.((prev) => {
+                    const res = thickenAndExtrudeOpenTraceWall3D(
+                      prev,
+                      targetId,
+                      Math.max(4, Math.min(12, sheetThickness * 0.4)),
+                      sheetThickness,
+                    );
+                    closedId = res.closedEntityId ?? targetId;
+                    return res.updatedEntities;
+                  }, [targetId]);
+                  setSelectedOpenTraceId3D(null);
+                  if (closedId) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: [`body_${closedId}`],
+                      selectionScope: "body",
+                      activePivot3D: null,
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.([closedId]);
+                  }
+                }}
+                className="shrink-0 rounded-full border border-sky-400/80 bg-sky-500/20 hover:bg-sky-500/35 px-2.5 py-1 text-[10px] font-extrabold text-sky-100 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                🧱 Dar Espessura de Parede (Offset + Extrusão)
               </button>
             </div>
           );

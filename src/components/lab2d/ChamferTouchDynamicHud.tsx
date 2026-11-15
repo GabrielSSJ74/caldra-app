@@ -107,6 +107,7 @@ export interface ChamferTouchDynamicHudProps {
   showPushPullZHandle: boolean;
   thicknessMm: number;
   onChangeThicknessMm: (nextZ: number) => void;
+  uiShellMode?: "compact" | "prumo";
 }
 
 export function ChamferTouchDynamicHud({
@@ -148,6 +149,7 @@ export function ChamferTouchDynamicHud({
   onPickOverlappingEntity,
   onDismissOverlapping,
   onChangeThicknessMm,
+  uiShellMode = "compact",
 }: ChamferTouchDynamicHudProps) {
   const [keypadField, setKeypadField] = useState<DimensionalFieldKind | null>(null);
   const [inputVal, setInputVal] = useState<string>("");
@@ -278,7 +280,7 @@ export function ChamferTouchDynamicHud({
         <div
           data-testid="chamfer-slim-submode-bar"
           style={{
-            top: 22, // Logo abaixo da régua horizontal superior (22px), sem cobrir os números da régua
+            top: uiShellMode === "prumo" ? 52 : 22, // No modo PRUMO fica a 52px do topo (abaixo da Ilha Superior Esquerda e Controle de Vista Direito)
             height: 26,
             padding: "2px 6px",
             gap: 4,

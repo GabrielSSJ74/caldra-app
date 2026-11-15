@@ -21,6 +21,7 @@
 
 import * as THREE from "three";
 import { bbox, boxOf, rectPolyline, translate, uid, type Entity, type Vec2 } from "./core";
+import { flattenPath } from "./bezier";
 import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
 import {
@@ -324,6 +325,7 @@ export interface DirectTopology3DScene {
   facesByMeshIndex: Map<number, DirectFace3D>;
   edgesByMeshIndex: Map<number, DirectEdge3D>;
   tessellatedShape: CadTessellatedShape;
+  openTraceEntities?: Entity[];
 }
 
 export type SelectionScope3D = "auto" | "vertex" | "edge" | "face" | "body";
@@ -852,6 +854,367 @@ function extractSharpCornersFromLoop2D(ccwPts: Vec2[], minAngleDeg = 25): Vec2[]
 }
 
 /**
+ * Sanitiza um anel poligonal fechado 2D:
+ * - Remove vértices consecutivos duplicados (distância <= 0.05 mm)
+ * - Remove o vértice final duplicado de fechamento (distância ao primeiro <= closeTolMm)
+ * - Remove pontos intermediários estritamente colineares redundantes
+ */
+export function sanitizeClosedPolygonLoop2D(pts: Vec2[], closeTolMm = 2.05): Vec2[] {
+  if (!pts || pts.length < 3) return [];
+  const deduped: Vec2[] = [];
+  for (const p of pts) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    const prev = deduped[deduped.length - 1];
+    if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y) > 0.05) {
+      deduped.push({ x: Number(p.x.toFixed(3)), y: Number(p.y.toFixed(3)) });
+    }
+  }
+  while (
+    deduped.length > 3 &&
+    Math.hypot(
+      deduped[0]!.x - deduped[deduped.length - 1]!.x,
+      deduped[0]!.y - deduped[deduped.length - 1]!.y,
+    ) <= closeTolMm
+  ) {
+    deduped.pop();
+  }
+  if (deduped.length < 3) return [];
+
+  // Para polígonos retos/mistos (<= 48 vértices), remove vértices intermediários estritamente colineares
+  if (deduped.length <= 48) {
+    const simplified: Vec2[] = [];
+    const n = deduped.length;
+    for (let i = 0; i < n; i++) {
+      const prev = deduped[(i - 1 + n) % n]!;
+      const curr = deduped[i]!;
+      const next = deduped[(i + 1) % n]!;
+      const vx1 = curr.x - prev.x;
+      const vy1 = curr.y - prev.y;
+      const vx2 = next.x - curr.x;
+      const vy2 = next.y - curr.y;
+      const l1 = Math.hypot(vx1, vy1);
+      const l2 = Math.hypot(vx2, vy2);
+      if (l1 < 0.05 || l2 < 0.05) continue;
+      const cross = Math.abs(vx1 * vy2 - vy1 * vx2) / (l1 * l2);
+      const dot = (vx1 * vx2 + vy1 * vy2) / (l1 * l2);
+      // Se os dois segmentos seguem exatamente a mesma direção (colineares), o vértice do meio é redundante
+      if (cross < 1e-3 && dot > 0.999) {
+        continue;
+      }
+      simplified.push(curr);
+    }
+    if (simplified.length >= 3) {
+      return simplified;
+    }
+  }
+  return deduped;
+}
+
+/**
+ * MOTOR UNIVERSAL DE COSTURA DE CONTORNOS 2D -> 3D (Topological Loop Stitcher):
+ * 1. Fecha automaticamente `polyline` e `path` cujas pontas estejam a <= toleranceMm (2.0 mm).
+ * 2. Constrói um grafo planar de adjacência de extremidades para encadear segmentos abertos
+ *    (`line`, `arc`, `polyline` aberta) que formam um contorno fechado (ex.: esquadro em "L"
+ *    desenhado com 6 linhas soltas ou polilinha não marcada como fechada).
+ * 3. Consolida cada ciclo fechado em uma `polyline` fechada limpa para que seja 100% visível e
+ *    maleável por todas as ferramentas do CAD 3D.
+ */
+export function consolidateStitchedLoopsInEntities2D(
+  entities: Entity[],
+  toleranceMm = 2.0,
+): { entities: Entity[]; stitchedCount: number; openTraceEntities: Entity[] } {
+  if (!entities || entities.length === 0) {
+    return { entities: [], stitchedCount: 0, openTraceEntities: [] };
+  }
+
+  interface OpenChainSegment {
+    entity: Entity;
+    pts: Vec2[];
+    used: boolean;
+  }
+
+  const openSegments: OpenChainSegment[] = [];
+  const normalizedEntities: Entity[] = [];
+  let stitchedCount = 0;
+
+  for (const ent of entities) {
+    if (
+      ent.isConstruction ||
+      ent.layer === "cota" ||
+      ent.layer === "referencia" ||
+      ent.params?.excludeFrom3D
+    ) {
+      normalizedEntities.push(ent);
+      continue;
+    }
+    const fhMeta = ent.params?.freehand as { usageRole?: string } | undefined;
+    if (fhMeta?.usageRole === "markup") {
+      normalizedEntities.push(ent);
+      continue;
+    }
+
+    if (ent.type === "polyline") {
+      if (ent.pts.length >= 3) {
+        const first = ent.pts[0]!;
+        const last = ent.pts[ent.pts.length - 1]!;
+        const gap = Math.hypot(first.x - last.x, first.y - last.y);
+        if (ent.closed || gap <= toleranceMm) {
+          const hasBulges =
+            Array.isArray(ent.bulges) && ent.bulges.some((b) => Math.abs(b) > 1e-4);
+          if (!hasBulges) {
+            const cleanPts = sanitizeClosedPolygonLoop2D(ent.pts, toleranceMm + 0.05);
+            if (cleanPts.length >= 3) {
+              const needsUpdate = !ent.closed || cleanPts.length !== ent.pts.length;
+              if (needsUpdate) stitchedCount++;
+              normalizedEntities.push({
+                ...ent,
+                closed: true,
+                pts: cleanPts,
+              });
+              continue;
+            }
+          } else if (!ent.closed) {
+            stitchedCount++;
+            normalizedEntities.push({ ...ent, closed: true });
+            continue;
+          }
+          normalizedEntities.push(ent);
+          continue;
+        }
+      }
+      if (!ent.closed && ent.pts.length >= 2) {
+        openSegments.push({
+          entity: ent,
+          pts: ent.pts.map((p) => ({ x: p.x, y: p.y })),
+          used: false,
+        });
+      }
+      normalizedEntities.push(ent);
+      continue;
+    }
+
+    if (ent.type === "path") {
+      const flat = flattenPath(ent.start, ent.segs, ent.closed, 12);
+      if (flat.length >= 3) {
+        const first = flat[0]!;
+        const last = flat[flat.length - 1]!;
+        if (ent.closed || Math.hypot(first.x - last.x, first.y - last.y) <= toleranceMm) {
+          const cleanPts = sanitizeClosedPolygonLoop2D(flat, toleranceMm + 0.05);
+          if (cleanPts.length >= 3) {
+            stitchedCount++;
+            normalizedEntities.push({
+              ...ent,
+              type: "polyline",
+              pts: cleanPts,
+              closed: true,
+            } as Entity);
+            continue;
+          }
+        }
+      }
+      normalizedEntities.push(ent);
+      continue;
+    }
+
+    if (ent.type === "line") {
+      const len = Math.hypot(ent.x2 - ent.x1, ent.y2 - ent.y1);
+      if (len > 0.1) {
+        openSegments.push({
+          entity: ent,
+          pts: [
+            { x: ent.x1, y: ent.y1 },
+            { x: ent.x2, y: ent.y2 },
+          ],
+          used: false,
+        });
+      }
+      normalizedEntities.push(ent);
+      continue;
+    }
+
+    if (ent.type === "arc") {
+      if (ent.r > 0.1) {
+        let sweep = ent.a1 - ent.a0;
+        if (Math.abs(sweep) < 1e-4) sweep = Math.PI * 2;
+        const steps = Math.max(8, Math.min(48, Math.ceil((Math.abs(sweep) / (Math.PI / 2)) * 12)));
+        const arcPts: Vec2[] = [];
+        for (let i = 0; i <= steps; i++) {
+          const a = ent.a0 + (sweep * i) / steps;
+          arcPts.push({
+            x: ent.cx + Math.cos(a) * ent.r,
+            y: ent.cy + Math.sin(a) * ent.r,
+          });
+        }
+        openSegments.push({
+          entity: ent,
+          pts: arcPts,
+          used: false,
+        });
+      }
+      normalizedEntities.push(ent);
+      continue;
+    }
+
+    normalizedEntities.push(ent);
+  }
+
+  // Costura topológica planar de segmentos abertos (`line`, `arc`, `polyline` aberta) em ciclos fechados
+  const consumedIds = new Set<string>();
+  const stitchedPolylines: Entity[] = [];
+
+  for (let i = 0; i < openSegments.length; i++) {
+    const startSeg = openSegments[i]!;
+    if (startSeg.used || startSeg.pts.length < 2) continue;
+
+    const chainSegs: OpenChainSegment[] = [startSeg];
+    startSeg.used = true;
+    const chainPts: Vec2[] = [...startSeg.pts];
+
+    let closedLoopFound = false;
+    let safety = 0;
+    while (safety++ < 256) {
+      const head = chainPts[0]!;
+      const tail = chainPts[chainPts.length - 1]!;
+      if (
+        chainSegs.length >= 2 &&
+        chainPts.length >= 4 &&
+        Math.hypot(head.x - tail.x, head.y - tail.y) <= toleranceMm
+      ) {
+        closedLoopFound = true;
+        break;
+      }
+
+      // Procura o segmento não utilizado cuja extremidade esteja mais próxima de `tail` (<= toleranceMm)
+      let bestSeg: OpenChainSegment | null = null;
+      let bestReverse = false;
+      let bestDist = toleranceMm;
+
+      for (const cand of openSegments) {
+        if (cand.used || cand.pts.length < 2) continue;
+        const cStart = cand.pts[0]!;
+        const cEnd = cand.pts[cand.pts.length - 1]!;
+        const dStart = Math.hypot(tail.x - cStart.x, tail.y - cStart.y);
+        const dEnd = Math.hypot(tail.x - cEnd.x, tail.y - cEnd.y);
+        if (dStart <= bestDist) {
+          bestDist = dStart;
+          bestSeg = cand;
+          bestReverse = false;
+        }
+        if (dEnd <= bestDist) {
+          bestDist = dEnd;
+          bestSeg = cand;
+          bestReverse = true;
+        }
+      }
+
+      if (!bestSeg) break;
+      bestSeg.used = true;
+      chainSegs.push(bestSeg);
+      const ptsToAppend = bestReverse ? [...bestSeg.pts].reverse() : bestSeg.pts;
+      for (let k = 1; k < ptsToAppend.length; k++) {
+        chainPts.push(ptsToAppend[k]!);
+      }
+    }
+
+    const head = chainPts[0]!;
+    const tail = chainPts[chainPts.length - 1]!;
+    if (
+      !closedLoopFound &&
+      chainSegs.length >= 2 &&
+      chainPts.length >= 4 &&
+      Math.hypot(head.x - tail.x, head.y - tail.y) <= toleranceMm
+    ) {
+      closedLoopFound = true;
+    }
+
+    if (closedLoopFound) {
+      const cleanLoop = sanitizeClosedPolygonLoop2D(chainPts, toleranceMm + 0.05);
+      const areaAbs = Math.abs(signedArea2D(cleanLoop));
+      if (cleanLoop.length >= 3 && areaAbs >= 0.5) {
+        for (const s of chainSegs) {
+          consumedIds.add(s.entity.id);
+        }
+        const primaryEnt = chainSegs[0]!.entity;
+        stitchedPolylines.push({
+          id: primaryEnt.id,
+          type: "polyline",
+          pts: ensureCCW(cleanLoop),
+          closed: true,
+          layer: primaryEnt.layer,
+          elevationZ: primaryEnt.elevationZ,
+          extrudeHeight: primaryEnt.extrudeHeight,
+          shellWallThickness: primaryEnt.shellWallThickness,
+          params: {
+            ...(primaryEnt.params ?? {}),
+            stitchedFromSegmentIds: chainSegs.map((s) => s.entity.id),
+            isStitchedClosedContour2D: true,
+          },
+        });
+        stitchedCount++;
+        continue;
+      }
+    }
+
+    // Se não fechou ciclo, libera segmentos para permanecerem como traços abertos
+    for (const s of chainSegs) {
+      s.used = false;
+    }
+  }
+
+  const finalEntities: Entity[] = [];
+  const stitchedByPrimaryId = new Map<string, Entity>();
+  for (const sp of stitchedPolylines) {
+    stitchedByPrimaryId.set(sp.id, sp);
+  }
+
+  for (const ent of normalizedEntities) {
+    const replacement = stitchedByPrimaryId.get(ent.id);
+    if (replacement) {
+      finalEntities.push(replacement);
+      stitchedByPrimaryId.delete(ent.id);
+      continue;
+    }
+    if (consumedIds.has(ent.id)) {
+      continue;
+    }
+    finalEntities.push(ent);
+  }
+
+  const openTraceEntities = finalEntities.filter((ent) => {
+    if (
+      ent.isConstruction ||
+      ent.layer === "cota" ||
+      ent.layer === "referencia" ||
+      ent.params?.excludeFrom3D
+    ) {
+      return false;
+    }
+    if (ent.type === "line" || ent.type === "arc") return true;
+    if (ent.type === "polyline" && !ent.closed) {
+      if (ent.pts.length < 2) return false;
+      const f = ent.pts[0]!;
+      const l = ent.pts[ent.pts.length - 1]!;
+      return Math.hypot(f.x - l.x, f.y - l.y) > toleranceMm;
+    }
+    if (ent.type === "path") {
+      if (ent.closed) return false;
+      const flat = flattenPath(ent.start, ent.segs, false, 10);
+      if (flat.length < 2) return false;
+      const f = flat[0]!;
+      const l = flat[flat.length - 1]!;
+      return Math.hypot(f.x - l.x, f.y - l.y) > toleranceMm;
+    }
+    return false;
+  });
+
+  return {
+    entities: finalEntities,
+    stitchedCount,
+    openTraceEntities,
+  };
+}
+
+/**
  * Extrai os vértices base de um perfil fechado 2D (antes de fillet/offset 3D).
  */
 export function extractBaseClosedLoop2D(
@@ -928,7 +1291,7 @@ export function extractBaseClosedLoop2D(
     if (entity.pts.length < 3) return null;
     const first = entity.pts[0]!;
     const last = entity.pts[entity.pts.length - 1]!;
-    const isClosed = entity.closed || Math.hypot(first.x - last.x, first.y - last.y) < 1.5;
+    const isClosed = entity.closed || Math.hypot(first.x - last.x, first.y - last.y) <= 2.05;
     if (!isClosed) return null;
 
     const hasBulges =
@@ -938,7 +1301,7 @@ export function extractBaseClosedLoop2D(
     if (hasBulges && entity.bulges) {
       const nPts = entity.pts.length;
       const closesAtLast =
-        Math.hypot(first.x - last.x, first.y - last.y) < 0.05 && nPts > 3;
+        Math.hypot(first.x - last.x, first.y - last.y) <= 2.05 && nPts > 3;
       const loopCount = closesAtLast ? nPts - 1 : nPts;
       for (let i = 0; i < loopCount; i++) {
         const pA = entity.pts[i]!;
@@ -955,40 +1318,62 @@ export function extractBaseClosedLoop2D(
       }
     }
 
-    // Remove pontos adjacentes duplicados
-    const clean: Vec2[] = [];
-    for (const p of rawExpanded) {
-      const prev = clean[clean.length - 1];
-      if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y) > 0.02) {
-        clean.push({ x: p.x, y: p.y });
-      }
-    }
-    if (
-      clean.length > 2 &&
-      Math.hypot(
-        clean[0]!.x - clean[clean.length - 1]!.x,
-        clean[0]!.y - clean[clean.length - 1]!.y,
-      ) < 0.02
-    ) {
-      clean.pop();
-    }
+    const clean = hasBulges
+      ? (() => {
+          const arr: Vec2[] = [];
+          for (const p of rawExpanded) {
+            const prev = arr[arr.length - 1];
+            if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y) > 0.02) {
+              arr.push({ x: p.x, y: p.y });
+            }
+          }
+          if (
+            arr.length > 2 &&
+            Math.hypot(arr[0]!.x - arr[arr.length - 1]!.x, arr[0]!.y - arr[arr.length - 1]!.y) <=
+              2.05
+          ) {
+            arr.pop();
+          }
+          return arr;
+        })()
+      : sanitizeClosedPolygonLoop2D(rawExpanded, 2.05);
+
     if (clean.length < 3) return null;
     const ccw = ensureCCW(clean);
     const sharpCorners = extractSharpCornersFromLoop2D(ccw, 25);
     return {
       points: ccw,
       isSmoothCircle: sharpCorners.length === 0 && ccw.length > 24,
-      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 8),
+      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 12),
     };
   }
 
-  if (entity.type === "hatch" && entity.boundaryPts.length >= 3) {
-    const ccw = ensureCCW(entity.boundaryPts);
+  if (entity.type === "path") {
+    const flat = flattenPath(entity.start, entity.segs, entity.closed, 12);
+    if (flat.length < 3) return null;
+    const first = flat[0]!;
+    const last = flat[flat.length - 1]!;
+    if (!entity.closed && Math.hypot(first.x - last.x, first.y - last.y) > 2.05) return null;
+    const clean = sanitizeClosedPolygonLoop2D(flat, 2.05);
+    if (clean.length < 3) return null;
+    const ccw = ensureCCW(clean);
     const sharpCorners = extractSharpCornersFromLoop2D(ccw, 25);
     return {
       points: ccw,
       isSmoothCircle: sharpCorners.length === 0 && ccw.length > 24,
-      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 8),
+      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 12),
+    };
+  }
+
+  if (entity.type === "hatch" && entity.boundaryPts.length >= 3) {
+    const clean = sanitizeClosedPolygonLoop2D(entity.boundaryPts, 2.05);
+    if (clean.length < 3) return null;
+    const ccw = ensureCCW(clean);
+    const sharpCorners = extractSharpCornersFromLoop2D(ccw, 25);
+    return {
+      points: ccw,
+      isSmoothCircle: sharpCorners.length === 0 && ccw.length > 24,
+      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 12),
     };
   }
 
@@ -1478,9 +1863,10 @@ function triangleArea3D(a: Vec3Mm, b: Vec3Mm, c: Vec3Mm): number {
  * a partir da lista de entidades do CHAMFER CAD.
  */
 export function buildDirectTopology3DScene(
-  entities: Entity[],
+  rawEntities: Entity[],
   defaultThicknessMm = 20,
 ): DirectTopology3DScene {
+  const { entities, openTraceEntities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const validLoops: {
     entity: Entity;
     basePoints: Vec2[];
@@ -1527,7 +1913,7 @@ export function buildDirectTopology3DScene(
     });
   }
 
-  // Ordena do maior para o menor para identificar contornos externos vs. furos internos na mesma elevação
+  // Ordena do maior para o menor para identificar contornos externos vs. furos internos e ilhas (paridade de profundidade)
   validLoops.sort((a, b) => b.areaAbs - a.areaAbs);
 
   interface SolidProfileGroup {
@@ -1548,46 +1934,56 @@ export function buildDirectTopology3DScene(
       continue;
     }
 
-    // Verifica se este perfil é um furo/recorte contido em um perfil maior na mesma faixa Z
-    let parentGroup: SolidProfileGroup | null = null;
-    for (const grp of groups) {
-      if (grp.outer.params3D.is3DProfileCurve) continue;
-      const sameZ = Math.abs(grp.outer.params3D.elevationZ - cand.params3D.elevationZ) < 1.0;
-      const isExplicitHole =
-        cand.entity.layer === "furo" ||
-        cand.entity.layer === "recorte" ||
-        cand.entity.params?.booleanMode3D === "subtract";
-      const isRegularPolygonProfile =
-        !isExplicitHole &&
-        (cand.entity.params?.isPolygon3D === true ||
-          cand.entity.params?.shapeKind === "regular_polygon" ||
-          typeof cand.entity.params?.polygonSides === "number");
-      const isForceNewBody =
-        !isExplicitHole &&
-        (isRegularPolygonProfile ||
-          cand.entity.params?.isIndependentBody3D === true ||
-          cand.entity.params?.isSmartGrilleBar3D === true ||
-          cand.entity.params?.isHorizontalMiterBar3D === true ||
-          grp.outer.entity.params?.isHorizontalMiterBar3D === true ||
-          cand.entity.params?.booleanMode3D === "union" ||
-          cand.entity.params?.booleanMode3D === "new_body");
-      if (!sameZ || isForceNewBody) continue;
+    const isExplicitHole =
+      cand.entity.layer === "furo" ||
+      cand.entity.layer === "recorte" ||
+      cand.entity.params?.booleanMode3D === "subtract";
+    const isLoftCreatorPolygon3D = !isExplicitHole && cand.entity.params?.isPolygon3D === true;
+    const isForceNewBody =
+      !isExplicitHole &&
+      (isLoftCreatorPolygon3D ||
+        cand.entity.params?.isIndependentBody3D === true ||
+        cand.entity.params?.isSmartGrilleBar3D === true ||
+        cand.entity.params?.isHorizontalMiterBar3D === true ||
+        cand.entity.params?.booleanMode3D === "union" ||
+        cand.entity.params?.booleanMode3D === "new_body");
 
-      const samplePt = cand.basePoints[0]!;
-      const midPt = cand.basePoints[Math.floor(cand.basePoints.length / 2)] ?? samplePt;
+    if (isForceNewBody) {
+      groups.push({ outer: cand, holes: [] });
+      continue;
+    }
+
+    // Calcula a profundidade de aninhamento (Point-in-Polygon Inclusion Depth Parity)
+    // Profundidade ímpar (1, 3...) -> Furo do contorno pai imediatamente superior
+    // Profundidade par (0, 2...) -> Corpo Sólido independente (peça externa ou ilha interna)
+    const samplePt = cand.basePoints[0]!;
+    const midPt = cand.basePoints[Math.floor(cand.basePoints.length / 2)] ?? samplePt;
+    let inclusionDepth = 0;
+    let smallestContainingOuterGroup: SolidProfileGroup | null = null;
+
+    for (let j = 0; j < i; j++) {
+      const ancestor = validLoops[j]!;
+      if (ancestor.params3D.is3DProfileCurve) continue;
+      if (ancestor.entity.params?.isHorizontalMiterBar3D === true) continue;
+      const sameZ =
+        Math.abs(ancestor.params3D.elevationZ - cand.params3D.elevationZ) < 1.0;
+      if (!sameZ) continue;
       if (
-        cand.areaAbs < grp.outer.areaAbs * 0.92 &&
-        pointInPolygon2D(samplePt, grp.outer.basePoints) &&
-        pointInPolygon2D(midPt, grp.outer.basePoints)
+        cand.areaAbs < ancestor.areaAbs * 0.96 &&
+        pointInPolygon2D(samplePt, ancestor.basePoints) &&
+        pointInPolygon2D(midPt, ancestor.basePoints)
       ) {
-        parentGroup = grp;
-        break;
+        inclusionDepth++;
+        const matchingGrp = groups.find((g) => g.outer.entity.id === ancestor.entity.id);
+        if (matchingGrp) {
+          smallestContainingOuterGroup = matchingGrp;
+        }
       }
     }
 
-    if (parentGroup) {
+    if ((inclusionDepth % 2 === 1 || isExplicitHole) && smallestContainingOuterGroup) {
       assignedAsHole.add(cand.entity.id);
-      parentGroup.holes.push(cand);
+      smallestContainingOuterGroup.holes.push(cand);
     } else {
       groups.push({ outer: cand, holes: [] });
     }
@@ -5308,6 +5704,7 @@ export function buildDirectTopology3DScene(
     facesByMeshIndex,
     edgesByMeshIndex,
     tessellatedShape,
+    openTraceEntities,
   };
 }
 
@@ -5606,11 +6003,12 @@ function recomputeMiterBarTrapezoidPts2D(spec: MiterBarSpec3DInternal): Vec2[] {
 }
 
 export function applyDirectExtrudeToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   extrudeHeightMm: number,
   booleanMode3D?: BooleanMode3D,
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const clamped = Math.max(0.5, Number(extrudeHeightMm.toFixed(2)));
   const idSet = new Set(targetIds);
   return entities.map((e) => {
@@ -5636,12 +6034,13 @@ export function applyDirectExtrudeToEntities(
  * cria um NOVO corpo 3D independente (`Body3D`) encostado na face selecionada, herdando o perfil e a casca (`Shell`).
  */
 export function applyDirectFaceExtrude3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   deltaHeightMm: number,
   booleanMode3D: BooleanMode3D = "union",
   copyIdMap?: Map<string, string>,
 ): { updatedEntities: Entity[]; activeIds: string[] } {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   if (booleanMode3D !== "new_body") {
     const idSet = new Set(targetIds);
     const updated = entities.map((e) => {
@@ -5736,12 +6135,13 @@ export function applyDirectFaceExtrude3DToEntities(
 }
 
 export function applyDirectVertexOrEdgeBevel3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   bevelKeys: string[],
   bevelDistMm: number,
   mode: "fillet" | "chamfer" = "chamfer",
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const clamped = Math.max(0, Number(bevelDistMm.toFixed(2)));
   const idSet = new Set(targetIds);
   return entities.map((e) => {
@@ -5785,13 +6185,14 @@ export function applyDirectVertexOrEdgeBevel3DToEntities(
 }
 
 export function applyDirectFilletOrChamfer3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   mode: "fillet" | "chamfer",
   valueMm: number,
   targetEdgeIndices?: number[],
   targetBevelKeys?: string[],
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const clamped = Math.max(0, Number(valueMm.toFixed(2)));
   const idSet = new Set(targetIds);
 
@@ -5979,11 +6380,12 @@ export function resolveShellOpenCapsFromSelection3D(
 }
 
 export function applyDirectShell3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   wallThicknessMm: number,
   openCaps: ShellOpenCap3D[] = ["top", "bottom"],
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const clamped = Math.max(0, Number(wallThicknessMm.toFixed(2)));
   const idSet = new Set(targetIds);
   return entities.map((e) => {
@@ -6013,7 +6415,7 @@ export function applyDirectShell3DToEntities(
 }
 
 export function applyDirectOffsetFace3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   faceTarget:
     | "top"
@@ -6028,7 +6430,9 @@ export function applyDirectOffsetFace3DToEntities(
   deltaMm: number,
   faceNormal?: Vec3Mm | null,
   referenceFrame: CoordinateReferenceFrame3D = "wcs",
+  sideIndex?: number | null,
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const rounded = Number(deltaMm.toFixed(2));
   const idSet = new Set(targetIds);
 
@@ -6375,47 +6779,93 @@ export function applyDirectOffsetFace3DToEntities(
           return { ...e, x: nextX, y: nextY, w: nextW, h: nextH };
         }
         if (e.type === "polyline" && e.pts.length >= 3) {
-          const b = boxOf(e);
-          const cx = (b.minX + b.maxX) * 0.5;
-          const cy = (b.minY + b.maxY) * 0.5;
-          const rawNextPts = e.pts.map((pt) => {
-            const proj = (pt.x - cx) * ux + (pt.y - cy) * uy;
-            if (proj > 0) {
+          const cleanLoop = ensureCCW(sanitizeClosedPolygonLoop2D(e.pts, 2.05));
+          const nPts = cleanLoop.length;
+          if (nPts >= 3) {
+            const b = boxOf(e);
+            const cx = (b.minX + b.maxX) * 0.5;
+            const cy = (b.minY + b.maxY) * 0.5;
+
+            // Se `sideIndex` específico de parede lateral (ex.: uma das 6 faces do Esquadro em "L") foi fornecido
+            // ou se `resolvedTarget === "side_normal"`, desloca APENAS os 2 vértices daquela parede específica!
+            let targetWallIdx =
+              typeof sideIndex === "number" && sideIndex >= 0 && sideIndex < nPts
+                ? sideIndex
+                : -1;
+
+            if (targetWallIdx < 0 && resolvedTarget === "side_normal") {
+              let bestDot = 0.75;
+              for (let i = 0; i < nPts; i++) {
+                const pA = cleanLoop[i]!;
+                const pB = cleanLoop[(i + 1) % nPts]!;
+                const edx = pB.x - pA.x;
+                const edy = pB.y - pA.y;
+                const elen = Math.hypot(edx, edy);
+                if (elen < 1e-4) continue;
+                // Para contorno CCW, a normal externa da aresta i (pA -> pB) é (edy/elen, -edx/elen)
+                const enx = edy / elen;
+                const eny = -edx / elen;
+                const dot = enx * ux + eny * uy;
+                if (dot > bestDot) {
+                  bestDot = dot;
+                  targetWallIdx = i;
+                }
+              }
+            }
+
+            const rawNextPts =
+              targetWallIdx >= 0
+                ? cleanLoop.map((pt, idx) => {
+                    if (idx === targetWallIdx || idx === (targetWallIdx + 1) % nPts) {
+                      return {
+                        x: Number((pt.x + ux * rounded).toFixed(2)),
+                        y: Number((pt.y + uy * rounded).toFixed(2)),
+                      };
+                    }
+                    return pt;
+                  })
+                : cleanLoop.map((pt) => {
+                    const proj = (pt.x - cx) * ux + (pt.y - cy) * uy;
+                    if (proj > 0) {
+                      return {
+                        x: Number((pt.x + ux * rounded).toFixed(2)),
+                        y: Number((pt.y + uy * rounded).toFixed(2)),
+                      };
+                    }
+                    return pt;
+                  });
+
+            if (hasRot) {
+              const nb = boxOf({ ...e, pts: rawNextPts });
+              const localShiftX = (nb.minX + nb.maxX) * 0.5 - cx;
+              const localShiftY = (nb.minY + nb.maxY) * 0.5 - cy;
+              const mat = buildBodyTransformMatrix4x4({ x: 0, y: 0, z: 0 }, cur.rotation3D);
+              const worldShiftX = mat[0] * localShiftX + mat[1] * localShiftY;
+              const worldShiftY = mat[4] * localShiftX + mat[5] * localShiftY;
+              const worldShiftZ = mat[8] * localShiftX + mat[9] * localShiftY;
+              const compDx = worldShiftX - localShiftX;
+              const compDy = worldShiftY - localShiftY;
+              const nextElev = Number((cur.elevationZ + worldShiftZ).toFixed(2));
               return {
-                x: Number((pt.x + ux * rounded).toFixed(2)),
-                y: Number((pt.y + uy * rounded).toFixed(2)),
+                ...e,
+                closed: true,
+                pts: rawNextPts.map((pt) => ({
+                  x: Number((pt.x + compDx).toFixed(3)),
+                  y: Number((pt.y + compDy).toFixed(3)),
+                })),
+                elevationZ: nextElev,
+                params: {
+                  ...(e.params ?? {}),
+                  elevationZ: nextElev,
+                },
               };
             }
-            return pt;
-          });
-          if (hasRot) {
-            const nb = boxOf({ ...e, pts: rawNextPts });
-            const localShiftX = (nb.minX + nb.maxX) * 0.5 - cx;
-            const localShiftY = (nb.minY + nb.maxY) * 0.5 - cy;
-            const mat = buildBodyTransformMatrix4x4({ x: 0, y: 0, z: 0 }, cur.rotation3D);
-            const worldShiftX = mat[0] * localShiftX + mat[1] * localShiftY;
-            const worldShiftY = mat[4] * localShiftX + mat[5] * localShiftY;
-            const worldShiftZ = mat[8] * localShiftX + mat[9] * localShiftY;
-            const compDx = worldShiftX - localShiftX;
-            const compDy = worldShiftY - localShiftY;
-            const nextElev = Number((cur.elevationZ + worldShiftZ).toFixed(2));
             return {
               ...e,
-              pts: rawNextPts.map((pt) => ({
-                x: Number((pt.x + compDx).toFixed(3)),
-                y: Number((pt.y + compDy).toFixed(3)),
-              })),
-              elevationZ: nextElev,
-              params: {
-                ...(e.params ?? {}),
-                elevationZ: nextElev,
-              },
+              closed: true,
+              pts: rawNextPts,
             };
           }
-          return {
-            ...e,
-            pts: rawNextPts,
-          };
         }
       }
     }
@@ -6430,12 +6880,13 @@ export function applyDirectOffsetFace3DToEntities(
 }
 
 export function applyDirectMiterCut3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   endTarget: "top" | "bottom",
   angleDeg: number,
   axis: "x" | "y" = "x",
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const clamped = Math.max(-75, Math.min(75, Number(angleDeg.toFixed(1))));
   const ratio = Number(Math.tan((Math.min(60, Math.abs(clamped)) * Math.PI) / 180).toFixed(3));
   const idSet = new Set(targetIds);
@@ -6470,12 +6921,13 @@ export function applyDirectMiterCut3DToEntities(
 }
 
 export function applyDirectTransform3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   delta: { dx?: number; dy?: number; dz?: number; rxDeg?: number; ryDeg?: number; rzDeg?: number },
   copyMode = false,
   preassignedCopyIds?: Map<string, string>,
 ): { updatedEntities: Entity[]; activeIds: string[] } {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const idSet = new Set(targetIds);
   const dx = Number(delta.dx ?? 0);
   const dy = Number(delta.dy ?? 0);
@@ -6637,12 +7089,13 @@ function mirrorEntity2D(ent: Entity, axis: "x" | "y", pivotCoord: number): Entit
 }
 
 export function applyDirectMirror3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   plane: "x" | "y" | "z",
   copyMode = true,
   customPivot3D?: Vec3Mm | null,
 ): { updatedEntities: Entity[]; activeIds: string[] } {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const idSet = new Set(targetIds);
   const targets = entities.filter((e) => idSet.has(e.id));
   if (targets.length === 0) return { updatedEntities: entities, activeIds: targetIds };
@@ -6806,11 +7259,12 @@ export function applyDirectMirror3DToEntities(
  * Redimensiona proporcionalmente (Scale 3D) o corpo selecionado (X, Y e altura Z) em torno do seu centroide ou pivô.
  */
 export function applyDirectScale3DToEntities(
-  entities: Entity[],
+  rawEntities: Entity[],
   targetIds: string[],
   scaleFactor: number,
   customPivot3D?: Vec3Mm | null,
 ): Entity[] {
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const safeFactor = Math.max(0.1, Math.min(20, Number.isFinite(scaleFactor) ? scaleFactor : 1));
   if (Math.abs(safeFactor - 1) < 1e-4) return entities;
 
@@ -7853,6 +8307,256 @@ export function executeMetalStructure10StepBenchmark(upToStep = 10): {
     },
   };
 }
+
+/**
+ * Ação de 1 toque no 3D para Traços Abertos:
+ * `[ ⬠ Fechar Contorno e Extrudar Sólido ]`
+ */
+export function closeAndExtrudeOpenTrace3D(
+  entities: Entity[],
+  targetEntityId: string,
+  extrudeHeightMm = 20,
+): { updatedEntities: Entity[]; closedEntityId: string | null } {
+  const { entities: consolidated } = consolidateStitchedLoopsInEntities2D(entities, 2.0);
+  const target = consolidated.find((e) => e.id === targetEntityId);
+  if (!target) return { updatedEntities: consolidated, closedEntityId: null };
+
+  const height = Math.max(1, Number(extrudeHeightMm.toFixed(2)));
+  if (target.type === "polyline") {
+    const basePts = [...target.pts];
+    if (basePts.length === 2) {
+      // Se tinha apenas 2 pontos, cria um retângulo proporcional a partir do segmento
+      const p0 = basePts[0]!;
+      const p1 = basePts[1]!;
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      const w = Math.max(10, Number((len * 0.25).toFixed(2)));
+      const nx = (-dy / len) * w;
+      const ny = (dx / len) * w;
+      basePts.push({ x: Number((p1.x + nx).toFixed(2)), y: Number((p1.y + ny).toFixed(2)) });
+      basePts.push({ x: Number((p0.x + nx).toFixed(2)), y: Number((p0.y + ny).toFixed(2)) });
+    }
+    const clean = ensureCCW(sanitizeClosedPolygonLoop2D(basePts, 2.05));
+    if (clean.length >= 3) {
+      const updated = consolidated.map((ent) =>
+        ent.id === targetEntityId
+          ? ({
+              ...ent,
+              type: "polyline",
+              pts: clean,
+              closed: true,
+              extrudeHeight: height,
+              params: {
+                ...(ent.params ?? {}),
+                extrudeHeight: height,
+                extrudeHeightMm: height,
+              },
+            } as Entity)
+          : ent,
+      );
+      return { updatedEntities: updated, closedEntityId: targetEntityId };
+    }
+  }
+
+  if (target.type === "line") {
+    // Tenta costurar com linhas adjacentes com tolerância ampla (25 mm) ou converte em perfil fechado
+    const { entities: wideConsolidated } = consolidateStitchedLoopsInEntities2D(consolidated, 25.0);
+    const maybeClosed = wideConsolidated.find(
+      (e) =>
+        e.id === targetEntityId ||
+        (Array.isArray(e.params?.stitchedFromSegmentIds) &&
+          (e.params.stitchedFromSegmentIds as string[]).includes(targetEntityId)),
+    );
+    if (maybeClosed && maybeClosed.type === "polyline" && maybeClosed.closed) {
+      return {
+        updatedEntities: wideConsolidated.map((e) =>
+          e.id === maybeClosed.id
+            ? {
+                ...e,
+                extrudeHeight: height,
+                params: {
+                  ...(e.params ?? {}),
+                  extrudeHeight: height,
+                  extrudeHeightMm: height,
+                },
+              }
+            : e,
+        ),
+        closedEntityId: maybeClosed.id,
+      };
+    }
+    // Se for uma linha isolada, fecha como barra/chapa retangular
+    return thickenAndExtrudeOpenTraceWall3D(consolidated, targetEntityId, 12, height);
+  }
+
+  if (target.type === "arc") {
+    let sweep = target.a1 - target.a0;
+    if (Math.abs(sweep) < 1e-4) sweep = Math.PI;
+    const steps = 28;
+    const pts: Vec2[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = target.a0 + (sweep * i) / steps;
+      pts.push({
+        x: Number((target.cx + Math.cos(a) * target.r).toFixed(2)),
+        y: Number((target.cy + Math.sin(a) * target.r).toFixed(2)),
+      });
+    }
+    const clean = ensureCCW(sanitizeClosedPolygonLoop2D(pts, 2.05));
+    if (clean.length >= 3) {
+      const updated = consolidated.map((ent) =>
+        ent.id === targetEntityId
+          ? ({
+              id: ent.id,
+              type: "polyline",
+              pts: clean,
+              closed: true,
+              layer: ent.layer,
+              extrudeHeight: height,
+              params: {
+                ...(ent.params ?? {}),
+                extrudeHeight: height,
+                extrudeHeightMm: height,
+              },
+            } as Entity)
+          : ent,
+      );
+      return { updatedEntities: updated, closedEntityId: targetEntityId };
+    }
+  }
+
+  return { updatedEntities: consolidated, closedEntityId: null };
+}
+
+/**
+ * Ação de 1 toque no 3D para Traços Abertos:
+ * `[ 🧱 Dar Espessura de Parede (Offset + Extrusão) ]`
+ * Converte qualquer linha, arco ou polilinha aberta em uma parede sólida de espessura `wallThicknessMm`
+ * e altura `extrudeHeightMm` (ex.: perfil dobrado / parede estrutural).
+ */
+export function thickenAndExtrudeOpenTraceWall3D(
+  entities: Entity[],
+  targetEntityId: string,
+  wallThicknessMm = 6,
+  extrudeHeightMm = 20,
+): { updatedEntities: Entity[]; closedEntityId: string | null } {
+  const target = entities.find((e) => e.id === targetEntityId);
+  if (!target) return { updatedEntities: entities, closedEntityId: null };
+
+  let spinePts: Vec2[] = [];
+  if (target.type === "line") {
+    spinePts = [
+      { x: target.x1, y: target.y1 },
+      { x: target.x2, y: target.y2 },
+    ];
+  } else if (target.type === "polyline") {
+    spinePts = target.pts.map((p) => ({ x: p.x, y: p.y }));
+  } else if (target.type === "arc") {
+    let sweep = target.a1 - target.a0;
+    if (Math.abs(sweep) < 1e-4) sweep = Math.PI;
+    const steps = 24;
+    for (let i = 0; i <= steps; i++) {
+      const a = target.a0 + (sweep * i) / steps;
+      spinePts.push({
+        x: target.cx + Math.cos(a) * target.r,
+        y: target.cy + Math.sin(a) * target.r,
+      });
+    }
+  } else if (target.type === "path") {
+    spinePts = flattenPath(target.start, target.segs, target.closed, 10);
+  }
+
+  if (spinePts.length < 2) return { updatedEntities: entities, closedEntityId: null };
+
+  const halfT = Math.max(0.5, wallThicknessMm * 0.5);
+  const leftSide: Vec2[] = [];
+  const rightSide: Vec2[] = [];
+
+  for (let i = 0; i < spinePts.length; i++) {
+    const curr = spinePts[i]!;
+    let nx = 0;
+    let ny = 0;
+
+    if (i === 0) {
+      const next = spinePts[i + 1]!;
+      const dx = next.x - curr.x;
+      const dy = next.y - curr.y;
+      const len = Math.hypot(dx, dy) || 1;
+      nx = -dy / len;
+      ny = dx / len;
+    } else if (i === spinePts.length - 1) {
+      const prev = spinePts[i - 1]!;
+      const dx = curr.x - prev.x;
+      const dy = curr.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      nx = -dy / len;
+      ny = dx / len;
+    } else {
+      const prev = spinePts[i - 1]!;
+      const next = spinePts[i + 1]!;
+      const dx1 = curr.x - prev.x;
+      const dy1 = curr.y - prev.y;
+      const l1 = Math.hypot(dx1, dy1) || 1;
+      const n1x = -dy1 / l1;
+      const n1y = dx1 / l1;
+
+      const dx2 = next.x - curr.x;
+      const dy2 = next.y - curr.y;
+      const l2 = Math.hypot(dx2, dy2) || 1;
+      const n2x = -dy2 / l2;
+      const n2y = dx2 / l2;
+
+      const bx = n1x + n2x;
+      const by = n1y + n2y;
+      const bLen = Math.hypot(bx, by);
+      if (bLen > 1e-3) {
+        const ux = bx / bLen;
+        const uy = by / bLen;
+        const dot = Math.max(0.35, ux * n1x + uy * n1y);
+        nx = ux / dot;
+        ny = uy / dot;
+      } else {
+        nx = n1x;
+        ny = n1y;
+      }
+    }
+
+    leftSide.push({
+      x: Number((curr.x + nx * halfT).toFixed(2)),
+      y: Number((curr.y + ny * halfT).toFixed(2)),
+    });
+    rightSide.push({
+      x: Number((curr.x - nx * halfT).toFixed(2)),
+      y: Number((curr.y - ny * halfT).toFixed(2)),
+    });
+  }
+
+  const wallLoop = ensureCCW([...leftSide, ...rightSide.reverse()]);
+  const height = Math.max(1, Number(extrudeHeightMm.toFixed(2)));
+
+  const updated = entities.map((ent) =>
+    ent.id === targetEntityId
+      ? ({
+          id: ent.id,
+          type: "polyline",
+          pts: wallLoop,
+          closed: true,
+          layer: ent.layer,
+          elevationZ: ent.elevationZ ?? 0,
+          extrudeHeight: height,
+          params: {
+            ...(ent.params ?? {}),
+            extrudeHeight: height,
+            extrudeHeightMm: height,
+            isThickenedOpenWall3D: true,
+          },
+        } as Entity)
+      : ent,
+  );
+
+  return { updatedEntities: updated, closedEntityId: targetEntityId };
+}
+
 
 
 

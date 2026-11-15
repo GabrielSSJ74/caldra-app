@@ -29,6 +29,10 @@ import {
   analyzeEntityBarGeometry,
   getEntityStructuralProfile,
 } from "./structuralProfile";
+import {
+  consolidateStitchedLoopsInEntities2D,
+  sanitizeClosedPolygonLoop2D,
+} from "./cadDirectModeling3D";
 
 export type WireframeEdgeCategory =
   | "top_primary"
@@ -306,8 +310,21 @@ export function resolveEntityZRatios(
 
 /** Converte entidade fechada em polígono amostrado para análise topológica (Outer vs Hole) */
 export function sampleClosedEntityLoop(e: Entity, sampleSteps = 48): Vec2[] | null {
-  if (e.type === "polyline" && e.closed && e.pts.length >= 3) {
-    return e.pts;
+  if (e.type === "rect" && e.w > 0.1 && e.h > 0.1) {
+    return [
+      { x: e.x, y: e.y },
+      { x: e.x + e.w, y: e.y },
+      { x: e.x + e.w, y: e.y + e.h },
+      { x: e.x, y: e.y + e.h },
+    ];
+  }
+  if (e.type === "polyline" && e.pts.length >= 3) {
+    const first = e.pts[0]!;
+    const last = e.pts[e.pts.length - 1]!;
+    if (e.closed || Math.hypot(first.x - last.x, first.y - last.y) <= 2.05) {
+      const clean = sanitizeClosedPolygonLoop2D(e.pts, 2.05);
+      return clean.length >= 3 ? clean : null;
+    }
   }
   if (e.type === "circle" && e.r > 0) {
     const pts: Vec2[] = [];
@@ -406,18 +423,19 @@ export function getWireframe3DCacheStats(): {
  * eliminando a re-amostragem de polígonos de 48 pontos e o teste O(M²) pointInPolygon2D
  * durante os 60fps da Órbita 3D (onde apenas ângulos θ, φ mudam).
  */
-export function classifyOuterAndHoleEntities(entities: Entity[]): ClassifiedOuterAndHoleResult {
+export function classifyOuterAndHoleEntities(rawEntities: Entity[]): ClassifiedOuterAndHoleResult {
   if (
     cachedClassifiedResult &&
-    (cachedClassifiedEntitiesRef === entities ||
-      (cachedClassifiedSnapshot.length === entities.length &&
-        entities.every((e, idx) => cachedClassifiedSnapshot[idx] === e)))
+    (cachedClassifiedEntitiesRef === rawEntities ||
+      (cachedClassifiedSnapshot.length === rawEntities.length &&
+        rawEntities.every((e, idx) => cachedClassifiedSnapshot[idx] === e)))
   ) {
     wireframeCacheHits++;
     return cachedClassifiedResult;
   }
 
   wireframeCacheMisses++;
+  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const closedCandidates: { entity: Entity; loop: Vec2[]; absArea: number }[] = [];
   const sampledLoops = new Map<string, Vec2[]>();
   const entityById = new Map<string, Entity>();
@@ -520,8 +538,8 @@ export function classifyOuterAndHoleEntities(entities: Entity[]): ClassifiedOute
     sampledLoops,
     entityById,
   };
-  cachedClassifiedEntitiesRef = entities;
-  cachedClassifiedSnapshot = entities.slice();
+  cachedClassifiedEntitiesRef = rawEntities;
+  cachedClassifiedSnapshot = rawEntities.slice();
   cachedClassifiedResult = result;
   return result;
 }
