@@ -1,10 +1,11 @@
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 import { GeometryStudio } from "@/components/chameleon/GeometryStudio";
 import { SquareToRoundStudio } from "@/components/chameleon/SquareToRoundStudio";
 import { findGeometry } from "@/lib/geometry/catalog";
-import { getCustom } from "@/lib/library/store";
-import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
+import { useLibraryState } from "@/lib/library/store";
+import { savePartParameters, useProjects } from "@/lib/projects/store";
 
 type Search = {
   projeto?: string | undefined;
@@ -64,10 +65,17 @@ export const Route = createFileRoute("/tracagem/$slug")({
 function GeometryPage() {
   const { geometry } = Route.useLoaderData();
   const { projeto, peca, preset, modelo } = Route.useSearch();
+  const projects = useProjects();
+  const { custom: customModels } = useLibraryState();
+  const [mounted, setMounted] = useState(false);
 
-  const project = projeto ? getProject(projeto) : null;
-  const part = projeto && peca ? getPart(projeto, peca) : null;
-  const custom = modelo ? getCustom(modelo) : undefined;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const project = mounted && projeto ? (projects.find((p) => p.id === projeto) ?? null) : null;
+  const part = project && peca ? (project.parts.find((pt) => pt.instanceId === peca) ?? null) : null;
+  const custom = mounted && modelo ? customModels.find((c) => c.id === modelo) : undefined;
 
   return (
     <div className="space-y-4 pb-[calc(135px+env(safe-area-inset-bottom))]">
@@ -92,13 +100,14 @@ function GeometryPage() {
       <Header name={part?.name ?? geometry.name} meta={`${geometry.level} • ${geometry.method}`} />
       {geometry.slug === "quadrado-redondo" ? (
         <SquareToRoundStudio
+          key={custom?.id ?? "default"}
           initialValues={custom?.values}
           customId={custom?.id}
           customName={custom?.name}
         />
       ) : (
         <GeometryStudio
-          key={part?.instanceId ?? geometry.slug}
+          key={`${part?.instanceId ?? geometry.slug}:${custom?.id ?? ""}`}
           slug={geometry.slug}
           name={part?.name ?? geometry.name}
           preset={{ ...(parsePreset(preset) ?? {}), ...(custom?.values ?? {}) }}
@@ -115,7 +124,7 @@ function GeometryPage() {
               : undefined
           }
           onPersist={
-            projeto && peca
+            mounted && projeto && peca && part
               ? (snap) =>
                   savePartParameters(projeto, peca, snap.values, {
                     material: snap.material,

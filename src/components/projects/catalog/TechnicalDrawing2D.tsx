@@ -12,7 +12,7 @@
  */
 
 import { Maximize2, Minus, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { SolidInstance } from "@/lib/project-catalog/instances";
 import type { CanonicalProject } from "@/lib/project-catalog/types";
@@ -73,6 +73,10 @@ export function TechnicalDrawing2D({
   meta?: DrawingMeta;
 }) {
   const [zoom, setZoom] = useState(1);
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    setToday(new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }));
+  }, []);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
   const sheet = useMemo(() => {
@@ -245,7 +249,6 @@ export function TechnicalDrawing2D({
   const railH = val("handrailHeight", 0);
 
   const scaleDen = Math.max(1, Math.round(sheet.sheetW / 380));
-  const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   const material = result.parts[0]?.material ?? "Aço Carbono";
 
   const bx = 0;

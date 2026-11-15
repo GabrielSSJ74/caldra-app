@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, RefreshCw, X } from "lucide-react";
 import { Panel, SectionLabel } from "@/components/caldra/ui";
 import { checkAnswer, generateExercise, type Exercise } from "@/lib/education/exercises";
-import { lessonState, recordExercise } from "@/lib/education/progress";
+import { lessonStateFrom, recordExercise, useAcademy } from "@/lib/education/progress";
 import { cn } from "@/lib/utils";
 
 type Props = { lessonId: string; formulaIds: string[] };
@@ -24,9 +24,10 @@ export function ExercisePanel({ lessonId, formulaIds }: Props) {
     draw();
   }, [draw]);
 
+  const academy = useAcademy();
   if (!ex) return null;
 
-  const st = lessonState(lessonId);
+  const st = lessonStateFrom(academy, lessonId);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Boxes,
   Layers,
@@ -16,6 +16,8 @@ import {
 } from "@/lib/library/catalog";
 import {
   addCustomCostaFerroMaterial,
+  COSTA_FERRO_HARDWARE,
+  COSTA_FERRO_MATERIALS,
   COSTA_FERRO_OPERATIONS,
   getAllCostaFerroHardware,
   getAllCostaFerroMaterials,
@@ -66,6 +68,12 @@ function Biblioteca() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [addingCustom, setAddingCustom] = useState(false);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Estado do formulário de novo material personalizado
   const [customName, setCustomName] = useState("");
   const [customCategory, setCustomCategory] =
@@ -77,7 +85,7 @@ function Biblioteca() {
   const [customPrice, setCustomPrice] = useState(110);
 
   const materials = useMemo(() => {
-    const all = getAllCostaFerroMaterials();
+    const all = mounted ? getAllCostaFerroMaterials() : COSTA_FERRO_MATERIALS;
     return all.filter((m) => {
       const matchCat = matCategory === "TODAS" || m.category === matCategory;
       const q = query.trim().toLowerCase();
@@ -89,10 +97,10 @@ function Biblioteca() {
         m.norm.toLowerCase().includes(q);
       return matchCat && matchQ;
     });
-  }, [matCategory, query, refreshTick]);
+  }, [matCategory, query, refreshTick, mounted]);
 
   const hardwareList = useMemo(() => {
-    const all = getAllCostaFerroHardware();
+    const all = mounted ? getAllCostaFerroHardware() : COSTA_FERRO_HARDWARE;
     const q = query.trim().toLowerCase();
     return all.filter(
       (h) =>
@@ -101,7 +109,7 @@ function Biblioteca() {
         h.specification.toLowerCase().includes(q) ||
         h.application.toLowerCase().includes(q),
     );
-  }, [query, refreshTick]);
+  }, [query, refreshTick, mounted]);
 
   const operationsList = useMemo(() => {
     const q = query.trim().toLowerCase();

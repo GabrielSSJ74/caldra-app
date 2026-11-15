@@ -99,8 +99,19 @@ export function useAcademy(): AcademyState {
   return mounted ? s : empty;
 }
 
+export const DEFAULT_LESSON_STATE: LessonState = {
+  mastery: "nao-iniciado",
+  attempts: 0,
+  correct: 0,
+  lastAt: 0,
+};
+
+export function lessonStateFrom(s: AcademyState, id: string): LessonState {
+  return s.lessons[id] ?? DEFAULT_LESSON_STATE;
+}
+
 export function lessonState(id: string): LessonState {
-  return load().lessons[id] ?? { mastery: "nao-iniciado", attempts: 0, correct: 0, lastAt: 0 };
+  return load().lessons[id] ?? DEFAULT_LESSON_STATE;
 }
 
 function patchLesson(id: string, patch: Partial<LessonState>) {

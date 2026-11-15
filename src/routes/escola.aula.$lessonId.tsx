@@ -5,7 +5,7 @@ import { findAcademyLesson } from "@/lib/education/curriculum";
 import { formulaById, knowledgeById } from "@/lib/education/knowledge";
 import {
   MASTERY_LABEL,
-  lessonState,
+  lessonStateFrom,
   markOpened,
   missingPrerequisites,
   raiseMastery,
@@ -52,7 +52,7 @@ function LessonPage() {
   const state = useAcademy();
   const { can } = useFeatureAccess();
   const locked = !lesson.free && !can("school.full");
-  const st = lessonState(lesson.id);
+  const st = lessonStateFrom(state, lesson.id);
   const missing = missingPrerequisites(lesson.id, state);
   const lessonFormulas = lesson.knowledge.flatMap((kid) => knowledgeById(kid)?.formulas ?? []);
 
