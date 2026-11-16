@@ -1967,12 +1967,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [],
   );
 
-  // Motor 3D B-Rep In-Place ativo no canvas unificado (SÓLIDO, SOMB e ARAME Técnico B-Rep)
+  // Motor 3D B-Rep In-Place ativo no canvas unificado (SÓLIDO, SOMB e ARAME Gênese CALDRA)
   const isInPlaceSolid3DActive =
     !solidOpen &&
     (activeMode === "3d" ||
-      ((orbitProjection2D.isTilted || isOrbitToolActive) &&
-        (renderStyle3D !== "wireframe" || userPickedArameIn3DRef.current)));
+      orbitProjection2D.isTilted ||
+      isOrbitToolActive);
 
   const transitionTo3D = useCallback(
     (targetMode: "3d" | "flanges" = "3d") => {
@@ -4140,9 +4140,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     applyDirectDimValue(newVal, true);
   };
 
-  /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO) */
+  /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO — DESATIVADO NO MODO 3D PARA NÃO EXIBIR ÍCONES ◊ E □ NAS FACES) */
   const relevantRefs = useMemo(() => {
-    if (!snapOn) return [];
+    if (!snapOn || isInPlaceSolid3DActive) return [];
     const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
     const isCreating = [
       "line",
@@ -9146,8 +9146,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }}
           renderStyle3D={renderStyle3D}
           onChangeRenderStyle3D={(style) => {
+            userPickedArameIn3DRef.current = style === "wireframe";
             setRenderStyle3D(style);
-            if (style !== "wireframe" && isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+            if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
               setIsOrbitToolActive(true);
               animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
             }
@@ -9563,6 +9564,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     AudioManager.play("ui_select");
                     userPickedArameIn3DRef.current = true;
                     setRenderStyle3D("wireframe");
+                    if (!brepWireframeLayers.showContours || !brepWireframeLayers.showHiddenXRay) {
+                      handleChangeBrepWireframeLayers({
+                        ...brepWireframeLayers,
+                        showContours: true,
+                        showHiddenXRay: true,
+                      });
+                    }
                     if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
                       setIsOrbitToolActive(true);
                       animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
@@ -10851,7 +10859,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             )}
           >
               {/* CAMADAS 1 E 2 (FUNDO DA PRANCHETA + GRADE TÉCNICA INTERNA/EXTERNA — RENDERIZADAS ABAIXO DO CANVAS DE PEÇAS) */}
-              {(showGrid || frame.visible) && (!solidOpen || morphState === "PREPARING_3D") && (
+              {(showGrid || frame.visible) &&
+                (!solidOpen || morphState === "PREPARING_3D") && (
                 <svg className="pointer-events-none absolute inset-0 size-full">
                   <defs>
                     {/* CLIP PATH DA ÁREA DE TRABALHO PARA SEPARAR GRADE INTERNA DA GRADE EXTERNA */}
@@ -11314,7 +11323,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   })}
 
               {/* LINHAS DE REFERÊNCIA ORTOGONAL INFINITAS SUAVIZADAS (DESENHADAS ANTES DA MOLDURA PARA NUNCA TINGIR A BORDA SUPERIOR DE VERMELHO) */}
-              {!solidOpen && showGrid && drawingProjection !== "isometric" && (
+              {!solidOpen &&
+                showGrid &&
+                drawingProjection !== "isometric" &&
+                !(isInPlaceSolid3DActive && renderStyle3D === "wireframe") && (
                 <g pointerEvents="none" aria-hidden="true">
                   <line
                     x1={-1e5}
@@ -11577,7 +11589,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 })()}
 
               {/* Eixos e Tríade de Origem (0,0) Separados da Moldura (+X em #E11D48, +Y em #10B981/#059669, Origem em #DC143C) */}
-              {!solidOpen && showGrid && (
+              {!solidOpen &&
+                showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
                   {drawingProjection === "isometric" ? (
                     <>
@@ -11905,7 +11918,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* NÓS E GRIPS TÉCNICOS DA SELEÇÃO (□ VÉRTICES, △ MEIOS, ⊕ CENTROS - SEÇÃO 3.2) */}
-              {!solidOpen && (tool === "node" || tool === "select") && (() => {
+              {!solidOpen && !isInPlaceSolid3DActive && (tool === "node" || tool === "select") && (() => {
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                 const gripHalf = 3.4 / safeK;
                 const snapDist = 15 / safeK;
@@ -12420,6 +12433,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <ChamferTechnicalCursorSvg
                 visible={
                   !solidOpen &&
+                  !isInPlaceSolid3DActive &&
                   tool !== "pan" &&
                   (activePointerType === "mouse" ||
                     touchOffsetActive ||
@@ -12439,8 +12453,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 isDark={isDark}
               />
 
-              {/* SMART SNAP OVERLAY CAD DE PRECISÃO */}
-              {snapOn && (
+              {/* SMART SNAP OVERLAY CAD DE PRECISÃO (SOMENTE EM 2D — EVITA ÍCONES ◊ E □ SOBRE AS FACES 3D) */}
+              {snapOn && !isInPlaceSolid3DActive && (
                 <ChamferSmartSnapOverlay
                   activeSnap={smartSnap}
                   referencePoints={relevantRefs}
@@ -14641,8 +14655,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }}
                 renderStyle3D={renderStyle3D}
                 onChangeRenderStyle3D={(style) => {
+                  userPickedArameIn3DRef.current = style === "wireframe";
                   setRenderStyle3D(style);
-                  if (style !== "wireframe" && isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                  if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
                     setIsOrbitToolActive(true);
                     animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
                   }

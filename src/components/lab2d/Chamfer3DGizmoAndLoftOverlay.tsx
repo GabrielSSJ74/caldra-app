@@ -7048,7 +7048,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             return (
               <g key={`centroid_loft_${body.bodyId}`}>
                 {/* Contorno diferenciado: Corpo Principal (#0EA5E9 contínuo intenso) vs. Corpos Adicionais (#38BDF8 tracejado coordenado) */}
-                {(isProfileCurve || isLoftSection || isBodySelected) &&
+                {(isProfileCurve ||
+                  isLoftSection ||
+                  (isBodySelected && renderStyle3D !== "wireframe")) &&
                   body.edges
                     .filter(
                       (edge) =>

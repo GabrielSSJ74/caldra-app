@@ -41,7 +41,7 @@ export const DEFAULT_BREP_WIREFRAME_LAYER_CONFIG: BRepWireframeLayerConfig = {
   showDimensions: true,
 };
 
-export const BREP_WIREFRAME_LAYERS_STORAGE_KEY = "caldra_chamfer_brep_arame_layers_v1";
+export const BREP_WIREFRAME_LAYERS_STORAGE_KEY = "caldra_chamfer_brep_arame_layers_v2";
 
 export function loadBRepWireframeLayerConfig(
   storage?: Pick<Storage, "getItem"> | null,
@@ -501,7 +501,7 @@ export function extractBRepTechnicalWireframeData3D(
   options: ExtractBRepWireframeOptions = {},
 ): BRepTechnicalWireframeData3D {
   const convertToThreeZUp = options.convertToThreeZUp ?? true;
-  const creaseDeg = options.creaseAngleThresholdDeg ?? 18;
+  const creaseDeg = options.creaseAngleThresholdDeg ?? 12;
   const viewDir = norm3(
     options.viewDirCad3D ?? computeViewDirCad3DFromAngles(35, 32),
     { x: -0.47, y: 0.69, z: 0.53 },
@@ -676,14 +676,28 @@ export function extractBRepTechnicalWireframeData3D(
           true,
         );
       } else {
-        // Caso seja um loop externo com cantos arredondados (Fillet em retângulo), garante geratrizes nos pontos de transição
+        // Garante que todas as quinas vivas (>= 12°) do contorno tenham sua aresta vertical de espessura conectando base e topo
         const tClean = cleanClosedLoopPoints3D(topLoopEdge.polyline3D);
         const bClean = cleanClosedLoopPoints3D(botLoopEdge.polyline3D);
-        if (tClean.length === bClean.length && tClean.length >= 4 && body.edges.filter((e) => e.role === "vertical").length === 0) {
+        if (tClean.length === bClean.length && tClean.length >= 3) {
+          const existingVertEdges = body.edges.filter((e) => e.role === "vertical");
           const sharpIdx = extractSharpCornerIndicesFromLoop3D(tClean, creaseDeg);
           for (const idx of sharpIdx) {
-            appendSegment3D(featureThicknessArr, bClean[idx]!, tClean[idx]!, convertToThreeZUp);
-            appendSegment3D(occludableArr, bClean[idx]!, tClean[idx]!, convertToThreeZUp);
+            const pT = tClean[idx]!;
+            const pB = bClean[idx]!;
+            const alreadyEmitted = existingVertEdges.some((ve) => {
+              const v0 = ve.polyline3D[0];
+              const v1 = ve.polyline3D[ve.polyline3D.length - 1];
+              if (!v0 || !v1) return false;
+              return (
+                (len3(sub3(v0, pB)) < 0.25 && len3(sub3(v1, pT)) < 0.25) ||
+                (len3(sub3(v0, pT)) < 0.25 && len3(sub3(v1, pB)) < 0.25)
+              );
+            });
+            if (!alreadyEmitted) {
+              appendSegment3D(featureThicknessArr, pB, pT, convertToThreeZUp);
+              appendSegment3D(occludableArr, pB, pT, convertToThreeZUp);
+            }
           }
         }
       }

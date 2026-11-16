@@ -575,17 +575,23 @@ export function Wire3D({
         }
       }}
     >
+      <defs>
+        <linearGradient id="genesis-wire3d-crystal-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#345B87" stopOpacity="0.24" />
+          <stop offset="100%" stopColor="#2B4C73" stopOpacity="0.18" />
+        </linearGradient>
+      </defs>
       <g>
-        {/* MODO ARAME: Casca Fantasma X-Ray (opacity: 0.10, depthWrite: false) */}
+        {/* MODO ARAME — Paredes Laterais de Espessura em Azul-Aço Petróleo Acetinado (#2B4C73 / #345B87, opacity: 0.22) */}
         {edgeMode === "wireframe" && (
-          <g data-layer="xray-ghost-shell" opacity={0.1}>
+          <g data-layer="xray-ghost-shell">
             {faces
               .filter((f) => f.kind === "outer" || f.kind === "rim")
               .map((f) => (
                 <polygon
                   key={`xray:${f.id}`}
                   points={f.d}
-                  fill="#38BDF8"
+                  fill="url(#genesis-wire3d-crystal-grad)"
                   stroke="none"
                 />
               ))}
@@ -627,15 +633,14 @@ export function Wire3D({
               y1={e.y1.toFixed(2)}
               x2={e.x2.toFixed(2)}
               y2={e.y2.toFixed(2)}
-              stroke={edgeMode === "wireframe" ? "#94A3B8" : "var(--solid-edge)"}
-              strokeWidth={edgeMode === "wireframe" ? 1.0 : 0.45}
+              stroke={edgeMode === "wireframe" ? "#60A5FA" : "var(--solid-edge)"}
+              strokeWidth={edgeMode === "wireframe" ? 0.75 : 0.45}
               vectorEffect={edgeMode === "wireframe" ? "non-scaling-stroke" : undefined}
-              strokeOpacity={edgeMode === "wireframe" ? 0.42 : 0.28}
-              strokeDasharray="4 3 1 3"
+              strokeOpacity={edgeMode === "wireframe" ? 0.35 : 0.28}
             />
           ))}
 
-        {/* MODO ARAME: Passada Traseira / Oculta (GreaterDepth, tracejada / opacidade 0.25) */}
+        {/* MODO ARAME — Arestas da Base e Arestas Traseiras / Ocultas (Contínua fina 0.95px em Azul-Aço Técnico #60A5FA @ 0.45) */}
         {edgeMode === "wireframe" && (
           <g data-layer="wireframe-hidden-edges">
             {hiddenWireEdges.map((e) => (
@@ -645,64 +650,110 @@ export function Wire3D({
                 y1={e.y1.toFixed(2)}
                 x2={e.x2.toFixed(2)}
                 y2={e.y2.toFixed(2)}
-                stroke="#38BDF8"
+                stroke="#60A5FA"
                 strokeWidth={0.95}
                 vectorEffect="non-scaling-stroke"
-                strokeOpacity={0.25}
-                strokeDasharray="3.5 2.5"
+                strokeOpacity={0.45}
                 strokeLinecap="round"
               />
             ))}
           </g>
         )}
 
-        {/* ARESTAS VISÍVEIS (SOMB intacto, SOMB+AR B-Rep, ARAME B-Rep invariante e SOLID chanfros sutis) */}
-        {edges.map((e) => {
-          if (edgeMode === "shaded") {
-            // MODO SOMB: 100% IDÊNTICO AO ORIGINAL
-            return (
-              <line
-                key={e.id}
-                data-entity-id={e.id}
-                data-category="edge"
-                x1={e.x1.toFixed(2)}
-                y1={e.y1.toFixed(2)}
-                x2={e.x2.toFixed(2)}
-                y2={e.y2.toFixed(2)}
-                stroke="#F8FAFC"
-                strokeWidth={0.95}
-                strokeOpacity={0.92}
-                strokeLinecap="round"
-              />
-            );
-          }
-
-          const isPrimaryBRep =
-            e.kind === "REAL_BOUNDARY" ||
-            e.kind === "JOINT" ||
-            e.kind === "BEND_EDGE" ||
-            e.kind === "INTERSECTION";
-
-          if (edgeMode === "solid") {
-            return (
-              <line
-                key={e.id}
-                data-entity-id={e.id}
-                data-category="edge"
-                x1={e.x1.toFixed(2)}
-                y1={e.y1.toFixed(2)}
-                x2={e.x2.toFixed(2)}
-                y2={e.y2.toFixed(2)}
-                stroke={e.kind === "REAL_BOUNDARY" ? "#E0F2FE" : "#7DD3FC"}
-                strokeWidth={e.kind === "REAL_BOUNDARY" ? 1.25 : 0.95}
-                vectorEffect="non-scaling-stroke"
-                strokeOpacity={e.kind === "REAL_BOUNDARY" ? 0.55 : 0.36}
-                strokeLinecap="round"
-              />
-            );
-          }
-
+        {/* ARESTAS VISÍVEIS (SOMB intacto, SOMB+AR B-Rep, ARAME Técnico e SOLID chanfros sutis) */}
+        {(() => {
+          let minY = Infinity;
+          let maxY = -Infinity;
           if (edgeMode === "wireframe") {
+            for (const e of edges) {
+              if (e.y1 < minY) minY = e.y1;
+              if (e.y2 < minY) minY = e.y2;
+              if (e.y1 > maxY) maxY = e.y1;
+              if (e.y2 > maxY) maxY = e.y2;
+            }
+          }
+          const spanY = Math.max(1, maxY - minY);
+
+          return edges.map((e) => {
+            if (edgeMode === "shaded") {
+              // MODO SOMB: 100% IDÊNTICO AO ORIGINAL
+              return (
+                <line
+                  key={e.id}
+                  data-entity-id={e.id}
+                  data-category="edge"
+                  x1={e.x1.toFixed(2)}
+                  y1={e.y1.toFixed(2)}
+                  x2={e.x2.toFixed(2)}
+                  y2={e.y2.toFixed(2)}
+                  stroke="#F8FAFC"
+                  strokeWidth={0.95}
+                  strokeOpacity={0.92}
+                  strokeLinecap="round"
+                />
+              );
+            }
+
+            const isPrimaryBRep =
+              e.kind === "REAL_BOUNDARY" ||
+              e.kind === "JOINT" ||
+              e.kind === "BEND_EDGE" ||
+              e.kind === "INTERSECTION";
+
+            if (edgeMode === "solid") {
+              return (
+                <line
+                  key={e.id}
+                  data-entity-id={e.id}
+                  data-category="edge"
+                  x1={e.x1.toFixed(2)}
+                  y1={e.y1.toFixed(2)}
+                  x2={e.x2.toFixed(2)}
+                  y2={e.y2.toFixed(2)}
+                  stroke={e.kind === "REAL_BOUNDARY" ? "#E0F2FE" : "#7DD3FC"}
+                  strokeWidth={e.kind === "REAL_BOUNDARY" ? 1.25 : 0.95}
+                  vectorEffect="non-scaling-stroke"
+                  strokeOpacity={e.kind === "REAL_BOUNDARY" ? 0.55 : 0.36}
+                  strokeLinecap="round"
+                />
+              );
+            }
+
+            if (edgeMode === "wireframe") {
+              const midY = (e.y1 + e.y2) * 0.5;
+              const tHeight = Math.max(0, Math.min(1, 1 - (midY - minY) / spanY));
+              const isTopEdge = tHeight >= 0.72 && isPrimaryBRep;
+              const strokeCol = isTopEdge
+                ? "#E2E8F0"
+                : tHeight >= 0.25
+                  ? "#93C5FD"
+                  : "#60A5FA";
+              const strokeOp = isTopEdge
+                ? 0.88
+                : tHeight >= 0.25
+                  ? 0.72
+                  : 0.45;
+              return (
+                <line
+                  key={e.id}
+                  data-entity-id={e.id}
+                  data-category="edge"
+                  data-brep-kind={e.kind ?? "REAL_EDGE"}
+                  x1={e.x1.toFixed(2)}
+                  y1={e.y1.toFixed(2)}
+                  x2={e.x2.toFixed(2)}
+                  y2={e.y2.toFixed(2)}
+                  stroke={strokeCol}
+                  strokeWidth={isTopEdge ? 1.1 : 0.95}
+                  vectorEffect="non-scaling-stroke"
+                  strokeOpacity={strokeOp.toFixed(2)}
+                  strokeLinecap="round"
+                />
+              );
+            }
+
+            // Modo SOMB+AR ("shaded-edges") — superfície sombreada + arestas técnicas B-Rep
+            const depthFactor = ((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth);
             return (
               <line
                 key={e.id}
@@ -720,40 +771,14 @@ export function Wire3D({
                       ? "#7DD3FC"
                       : "#38BDF8"
                 }
-                strokeWidth={isPrimaryBRep ? 1.8 : 1.0}
+                strokeWidth={isPrimaryBRep ? 1.55 : 1.0}
                 vectorEffect="non-scaling-stroke"
-                strokeOpacity={isPrimaryBRep ? 0.96 : 0.78}
+                strokeOpacity={(isPrimaryBRep ? 0.92 : 0.64 + 0.24 * depthFactor).toFixed(3)}
                 strokeLinecap="round"
               />
             );
-          }
-
-          // Modo SOMB+AR ("shaded-edges") — superfície sombreada + arestas técnicas B-Rep
-          const depthFactor = ((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth);
-          return (
-            <line
-              key={e.id}
-              data-entity-id={e.id}
-              data-category="edge"
-              data-brep-kind={e.kind ?? "REAL_EDGE"}
-              x1={e.x1.toFixed(2)}
-              y1={e.y1.toFixed(2)}
-              x2={e.x2.toFixed(2)}
-              y2={e.y2.toFixed(2)}
-              stroke={
-                e.kind === "REAL_BOUNDARY" || e.kind === "INTERSECTION"
-                  ? "#E0F2FE"
-                  : e.kind === "JOINT" || e.kind === "BEND_EDGE"
-                    ? "#7DD3FC"
-                    : "#38BDF8"
-              }
-              strokeWidth={isPrimaryBRep ? 1.55 : 1.0}
-              vectorEffect="non-scaling-stroke"
-              strokeOpacity={(isPrimaryBRep ? 0.92 : 0.64 + 0.24 * depthFactor).toFixed(3)}
-              strokeLinecap="round"
-            />
-          );
-        })}
+          });
+        })()}
 
         {hasHighlight && (selectedEdges.length > 0 || selectedFaces.length > 0) && (
           <g data-category="selection" pointerEvents="none">

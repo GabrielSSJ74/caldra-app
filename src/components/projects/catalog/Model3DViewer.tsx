@@ -115,9 +115,44 @@ export function Model3DViewer({
         opacity: 0.16,
         depthWrite: false,
       }),
-      boxEdges: new THREE.EdgesGeometry(boxGeo, 25),
+      boxEdges: new THREE.EdgesGeometry(boxGeo, 15),
       edgeMat: new THREE.LineBasicMaterial({ color: 0x1b2026, transparent: true, opacity: 0.55 }),
-      wire: new THREE.MeshBasicMaterial({ color: 0x8d979f, wireframe: true }),
+      genesisEdgeMat: new THREE.LineBasicMaterial({
+        color: 0xbae6fd,
+        transparent: true,
+        opacity: 0.88,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+      wire: new THREE.ShaderMaterial({
+        vertexShader: /* glsl */ `
+          varying vec3 vWorldPos;
+          varying vec3 vWorldNormal;
+          void main() {
+            vec4 wp = modelMatrix * vec4(position, 1.0);
+            vWorldPos = wp.xyz;
+            vWorldNormal = normalize(mat3(modelMatrix) * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec3 vWorldPos;
+          varying vec3 vWorldNormal;
+          void main() {
+            vec3 N = normalize(vWorldNormal);
+            float wallFactor = smoothstep(0.85, 0.25, abs(N.y));
+            float tY = clamp((vWorldPos.y + 0.5) / 1.5, 0.0, 1.0);
+            vec3 deepSapphire = vec3(0.118, 0.227, 0.373);
+            vec3 cyanSapphire = vec3(0.220, 0.741, 0.973);
+            vec3 col = mix(deepSapphire, cyanSapphire, tY * 0.55);
+            float alpha = mix(gl_FrontFacing ? 0.04 : 0.01, mix(0.03, 0.16, tY), wallFactor);
+            gl_FragColor = vec4(col, alpha);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
     };
   }, []);
 
@@ -447,8 +482,12 @@ export function Model3DViewer({
               : (shared.mats[inst.material] ?? shared.mats["aco"]!);
       mesh.castShadow = display !== "wireframe";
       const line = mesh.children[0] as THREE.LineSegments | undefined;
-      if (line) line.visible = display === "edges";
+      if (line) {
+        line.visible = display === "edges" || display === "wireframe";
+        line.material = display === "wireframe" ? shared.genesisEdgeMat : shared.edgeMat;
+      }
     }
+    a.ground.visible = display !== "wireframe";
     a.request();
   }, [instances, explode, hidden, isolate, ghost, selectedId, shared, display]);
 
