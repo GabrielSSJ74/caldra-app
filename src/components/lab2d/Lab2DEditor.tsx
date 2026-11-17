@@ -9526,7 +9526,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : { color: "var(--chamfer-text-secondary)" }
                   }
                   className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
+                  title="SÓLIDO (SOMB+AR Caldra-Code): Sólido Sombreado de Estúdio com Arestas Técnicas de Contorno"
                 >
                   SÓLIDO
                 </button>
@@ -9552,7 +9552,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : { color: "var(--chamfer-text-secondary)" }
                   }
                   className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="Sólido Metálico 3D Puro (Sem Arestas)"
+                  title="SOMB: Sólido Sombreado Puro (Sem Arestas Sobrepostas)"
                 >
                   SOMB
                 </button>
@@ -10882,205 +10882,273 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         </clipPath>
                       )}
 
-                    {/* 1A. GRID SECUNDÁRIO INTERNO (DENTRO DA ÁREA DE TRABALHO) */}
-                    {gridConfig.subFade > 0.02 && (
-                      <pattern
-                        id="chamfer-grid-secondary"
-                        width={Math.max(0.1, gridConfig.subStep * view.k)}
-                        height={Math.max(0.1, gridConfig.subStep * view.k)}
-                        patternUnits="userSpaceOnUse"
-                        x={((view.tx % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
-                        y={((view.ty % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
-                      >
-                        <path
-                          d={`M ${gridConfig.subStep * view.k} 0 H 0 V ${gridConfig.subStep * view.k}`}
-                          fill="none"
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
-                          shapeRendering="crispEdges"
-                        />
-                      </pattern>
-                    )}
+                    {(() => {
+                      const safeGridK = Number.isFinite(view.k) && view.k > 1e-4 ? view.k : 1;
+                      const isTilted3D = orbitProjection2D.isTilted;
+                      const worldPatternTransform = isTilted3D
+                        ? `translate(${view.tx} ${view.ty}) scale(${safeGridK}) ${orbitProjection2D.svgMatrix}`
+                        : undefined;
+                      const tiltScaleComp = isTilted3D
+                        ? safeGridK *
+                          Math.sqrt(
+                            Math.max(0.28, Math.abs(orbitProjection2D.effectiveSinElevation ?? 1)),
+                          )
+                        : 1;
+                      const gridShapeRendering = isTilted3D ? "geometricPrecision" : "crispEdges";
 
-                    {/* 1B. GRID SECUNDÁRIO EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
-                    {gridConfig.subFade > 0.02 && (
-                      <pattern
-                        id="chamfer-grid-secondary-ext"
-                        width={Math.max(0.1, gridConfig.subStep * view.k)}
-                        height={Math.max(0.1, gridConfig.subStep * view.k)}
-                        patternUnits="userSpaceOnUse"
-                        x={((view.tx % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
-                        y={((view.ty % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
-                      >
-                        <path
-                          d={`M ${gridConfig.subStep * view.k} 0 H 0 V ${gridConfig.subStep * view.k}`}
-                          fill="none"
-                          stroke={gridStyles.extSecondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
-                          shapeRendering="crispEdges"
-                        />
-                      </pattern>
-                    )}
+                      const subCell = isTilted3D
+                        ? Math.max(0.1, gridConfig.subStep)
+                        : Math.max(0.1, gridConfig.subStep * safeGridK);
+                      const subOffX = isTilted3D
+                        ? 0
+                        : ((view.tx % subCell) + subCell) % subCell;
+                      const subOffY = isTilted3D
+                        ? 0
+                        : ((view.ty % subCell) + subCell) % subCell;
+                      const subStrokeW = gridStyles.secondaryWidth / tiltScaleComp;
 
-                    {/* 2A. GRID PRINCIPAL INTERNO (DENTRO DA ÁREA DE TRABALHO) */}
-                    {gridConfig.majorFade > 0.02 && (
-                      <pattern
-                        id="chamfer-grid-major"
-                        width={Math.max(0.1, gridConfig.majorStep * view.k)}
-                        height={Math.max(0.1, gridConfig.majorStep * view.k)}
-                        patternUnits="userSpaceOnUse"
-                        x={((view.tx % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
-                        y={((view.ty % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
-                      >
-                        <path
-                          d={`M ${gridConfig.majorStep * view.k} 0 H 0 V ${gridConfig.majorStep * view.k}`}
-                          fill="none"
-                          stroke={gridStyles.majorStroke}
-                          strokeWidth={gridStyles.majorWidth}
-                          shapeRendering="crispEdges"
-                        />
-                      </pattern>
-                    )}
+                      const majorCell = isTilted3D
+                        ? Math.max(0.1, gridConfig.majorStep)
+                        : Math.max(0.1, gridConfig.majorStep * safeGridK);
+                      const majorOffX = isTilted3D
+                        ? 0
+                        : ((view.tx % majorCell) + majorCell) % majorCell;
+                      const majorOffY = isTilted3D
+                        ? 0
+                        : ((view.ty % majorCell) + majorCell) % majorCell;
+                      const majorStrokeW = gridStyles.majorWidth / tiltScaleComp;
 
-                    {/* 2B. GRID PRINCIPAL EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
-                    {gridConfig.majorFade > 0.02 && (
-                      <pattern
-                        id="chamfer-grid-major-ext"
-                        width={Math.max(0.1, gridConfig.majorStep * view.k)}
-                        height={Math.max(0.1, gridConfig.majorStep * view.k)}
-                        patternUnits="userSpaceOnUse"
-                        x={((view.tx % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
-                        y={((view.ty % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
-                      >
-                        <path
-                          d={`M ${gridConfig.majorStep * view.k} 0 H 0 V ${gridConfig.majorStep * view.k}`}
-                          fill="none"
-                          stroke={gridStyles.extMajorStroke}
-                          strokeWidth={gridStyles.majorWidth}
-                          shapeRendering="crispEdges"
-                        />
-                      </pattern>
-                    )}
+                      const macroCell = isTilted3D
+                        ? Math.max(0.1, gridConfig.macroStep)
+                        : Math.max(0.1, gridConfig.macroStep * safeGridK);
+                      const macroOffX = isTilted3D
+                        ? 0
+                        : ((view.tx % macroCell) + macroCell) % macroCell;
+                      const macroOffY = isTilted3D
+                        ? 0
+                        : ((view.ty % macroCell) + macroCell) % macroCell;
+                      const macroStrokeW = gridStyles.macroWidth / tiltScaleComp;
 
-                    {/* 3A. GRID MACRO INTERNO */}
-                    <pattern
-                      id="chamfer-grid-macro"
-                      width={Math.max(0.1, gridConfig.macroStep * view.k)}
-                      height={Math.max(0.1, gridConfig.macroStep * view.k)}
-                      patternUnits="userSpaceOnUse"
-                      x={((view.tx % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
-                      y={((view.ty % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
-                    >
-                      <path
-                        d={`M ${gridConfig.macroStep * view.k} 0 H 0 V ${gridConfig.macroStep * view.k}`}
-                        fill="none"
-                        stroke={gridStyles.macroStroke}
-                        strokeWidth={gridStyles.macroWidth}
-                        shapeRendering="crispEdges"
-                      />
-                    </pattern>
+                      const isoCellW = isTilted3D
+                        ? Math.max(1, grid * Math.sqrt(3))
+                        : Math.max(1, grid * Math.sqrt(3) * safeGridK);
+                      const isoCellH = isTilted3D
+                        ? Math.max(1, grid)
+                        : Math.max(1, grid * safeGridK);
+                      const isoOffX = isTilted3D
+                        ? 0
+                        : ((view.tx % isoCellW) + isoCellW) % isoCellW;
+                      const isoOffY = isTilted3D
+                        ? 0
+                        : ((view.ty % isoCellH) + isoCellH) % isoCellH;
 
-                    {/* 3B. GRID MACRO EXTERNO */}
-                    <pattern
-                      id="chamfer-grid-macro-ext"
-                      width={Math.max(0.1, gridConfig.macroStep * view.k)}
-                      height={Math.max(0.1, gridConfig.macroStep * view.k)}
-                      patternUnits="userSpaceOnUse"
-                      x={((view.tx % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
-                      y={((view.ty % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
-                    >
-                      <path
-                        d={`M ${gridConfig.macroStep * view.k} 0 H 0 V ${gridConfig.macroStep * view.k}`}
-                        fill="none"
-                        stroke={gridStyles.extMacroStroke}
-                        strokeWidth={gridStyles.macroWidth}
-                        shapeRendering="crispEdges"
-                      />
-                    </pattern>
+                      return (
+                        <>
+                          {/* 1A. GRID SECUNDÁRIO INTERNO (DENTRO DA ÁREA DE TRABALHO — PROJETADO NO PLANO Z=0 EM 3D) */}
+                          {gridConfig.subFade > 0.02 && (
+                            <pattern
+                              id="chamfer-grid-secondary"
+                              width={subCell}
+                              height={subCell}
+                              patternUnits="userSpaceOnUse"
+                              x={subOffX}
+                              y={subOffY}
+                              patternTransform={worldPatternTransform}
+                            >
+                              <path
+                                d={`M ${subCell} 0 H 0 V ${subCell}`}
+                                fill="none"
+                                stroke={gridStyles.secondaryStroke}
+                                strokeWidth={subStrokeW}
+                                shapeRendering={gridShapeRendering}
+                              />
+                            </pattern>
+                          )}
 
-                    {/* 4. GRADE ISOMÉTRICA ESPACIAL (EIXOS A 30°, 90°, 150°) */}
-                    {drawingProjection === "isometric" && (
-                      <pattern
-                        id="chamfer-grid-isometric"
-                        width={Math.max(1, grid * Math.sqrt(3) * view.k)}
-                        height={Math.max(1, grid * view.k)}
-                        patternUnits="userSpaceOnUse"
-                        x={
-                          ((view.tx % (grid * Math.sqrt(3) * view.k)) +
-                            grid * Math.sqrt(3) * view.k) %
-                          (grid * Math.sqrt(3) * view.k)
-                        }
-                        y={((view.ty % (grid * view.k)) + grid * view.k) % (grid * view.k)}
-                      >
-                        {/* Linhas a 90° (verticais) */}
-                        <line
-                          x1={0}
-                          y1={0}
-                          x2={0}
-                          y2={grid * view.k}
-                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.12)"}
-                          strokeWidth={0.8}
-                        />
-                        <line
-                          x1={(grid * Math.sqrt(3) * view.k) / 2}
-                          y1={0}
-                          x2={(grid * Math.sqrt(3) * view.k) / 2}
-                          y2={grid * view.k}
-                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                          strokeWidth={0.65}
-                        />
-                        {/* Linhas a 30° */}
-                        <line
-                          x1={0}
-                          y1={(grid * view.k) / 2}
-                          x2={(grid * Math.sqrt(3) * view.k) / 2}
-                          y2={0}
-                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                          strokeWidth={0.65}
-                        />
-                        <line
-                          x1={0}
-                          y1={grid * view.k}
-                          x2={grid * Math.sqrt(3) * view.k}
-                          y2={0}
-                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
-                          strokeWidth={0.85}
-                        />
-                        <line
-                          x1={(grid * Math.sqrt(3) * view.k) / 2}
-                          y1={grid * view.k}
-                          x2={grid * Math.sqrt(3) * view.k}
-                          y2={(grid * view.k) / 2}
-                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                          strokeWidth={0.65}
-                        />
-                        {/* Linhas a 150° */}
-                        <line
-                          x1={0}
-                          y1={(grid * view.k) / 2}
-                          x2={(grid * Math.sqrt(3) * view.k) / 2}
-                          y2={grid * view.k}
-                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                          strokeWidth={0.65}
-                        />
-                        <line
-                          x1={0}
-                          y1={0}
-                          x2={grid * Math.sqrt(3) * view.k}
-                          y2={grid * view.k}
-                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
-                          strokeWidth={0.85}
-                        />
-                        <line
-                          x1={(grid * Math.sqrt(3) * view.k) / 2}
-                          y1={0}
-                          x2={grid * Math.sqrt(3) * view.k}
-                          y2={(grid * view.k) / 2}
-                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                          strokeWidth={0.65}
-                        />
-                      </pattern>
-                    )}
+                          {/* 1B. GRID SECUNDÁRIO EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
+                          {gridConfig.subFade > 0.02 && (
+                            <pattern
+                              id="chamfer-grid-secondary-ext"
+                              width={subCell}
+                              height={subCell}
+                              patternUnits="userSpaceOnUse"
+                              x={subOffX}
+                              y={subOffY}
+                              patternTransform={worldPatternTransform}
+                            >
+                              <path
+                                d={`M ${subCell} 0 H 0 V ${subCell}`}
+                                fill="none"
+                                stroke={gridStyles.extSecondaryStroke}
+                                strokeWidth={subStrokeW}
+                                shapeRendering={gridShapeRendering}
+                              />
+                            </pattern>
+                          )}
+
+                          {/* 2A. GRID PRINCIPAL INTERNO (DENTRO DA ÁREA DE TRABALHO — PROJETADO NO PLANO Z=0 EM 3D) */}
+                          {gridConfig.majorFade > 0.02 && (
+                            <pattern
+                              id="chamfer-grid-major"
+                              width={majorCell}
+                              height={majorCell}
+                              patternUnits="userSpaceOnUse"
+                              x={majorOffX}
+                              y={majorOffY}
+                              patternTransform={worldPatternTransform}
+                            >
+                              <path
+                                d={`M ${majorCell} 0 H 0 V ${majorCell}`}
+                                fill="none"
+                                stroke={gridStyles.majorStroke}
+                                strokeWidth={majorStrokeW}
+                                shapeRendering={gridShapeRendering}
+                              />
+                            </pattern>
+                          )}
+
+                          {/* 2B. GRID PRINCIPAL EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
+                          {gridConfig.majorFade > 0.02 && (
+                            <pattern
+                              id="chamfer-grid-major-ext"
+                              width={majorCell}
+                              height={majorCell}
+                              patternUnits="userSpaceOnUse"
+                              x={majorOffX}
+                              y={majorOffY}
+                              patternTransform={worldPatternTransform}
+                            >
+                              <path
+                                d={`M ${majorCell} 0 H 0 V ${majorCell}`}
+                                fill="none"
+                                stroke={gridStyles.extMajorStroke}
+                                strokeWidth={majorStrokeW}
+                                shapeRendering={gridShapeRendering}
+                              />
+                            </pattern>
+                          )}
+
+                          {/* 3A. GRID MACRO INTERNO */}
+                          <pattern
+                            id="chamfer-grid-macro"
+                            width={macroCell}
+                            height={macroCell}
+                            patternUnits="userSpaceOnUse"
+                            x={macroOffX}
+                            y={macroOffY}
+                            patternTransform={worldPatternTransform}
+                          >
+                            <path
+                              d={`M ${macroCell} 0 H 0 V ${macroCell}`}
+                              fill="none"
+                              stroke={gridStyles.macroStroke}
+                              strokeWidth={macroStrokeW}
+                              shapeRendering={gridShapeRendering}
+                            />
+                          </pattern>
+
+                          {/* 3B. GRID MACRO EXTERNO */}
+                          <pattern
+                            id="chamfer-grid-macro-ext"
+                            width={macroCell}
+                            height={macroCell}
+                            patternUnits="userSpaceOnUse"
+                            x={macroOffX}
+                            y={macroOffY}
+                            patternTransform={worldPatternTransform}
+                          >
+                            <path
+                              d={`M ${macroCell} 0 H 0 V ${macroCell}`}
+                              fill="none"
+                              stroke={gridStyles.extMacroStroke}
+                              strokeWidth={macroStrokeW}
+                              shapeRendering={gridShapeRendering}
+                            />
+                          </pattern>
+
+                          {/* 4. GRADE ISOMÉTRICA ESPACIAL (EIXOS A 30°, 90°, 150°) */}
+                          {drawingProjection === "isometric" && (
+                            <pattern
+                              id="chamfer-grid-isometric"
+                              width={isoCellW}
+                              height={isoCellH}
+                              patternUnits="userSpaceOnUse"
+                              x={isoOffX}
+                              y={isoOffY}
+                              patternTransform={worldPatternTransform}
+                            >
+                              {/* Linhas a 90° (verticais) */}
+                              <line
+                                x1={0}
+                                y1={0}
+                                x2={0}
+                                y2={isoCellH}
+                                stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.12)"}
+                                strokeWidth={0.8 / tiltScaleComp}
+                              />
+                              <line
+                                x1={isoCellW / 2}
+                                y1={0}
+                                x2={isoCellW / 2}
+                                y2={isoCellH}
+                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                                strokeWidth={0.65 / tiltScaleComp}
+                              />
+                              {/* Linhas a 30° */}
+                              <line
+                                x1={0}
+                                y1={isoCellH / 2}
+                                x2={isoCellW / 2}
+                                y2={0}
+                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                                strokeWidth={0.65 / tiltScaleComp}
+                              />
+                              <line
+                                x1={0}
+                                y1={isoCellH}
+                                x2={isoCellW}
+                                y2={0}
+                                stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
+                                strokeWidth={0.85 / tiltScaleComp}
+                              />
+                              <line
+                                x1={isoCellW / 2}
+                                y1={isoCellH}
+                                x2={isoCellW}
+                                y2={isoCellH / 2}
+                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                                strokeWidth={0.65 / tiltScaleComp}
+                              />
+                              {/* Linhas a 150° */}
+                              <line
+                                x1={0}
+                                y1={isoCellH / 2}
+                                x2={isoCellW / 2}
+                                y2={isoCellH}
+                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                                strokeWidth={0.65 / tiltScaleComp}
+                              />
+                              <line
+                                x1={0}
+                                y1={0}
+                                x2={isoCellW}
+                                y2={isoCellH}
+                                stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
+                                strokeWidth={0.85 / tiltScaleComp}
+                              />
+                              <line
+                                x1={isoCellW / 2}
+                                y1={0}
+                                x2={isoCellW}
+                                y2={isoCellH / 2}
+                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                                strokeWidth={0.65 / tiltScaleComp}
+                              />
+                            </pattern>
+                          )}
+                        </>
+                      );
+                    })()}
                   </defs>
 
                   {/* PASSO 1 — Grade Externa Suave sobre a Superfície de Apoio (#DCE3EC no Claro / #060A11 no Escuro) */}
@@ -11325,8 +11393,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {/* LINHAS DE REFERÊNCIA ORTOGONAL INFINITAS SUAVIZADAS (DESENHADAS ANTES DA MOLDURA PARA NUNCA TINGIR A BORDA SUPERIOR DE VERMELHO) */}
               {!solidOpen &&
                 showGrid &&
-                drawingProjection !== "isometric" &&
-                !(isInPlaceSolid3DActive && renderStyle3D === "wireframe") && (
+                drawingProjection !== "isometric" && (
                 <g pointerEvents="none" aria-hidden="true">
                   <line
                     x1={-1e5}

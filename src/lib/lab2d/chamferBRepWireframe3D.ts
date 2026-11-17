@@ -501,7 +501,7 @@ export function extractBRepTechnicalWireframeData3D(
   options: ExtractBRepWireframeOptions = {},
 ): BRepTechnicalWireframeData3D {
   const convertToThreeZUp = options.convertToThreeZUp ?? true;
-  const creaseDeg = options.creaseAngleThresholdDeg ?? 12;
+  const creaseDeg = options.creaseAngleThresholdDeg ?? 35;
   const viewDir = norm3(
     options.viewDirCad3D ?? computeViewDirCad3DFromAngles(35, 32),
     { x: -0.47, y: 0.69, z: 0.53 },
@@ -602,42 +602,20 @@ export function extractBRepTechnicalWireframeData3D(
       circularFeatureCount++;
       if (!isOuterCylinder) {
         holeFeatureCount++;
-      }
 
-      // 4 Geratrizes Axiais Cardeais: 0° (+U), 90° (+V), 180° (-U), 270° (-V)
-      const cardinalDirs: Vec3Mm[] = [
-        radU,
-        radV,
-        scale3(radU, -1),
-        scale3(radV, -1),
-      ];
-      for (const dir of cardinalDirs) {
-        const pTop = closestLoopPointInDirection3D(topLoop, cTop, dir, rTop);
-        const pBot = closestLoopPointInDirection3D(botLoop, cBot, dir, rBot);
-        if (appendSegment3D(featureThicknessArr, pBot, pTop, convertToThreeZUp)) {
-          cardinalGeneratrixCount++;
-        }
-        appendSegment3D(occludableArr, pBot, pTop, convertToThreeZUp);
-      }
-
-      // 2 Geratrizes de Silhueta Lateral Dependentes da Vista (tangent = normalize(viewDir × axisUnit))
-      const silCross = cross3(viewDir, axisUnit);
-      if (len3(silCross) > 1e-3) {
-        const silDirPos = norm3(silCross);
-        const silDirNeg = scale3(silDirPos, -1);
-        for (const sDir of [silDirPos, silDirNeg]) {
-          // Evita duplicar exatamente em cima de uma geratriz cardeal se coincidirem (< 3°)
-          const overlapsCardinal = cardinalDirs.some((cd) => dot3(cd, sDir) > 0.9985);
-          const pTop = closestLoopPointInDirection3D(topLoop, cTop, sDir, rTop);
-          const pBot = closestLoopPointInDirection3D(botLoop, cBot, sDir, rBot);
-          const targetArr = isOuterCylinder ? outerContourArr : featureThicknessArr;
-          if (!overlapsCardinal || isOuterCylinder) {
-            if (appendSegment3D(targetArr, pBot, pTop, convertToThreeZUp)) {
+        // Para furos e recortes internos: desenha as 2 linhas laterais de silhueta/contorno do túnel do furo
+        // em relação à câmera (tangent = normalize(viewDir × axisUnit)), sem criar as 4 costuras fixas de quadrante!
+        const silCross = cross3(viewDir, axisUnit);
+        if (len3(silCross) > 1e-3) {
+          const silDirPos = norm3(silCross);
+          const silDirNeg = scale3(silDirPos, -1);
+          for (const sDir of [silDirPos, silDirNeg]) {
+            const pTop = closestLoopPointInDirection3D(topLoop, cTop, sDir, rTop);
+            const pBot = closestLoopPointInDirection3D(botLoop, cBot, sDir, rBot);
+            if (appendSegment3D(featureThicknessArr, pBot, pTop, convertToThreeZUp)) {
               silhouetteGeneratrixCount++;
             }
             appendSegment3D(occludableArr, pBot, pTop, convertToThreeZUp);
-          } else {
-            silhouetteGeneratrixCount++;
           }
         }
       }

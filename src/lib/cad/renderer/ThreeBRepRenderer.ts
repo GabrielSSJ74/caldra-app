@@ -417,7 +417,40 @@ export class ThreeBRepRenderer {
           float fillDiffuse = max(0.0, dot(N, uFillLightDir));
 
           if (uShadingMode == 0) {
-            // MODO "SÓLIDO" (Acabamento Metálico Acetinado de Estúdio CAD — Estilo Shapr3D)
+            // MODO "SÓLIDO" (1º Botão = Renderizador SOMB+AR trazido do Caldra-Code:
+            // Superfície metálica acetinada de estúdio #94A3B8 / #64748B com iluminação direcional de 4 pontos
+            // Key + Fill #DBEAFE + Rim #FFEDD5 + Top #FFFFFF + arestas técnicas nítidas integradas)
+            vec3 keyDirStudio  = normalize(vec3(0.465, 0.698, 0.543));
+            vec3 fillDirStudio = normalize(vec3(-0.700, 0.500, -0.500));
+            vec3 rimDirStudio  = normalize(vec3(0.0, -0.781, -0.625));
+            vec3 topDirStudio  = vec3(0.0, 0.0, 1.0);
+
+            float dKeyCam    = pow(max(0.0, dot(N, uKeyLightDir)), 0.88);
+            float dKeyStudio = max(0.0, dot(N, keyDirStudio));
+            float dFill      = max(0.0, dot(N, fillDirStudio)) * 0.65 + fillDiffuse * 0.35;
+            float dRim       = max(0.0, dot(N, rimDirStudio));
+            float dTop       = max(0.0, dot(N, topDirStudio));
+
+            // Especular metálico calibrado (roughness 0.38, metalness 0.72 do Caldra-Code)
+            vec3 H1 = normalize(uKeyLightDir + uViewDir);
+            vec3 H2 = normalize(keyDirStudio + uViewDir);
+            float spec1 = pow(max(0.0, dot(N, H1)), 24.0);
+            float spec2 = pow(max(0.0, dot(N, H2)), 20.0);
+            float studioSpec = 0.26 * spec1 + 0.14 * spec2;
+
+            vec3 baseSlate = vec3(0.545, 0.612, 0.702); // #8B9CB3 / #94A3B8 calibrado
+            vec3 fillTint  = vec3(0.859, 0.918, 0.996); // #DBEAFE
+            vec3 rimTint   = vec3(1.000, 0.929, 0.835); // #FFEDD5
+
+            vec3 color = hemiAmbient * 0.48
+                       + baseSlate * (0.22 + dKeyCam * 0.46 + dKeyStudio * 0.22 + dTop * 0.12)
+                       + (baseSlate * fillTint) * (dFill * 0.20)
+                       + (baseSlate * rimTint) * (dRim * 0.14)
+                       + vec3(0.96, 0.98, 1.0) * studioSpec;
+
+            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+          } else {
+            // MODO "SOMB" (2º Botão = Sólido Sombreado Puro sem arestas sobrepostas, antigo SÓLIDO do Caldra atual)
             vec3 H = normalize(uKeyLightDir + uViewDir);
             float ndotH = max(0.0, dot(N, H));
             float satinSpec = 0.22 * pow(ndotH, 18.0);
@@ -427,18 +460,6 @@ export class ThreeBRepRenderer {
                        + satinBase * (keyDiffuse * 0.60 + fillDiffuse * 0.16)
                        + vec3(0.94, 0.97, 1.0) * satinSpec;
 
-            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-          } else {
-            // MODO "SOMB" (Sombreamento Técnico Fosco de Alto Contraste — Matcap Técnico CAD)
-            vec3 matteDark = vec3(0.278, 0.333, 0.412);  // #475569
-            vec3 matteLight = vec3(0.635, 0.698, 0.776); // #94A3B8 realçado para leitura técnica de espessura
-            float viewRim = max(0.0, dot(N, uViewDir));
-            float techTone = clamp(
-              keyDiffuse * 0.64 + fillDiffuse * 0.18 + viewRim * 0.10 + hemiFactor * 0.14,
-              0.0,
-              1.0
-            );
-            vec3 color = mix(matteDark, matteLight, techTone);
             gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
           }
         }
@@ -1056,13 +1077,13 @@ export class ThreeBRepRenderer {
     let occludableAll: Float32Array | null = null;
     let centerlines: Float32Array | null = null;
 
-    // 1. Extrai sempre EdgesGeometry(geometry, 12) da malha sólida tessellada (limiar 12°)
-    // para garantir que 100% das quinas do topo, da base e verticais estejam presentes
+    // 1. Extrai sempre EdgesGeometry(geometry, 35) da malha sólida tessellada (limiar 35°)
+    // para ignorar a tesselação de paredes cilíndricas suaves e preservar 100% das quinas reais e bordas de topo/base
     const meshEdgeNumbers: number[] = [];
     for (const child of this.meshGroup.children) {
       const solidMesh = child as THREE.Mesh;
       if (solidMesh?.geometry) {
-        const edgesGeo = new THREE.EdgesGeometry(solidMesh.geometry, 12);
+        const edgesGeo = new THREE.EdgesGeometry(solidMesh.geometry, 35);
         const posAttr = edgesGeo.getAttribute("position");
         if (posAttr && posAttr.array.length >= 6) {
           const arr = posAttr.array;
@@ -1375,7 +1396,8 @@ export class ThreeBRepRenderer {
 
     switch (this.edgeMode) {
       case "shaded-edges": {
-        // MODO "SÓLIDO" (Acabamento Metálico Acetinado de Estúdio CAD — Estilo Shapr3D)
+        // MODO "SÓLIDO" (1º Botão = Renderizador SOMB+AR do Caldra-Code:
+        // Sólido sombreado metálico de estúdio com arestas técnicas de contorno e furos visíveis)
         this.meshGroup.visible = true;
         if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
         this.brepWireframeGroup.visible = false;
@@ -1394,9 +1416,9 @@ export class ThreeBRepRenderer {
           const isTangent = Boolean(line.userData?.isTangentEdge);
           line.visible = !isTangent;
           if (!isTangent && line.material instanceof THREE.LineBasicMaterial) {
-            line.material.color.setHex(isDark ? 0xe2e8f0 : 0x1e293b);
-            line.material.opacity = isDark ? 0.78 : 0.72;
-            line.material.linewidth = 1.25;
+            line.material.color.setHex(isDark ? 0xf8fafc : 0x0f172a);
+            line.material.opacity = isDark ? 0.90 : 0.84;
+            line.material.linewidth = 1.5;
           }
         }
         this.verticesGroup.visible = this.selectionType === "vertex";
@@ -1404,7 +1426,7 @@ export class ThreeBRepRenderer {
       }
 
       case "shaded": {
-        // MODO "SOMB" (Sombreamento Técnico de Engenharia com Arestas de Feature e Linhas de Tangência)
+        // MODO "SOMB" (2º Botão = Sólido sombreado puro sem arestas sobrepostas, antigo SÓLIDO do Caldra atual)
         this.meshGroup.visible = true;
         if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
         this.brepWireframeGroup.visible = false;
@@ -1417,23 +1439,7 @@ export class ThreeBRepRenderer {
         this.primaryFaceMaterial.transparent = false;
         this.primaryFaceMaterial.opacity = 1.0;
 
-        this.edgesGroup.visible = true;
-        for (const child of this.edgesGroup.children) {
-          const line = child as THREE.Line;
-          const isTangent = Boolean(line.userData?.isTangentEdge);
-          line.visible = true;
-          if (line.material instanceof THREE.LineBasicMaterial) {
-            if (isTangent) {
-              line.material.color.setHex(isDark ? 0xcbd5e1 : 0x334155);
-              line.material.opacity = 0.42;
-              line.material.linewidth = 0.75;
-            } else {
-              line.material.color.setHex(isDark ? 0xf8fafc : 0x0f172a);
-              line.material.opacity = 0.94;
-              line.material.linewidth = 1.4;
-            }
-          }
-        }
+        this.edgesGroup.visible = false;
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
       }

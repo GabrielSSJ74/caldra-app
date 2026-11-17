@@ -386,14 +386,15 @@ test("Teste C: Decomposição Topológica ARAME B-Rep elimina diagonais planas, 
 
   // Zero diagonais de triangulação em faces planas
   assert.equal(wireData.diagnostics.flatFaceDiagonalCount, 0);
-  // 1 cilindro externo + 1 furo central B-Rep + 4 furos paramétricos = 6 feições circulares -> >= 24 geratrizes cardeais e >= 12 de silhueta
-  assert.ok(
-    wireData.diagnostics.cardinalGeneratrixCount >= 24,
-    `Esperado >=24 geratrizes cardeais, obtido ${wireData.diagnostics.cardinalGeneratrixCount}`,
+  // Zero costuras cardeais falsas (0°, 90°, 180°, 270°) na parede cilíndrica externa lisa e >= 10 geratrizes de silhueta nos 5 furos internos
+  assert.equal(
+    wireData.diagnostics.cardinalGeneratrixCount,
+    0,
+    `Esperado 0 costuras cardeais falsas na parede lisa, obtido ${wireData.diagnostics.cardinalGeneratrixCount}`,
   );
   assert.ok(
-    wireData.diagnostics.silhouetteGeneratrixCount >= 12,
-    `Esperado >=12 geratrizes de silhueta, obtido ${wireData.diagnostics.silhouetteGeneratrixCount}`,
+    wireData.diagnostics.silhouetteGeneratrixCount >= 10,
+    `Esperado >=10 geratrizes de silhueta nos furos internos, obtido ${wireData.diagnostics.silhouetteGeneratrixCount}`,
   );
   // Paredes verticais internas do Shell Metalon presentes
   assert.ok(

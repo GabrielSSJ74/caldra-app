@@ -1036,7 +1036,7 @@ export function consolidateStitchedLoopsInEntities2D(
       if (ent.r > 0.1) {
         let sweep = ent.a1 - ent.a0;
         if (Math.abs(sweep) < 1e-4) sweep = Math.PI * 2;
-        const steps = Math.max(8, Math.min(48, Math.ceil((Math.abs(sweep) / (Math.PI / 2)) * 12)));
+        const steps = Math.max(16, Math.min(96, Math.ceil((Math.abs(sweep) / (Math.PI / 2)) * 24)));
         const arcPts: Vec2[] = [];
         for (let i = 0; i <= steps; i++) {
           const a = ent.a0 + (sweep * i) / steps;
@@ -4217,39 +4217,20 @@ export function buildDirectTopology3DScene(
     }
 
     // -------------------------------------------------------------------------
-    // ARESTAS TOPOLÓGICAS 3D (QUINAS VIVAS >= 25°, LINHAS DE TANGÊNCIA E PERÍMETROS)
+    // ARESTAS TOPOLÓGICAS 3D (EXCLUSIVAMENTE QUINAS VIVAS REAIS DO DESENHO, SEM EMENDAS FALSAS EM PAREDES CURVAS LISAS)
     // -------------------------------------------------------------------------
-    // 1. Classifica os vértices do contorno externo em:
-    //    - Quinas vivas reais (!outerIsSmoothVertex[i], Δθ >= 25°) -> visíveis em SÓLIDO e SOMB
-    //    - Linhas de transição de tangência (onde a parede reta encontra o início/fim do Fillet/curva) -> visíveis em SOMB (0.75px suave), ocultas em SÓLIDO
-    //    - Tiras internas da curva (ambos os lados curvos com Δθ < 25°) -> NUNCA desenha linha vertical (zero efeito zebra)
     const verticalFeatureVertices: { pt2D: Vec2; isTangentEdge: boolean; idx: number }[] = [];
-    for (let i = 0; i < nOuter; i++) {
-      const prevSeg = (i - 1 + nOuter) % nOuter;
-      const isSharpCorner = !outerIsSmoothVertex[i];
-      const isTangentTransition =
-        outerIsSmoothVertex[i] &&
-        hasMixedStraightAndCurve &&
-        outerIsStraightSeg[prevSeg] !== outerIsStraightSeg[i];
-
-      if (isSharpCorner || isTangentTransition) {
-        verticalFeatureVertices.push({
-          pt2D: contour2D[i]!,
-          isTangentEdge: !isSharpCorner,
-          idx: i,
-        });
+    if (!outer.isSmoothCircle) {
+      for (let i = 0; i < nOuter; i++) {
+        const isSharpCorner = !outerIsSmoothVertex[i];
+        if (isSharpCorner) {
+          verticalFeatureVertices.push({
+            pt2D: contour2D[i]!,
+            isTangentEdge: false,
+            idx: i,
+          });
+        }
       }
-    }
-
-    // Se for um cilindro puro (sem quinas vivas e sem transição reta-curva), expõe apenas 4 geratrizes cardeais como arestas de tangência
-    if (verticalFeatureVertices.length === 0 && outer.corners.length > 0) {
-      outer.corners.slice(0, 4).forEach((cPt, idx) => {
-        verticalFeatureVertices.push({
-          pt2D: cPt,
-          isTangentEdge: true,
-          idx,
-        });
-      });
     }
 
     verticalFeatureVertices.forEach((vFeat, cIdx) => {

@@ -390,7 +390,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                         ? "bg-cyan-600 text-white shadow-xs"
                         : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
                     )}
-                    title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
+                    title="SÓLIDO (SOMB+AR Caldra-Code): Sólido Sombreado de Estúdio com Arestas Técnicas de Contorno"
                   >
                     SÓLIDO
                   </button>
@@ -408,7 +408,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                         ? "bg-cyan-600 text-white shadow-xs"
                         : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
                     )}
-                    title="Sombreamento Técnico de Engenharia (Matcap Técnico)"
+                    title="SOMB: Sólido Sombreado Puro (Sem Arestas Sobrepostas)"
                   >
                     SOMB
                   </button>

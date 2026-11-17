@@ -431,8 +431,8 @@ export class ThreeCadRenderer {
         this.modelGroup.add(this.internalLines);
       }
     } else {
-      // Caso 2: Fallback automático via EdgesGeometry (ângulo de dobra de aresta)
-      const edgesGeom = new THREE.EdgesGeometry(geometry, 25);
+      // Caso 2: Fallback automático via EdgesGeometry (ângulo de dobra de aresta 35° para ignorar tesselação cilíndrica)
+      const edgesGeom = new THREE.EdgesGeometry(geometry, 35);
       this.boundaryLines = new THREE.LineSegments(edgesGeom, this.boundaryLineMaterial);
       this.boundaryLines.name = "edges_boundary_auto";
       this.modelGroup.add(this.boundaryLines);
@@ -440,7 +440,7 @@ export class ThreeCadRenderer {
   }
 
   /**
-   * Altera o modo de exibição técnica: SOMB, SOMB+AR ou ARAME
+   * Altera o modo de exibição técnica: SÓLIDO (SOMB+AR), SOMB ou ARAME
    */
   setEdgeMode(mode: CadEdgeMode): void {
     this.edgeMode = mode;
@@ -450,18 +450,18 @@ export class ThreeCadRenderer {
   private applyEdgeMode(): void {
     if (!this.solidMesh) return;
 
-    if (this.edgeMode === "shaded") {
-      // SOMB: Superfície sombreada + bordas externas e de corte brancas e nítidas
-      this.solidMesh.material = this.solidMaterial;
-      this.solidMesh.visible = true;
-      if (this.boundaryLines) this.boundaryLines.visible = true;
-      if (this.internalLines) this.internalLines.visible = false;
-    } else if (this.edgeMode === "shaded-edges") {
-      // SOMB+AR: Superfície + bordas brancas + geratrizes/linhas de junção reais
+    if (this.edgeMode === "shaded-edges") {
+      // SÓLIDO (1º botão = SOMB+AR do Caldra-Code): Superfície sombreada + arestas técnicas de contorno
       this.solidMesh.material = this.solidMaterial;
       this.solidMesh.visible = true;
       if (this.boundaryLines) this.boundaryLines.visible = true;
       if (this.internalLines) this.internalLines.visible = true;
+    } else if (this.edgeMode === "shaded") {
+      // SOMB (2º botão = Sólido sombreado puro sem arestas sobrepostas)
+      this.solidMesh.material = this.solidMaterial;
+      this.solidMesh.visible = true;
+      if (this.boundaryLines) this.boundaryLines.visible = false;
+      if (this.internalLines) this.internalLines.visible = false;
     } else if (this.edgeMode === "wireframe") {
       // ARAME: Modo analítico esquelético
       this.solidMesh.material = this.wireframeMaterial;

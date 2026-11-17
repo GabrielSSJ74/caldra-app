@@ -1177,7 +1177,12 @@ export function addCustomCostaFerroMaterial(
   return created;
 }
 
-export function getAllCostaFerroMaterials(): CostaFerroMaterialItem[] {
+export function getAllCostaFerroMaterials(options?: {
+  includeLocalStorage?: boolean;
+}): CostaFerroMaterialItem[] {
+  if (options?.includeLocalStorage === false) {
+    return COSTA_FERRO_MATERIALS;
+  }
   const overrides = loadPriceOverrides();
   const custom = loadCustomMaterials();
   const all = [...custom, ...COSTA_FERRO_MATERIALS];
@@ -1194,7 +1199,12 @@ export function getAllCostaFerroMaterials(): CostaFerroMaterialItem[] {
   });
 }
 
-export function getAllCostaFerroHardware(): CostaFerroHardwareItem[] {
+export function getAllCostaFerroHardware(options?: {
+  includeLocalStorage?: boolean;
+}): CostaFerroHardwareItem[] {
+  if (options?.includeLocalStorage === false) {
+    return COSTA_FERRO_HARDWARE;
+  }
   const overrides = loadPriceOverrides();
   return COSTA_FERRO_HARDWARE.map((item) => {
     const override = overrides[item.id];
