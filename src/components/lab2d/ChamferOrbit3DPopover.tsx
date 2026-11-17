@@ -378,24 +378,6 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                 <div className="grid grid-cols-3 gap-1">
                   <button
                     type="button"
-                    data-testid="chamfer-orbit3d-style-solid-edges"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      AudioManager.play("ui_select");
-                      onChangeRenderStyle3D("shaded-edges");
-                    }}
-                    className={cn(
-                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
-                      renderStyle3D === "shaded-edges"
-                        ? "bg-cyan-600 text-white shadow-xs"
-                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
-                    )}
-                    title="SÓLIDO (SOMB+AR Caldra-Code): Sólido Sombreado de Estúdio com Arestas Técnicas de Contorno"
-                  >
-                    SÓLIDO
-                  </button>
-                  <button
-                    type="button"
                     data-testid="chamfer-orbit3d-style-solid"
                     onClick={() => {
                       triggerHaptic("selection");
@@ -408,9 +390,27 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                         ? "bg-cyan-600 text-white shadow-xs"
                         : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
                     )}
-                    title="SOMB: Sólido Sombreado Puro (Sem Arestas Sobrepostas)"
+                    title="SOMB (Caldra-Code): Sombreado Metálico Acetinado Puro sem Arestas Sobrepostas"
                   >
                     SOMB
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-style-solid-edges"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_select");
+                      onChangeRenderStyle3D("shaded-edges");
+                    }}
+                    className={cn(
+                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
+                      renderStyle3D === "shaded-edges"
+                        ? "bg-cyan-600 text-white shadow-xs"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                    )}
+                    title="SOMB+AR (Caldra-Code): Sombreado Metálico Acetinado com Arestas Reais de Contorno"
+                  >
+                    SOMB+AR
                   </button>
                   <button
                     type="button"

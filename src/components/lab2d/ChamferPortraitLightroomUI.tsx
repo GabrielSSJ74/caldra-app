@@ -639,10 +639,10 @@ export function ChamferPortraitTopBar({
 
   const fullViewLabel =
     activeMode === "3d"
-      ? renderStyle3D === "shaded-edges"
-        ? "SÓLIDO"
-        : renderStyle3D === "shaded"
-          ? "SOMB"
+      ? renderStyle3D === "shaded"
+        ? "SOMB"
+        : renderStyle3D === "shaded-edges"
+          ? "SOMB+AR"
           : "ARAME"
       : isOrbitToolActive || isOrbitTilted
         ? "ÓRBITA 3D"
@@ -650,10 +650,10 @@ export function ChamferPortraitTopBar({
 
   const compactViewLabel =
     activeMode === "3d"
-      ? renderStyle3D === "shaded-edges"
-        ? "SÓL"
-        : renderStyle3D === "shaded"
-          ? "SOMB"
+      ? renderStyle3D === "shaded"
+        ? "SOMB"
+        : renderStyle3D === "shaded-edges"
+          ? "S+AR"
           : "ARAME"
       : isOrbitToolActive || isOrbitTilted
         ? "ÓRB"
@@ -1593,14 +1593,14 @@ export function ChamferPortraitTopBar({
                 style={{ color: "var(--chamfer-text-secondary)" }}
                 className="block font-mono text-[9px] font-bold uppercase tracking-wider mb-1"
               >
-                Representação 3D (Sólido / Somb / Arame)
+                Representação 3D (Somb / Somb+Ar / Arame)
               </span>
               <div className="grid grid-cols-3 gap-1">
                 {(
                   [
-                    { id: "shaded-edges" as EdgeMode, label: "Sólido" },
-                    { id: "shaded" as EdgeMode, label: "Somb." },
-                    { id: "wireframe" as EdgeMode, label: "Arame" },
+                    { id: "shaded" as EdgeMode, label: "SOMB" },
+                    { id: "shaded-edges" as EdgeMode, label: "SOMB+AR" },
+                    { id: "wireframe" as EdgeMode, label: "ARAME" },
                   ]
                 ).map((st) => (
                   <button

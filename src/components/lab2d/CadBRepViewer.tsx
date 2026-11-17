@@ -1716,8 +1716,8 @@ export function CadBRepViewer({
                   <div className="grid grid-cols-3 gap-1">
                     {(
                       [
-                        { id: "shaded-edges", label: "SÓLIDO" },
                         { id: "shaded", label: "SOMB" },
+                        { id: "shaded-edges", label: "SOMB+AR" },
                         { id: "wireframe", label: "ARAME" },
                       ] as const
                     ).map((m) => (

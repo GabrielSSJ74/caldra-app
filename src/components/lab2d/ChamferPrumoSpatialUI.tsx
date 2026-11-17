@@ -2502,7 +2502,22 @@ export function ChamferPrumoSpatialUI({
           </div>
 
           <div className="text-[9.5px] font-bold uppercase opacity-70">Estilo 3D</div>
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                onChangeRenderStyle3D("shaded");
+                setViewPopoverOpen(false);
+              }}
+              className={cn(
+                "rounded-lg border py-1.5 font-mono text-[10px] font-bold uppercase cursor-pointer",
+                renderStyle3D === "shaded"
+                  ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                  : "border-slate-500/25 hover:bg-slate-500/10",
+              )}
+            >
+              SOMB
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -2510,13 +2525,13 @@ export function ChamferPrumoSpatialUI({
                 setViewPopoverOpen(false);
               }}
               className={cn(
-                "rounded-lg border py-1.5 font-bold cursor-pointer",
-                renderStyle3D !== "wireframe"
+                "rounded-lg border py-1.5 font-mono text-[10px] font-bold uppercase cursor-pointer",
+                renderStyle3D === "shaded-edges"
                   ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
                   : "border-slate-500/25 hover:bg-slate-500/10",
               )}
             >
-              Sólido
+              SOMB+AR
             </button>
             <button
               type="button"
@@ -2525,13 +2540,13 @@ export function ChamferPrumoSpatialUI({
                 setViewPopoverOpen(false);
               }}
               className={cn(
-                "rounded-lg border py-1.5 font-bold cursor-pointer",
+                "rounded-lg border py-1.5 font-mono text-[10px] font-bold uppercase cursor-pointer",
                 renderStyle3D === "wireframe"
                   ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
                   : "border-slate-500/25 hover:bg-slate-500/10",
               )}
             >
-              Arame
+              ARAME
             </button>
           </div>
 

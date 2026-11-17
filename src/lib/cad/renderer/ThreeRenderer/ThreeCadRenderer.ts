@@ -103,16 +103,16 @@ export class ThreeCadRenderer {
     // 7. Iluminação técnica de estúdio de engenharia (key + fill + rim + soft ambient)
     this.setupLighting();
 
-    // 8. Materiais
+    // 8. Materiais Metálicos Caldra-Code (Aço Anodizado #283244 + Reflexo Especular Prata + Arestas Prata-Gelo #CBD5E1)
     this.solidMaterial = new THREE.MeshStandardMaterial({
-      color: new THREE.Color("#64748b"), // Chapa de aço calibrada
-      metalness: 0.25,
-      roughness: 0.55,
+      color: new THREE.Color("#283244"),
+      metalness: 0.68,
+      roughness: 0.26,
       flatShading: false,
       side: THREE.DoubleSide,
       polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
+      polygonOffsetFactor: 1.5,
+      polygonOffsetUnits: 1.5,
     });
 
     this.wireframeMaterial = new THREE.MeshBasicMaterial({
@@ -122,11 +122,12 @@ export class ThreeCadRenderer {
       opacity: 0.35,
     });
 
-    // Bordas externas / aberturas: BRANCAS NÍTIDAS E PURAS (Regra CALDRA)
+    // Bordas externas / aberturas SOMB+AR: Prata-Gelo Acetinado (#CBD5E1, opacity: 0.85)
     this.boundaryLineMaterial = new THREE.LineBasicMaterial({
-      color: new THREE.Color("#ffffff"),
+      color: new THREE.Color("#cbd5e1"),
       linewidth: 1,
-      transparent: false,
+      transparent: true,
+      opacity: 0.85,
       depthTest: true,
     });
 
@@ -162,22 +163,23 @@ export class ThreeCadRenderer {
   }
 
   private setupLighting(): void {
-    // Luz ambiente suave para não ocultar cavidades
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    // Luz ambiente fria contida (#1E293B / #263040) para preservar o tom grafite-azulado escuro nas faces oblíquas
+    const ambientLight = new THREE.AmbientLight(0x1e293b, 0.45);
     this.scene.add(ambientLight);
 
-    // Luz principal técnica (Key Light)
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    keyLight.position.set(300, 500, 400);
-    this.scene.add(keyLight);
+    // Headlight técnica principal intensa para gerar o reflexo especular prata-brilhante (#CBD5E1 -> #F8FAFC)
+    const keyLight = new THREE.DirectionalLight(0xf8fafc, 2.2);
+    keyLight.position.set(175, 225, 425);
+    this.camera.add(keyLight);
+    this.scene.add(this.camera);
 
     // Luz de preenchimento (Fill Light)
-    const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.5);
+    const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.45);
     fillLight.position.set(-300, -200, -200);
     this.scene.add(fillLight);
 
     // Luz de borda / silhueta (Rim Light)
-    const rimLight = new THREE.DirectionalLight(0xe2e8f0, 0.4);
+    const rimLight = new THREE.DirectionalLight(0xcbd5e1, 0.4);
     rimLight.position.set(0, -500, 300);
     this.scene.add(rimLight);
   }
@@ -431,8 +433,8 @@ export class ThreeCadRenderer {
         this.modelGroup.add(this.internalLines);
       }
     } else {
-      // Caso 2: Fallback automático via EdgesGeometry (ângulo de dobra de aresta 35° para ignorar tesselação cilíndrica)
-      const edgesGeom = new THREE.EdgesGeometry(geometry, 35);
+      // Caso 2: Fallback automático via EdgesGeometry (ângulo de dobra de aresta 32° para ignorar tesselação cilíndrica)
+      const edgesGeom = new THREE.EdgesGeometry(geometry, 32);
       this.boundaryLines = new THREE.LineSegments(edgesGeom, this.boundaryLineMaterial);
       this.boundaryLines.name = "edges_boundary_auto";
       this.modelGroup.add(this.boundaryLines);

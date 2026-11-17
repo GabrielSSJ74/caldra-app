@@ -1990,7 +1990,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setMobileEditorOpenManual(false);
         setActiveArrayType(null);
         setRenderStyle3D((prev) =>
-          prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded-edges" : prev,
+          prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded" : prev,
         );
         // Costura automaticamente segmentos abertos conectados (ex.: Esquadro em "L") em contornos fechados sólidos 3D
         setEntities((prev) => {
@@ -2044,7 +2044,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return prev;
       });
       setRenderStyle3D((prev) =>
-        prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded-edges" : prev,
+        prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded" : prev,
       );
       if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
         animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
@@ -9506,32 +9506,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               >
                 <button
                   type="button"
-                  data-testid="chamfer-topbar-style-solid-edges"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    AudioManager.play("ui_select");
-                    userPickedArameIn3DRef.current = false;
-                    setRenderStyle3D("shaded-edges");
-                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                      setIsOrbitToolActive(true);
-                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-                    }
-                  }}
-                  style={
-                    renderStyle3D === "shaded-edges"
-                      ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="SÓLIDO (SOMB+AR Caldra-Code): Sólido Sombreado de Estúdio com Arestas Técnicas de Contorno"
-                >
-                  SÓLIDO
-                </button>
-                <button
-                  type="button"
                   data-testid="chamfer-topbar-style-solid"
                   onClick={() => {
                     triggerHaptic("selection");
@@ -9552,9 +9526,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : { color: "var(--chamfer-text-secondary)" }
                   }
                   className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="SOMB: Sólido Sombreado Puro (Sem Arestas Sobrepostas)"
+                  title="SOMB (Caldra-Code): Sombreado Metálico Acetinado Puro sem Arestas Sobrepostas"
                 >
                   SOMB
+                </button>
+                <button
+                  type="button"
+                  data-testid="chamfer-topbar-style-solid-edges"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    userPickedArameIn3DRef.current = false;
+                    setRenderStyle3D("shaded-edges");
+                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                      setIsOrbitToolActive(true);
+                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                    }
+                  }}
+                  style={
+                    renderStyle3D === "shaded-edges"
+                      ? {
+                          backgroundColor: "var(--chamfer-accent)",
+                          color: "var(--chamfer-accent-contrast)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
+                  title="SOMB+AR (Caldra-Code): Sombreado Metálico Acetinado com Arestas Reais de Contorno"
+                >
+                  SOMB+AR
                 </button>
                 <button
                   type="button"

@@ -143,7 +143,11 @@ export class ThreeBRepRenderer {
     uKeyLightDir: { value: THREE.Vector3 };
     uFillLightDir: { value: THREE.Vector3 };
     uViewDir: { value: THREE.Vector3 };
+    uCamRight: { value: THREE.Vector3 };
+    uCamUp: { value: THREE.Vector3 };
     uUpDir: { value: THREE.Vector3 };
+    uPartCenter: { value: THREE.Vector3 };
+    uPartRadius: { value: number };
     uOpacity: { value: number };
     uWireframeColor: { value: THREE.Color };
     uZMin: { value: number };
@@ -329,13 +333,17 @@ export class ThreeBRepRenderer {
     this.onGizmoCommitCallback = options.onGizmoCommit;
     this.setupGizmo();
 
-    // 8. Shader CAD Industrial de Alta Fidelidade (SÓLIDO: Shapr3D Satin | SOMB: Matcap Técnico | ARAME: GenesisGlassMaterial)
+    // 8. Motor de Sombreamento Metálico Acetinado Caldra-Code (1º: SOMB | 2º: SOMB+AR | 3º: ARAME)
     this.studioUniforms = {
-      uShadingMode: { value: this.edgeMode === "shaded" ? 1 : this.edgeMode === "wireframe" ? 2 : 0 },
-      uKeyLightDir: { value: new THREE.Vector3(-0.45, -0.52, 0.72).normalize() },
-      uFillLightDir: { value: new THREE.Vector3(0.55, -0.35, 0.25).normalize() },
+      uShadingMode: { value: this.edgeMode === "shaded" ? 0 : this.edgeMode === "wireframe" ? 2 : 1 },
+      uKeyLightDir: { value: new THREE.Vector3(0.35, 0.45, 0.85).normalize() },
+      uFillLightDir: { value: new THREE.Vector3(-0.55, -0.35, 0.45).normalize() },
       uViewDir: { value: new THREE.Vector3(0, -0.6, 0.8).normalize() },
+      uCamRight: { value: new THREE.Vector3(1, 0, 0) },
+      uCamUp: { value: new THREE.Vector3(0, 0, 1) },
       uUpDir: { value: new THREE.Vector3(0, 0, 1) },
+      uPartCenter: { value: new THREE.Vector3(0, 0, 5) },
+      uPartRadius: { value: 80.0 },
       uOpacity: { value: 1.0 },
       uWireframeColor: { value: new THREE.Color(0x1e3a5f) },
       uZMin: { value: 0.0 },
@@ -363,7 +371,11 @@ export class ThreeBRepRenderer {
         uniform vec3 uKeyLightDir;
         uniform vec3 uFillLightDir;
         uniform vec3 uViewDir;
+        uniform vec3 uCamRight;
+        uniform vec3 uCamUp;
         uniform vec3 uUpDir;
+        uniform vec3 uPartCenter;
+        uniform float uPartRadius;
         uniform float uOpacity;
         uniform vec3 uWireframeColor;
         uniform float uZMin;
@@ -375,98 +387,111 @@ export class ThreeBRepRenderer {
 
         void main() {
           if (uShadingMode == 2) {
-            // CAMADA 3 — ESPESSURA EM AZUL-AÇO PETRÓLEO ACETINADO (#2B4C73 / #345B87, opacity: 0.22)
+            // CAMADA 3 (MODO ARAME) — ESPESSURA EM AZUL-AÇO PETRÓLEO ACETINADO (#2B4C73 / #345B87, opacity: 0.22)
             // E FACES HORIZONTAIS (TOPO +Z E BASE -Z) QUASE 100% TRANSPARENTES (opacity: 0.02)
             vec3 N = normalize(vWorldNormal);
             float absNz = abs(N.z);
 
-            // Sombreamento direcional sutil nas paredes laterais da espessura
             vec3 lightDir = normalize(vec3(-0.55, -0.65, 0.52));
             float dirShade = clamp(0.5 + 0.5 * dot(N, lightDir), 0.0, 1.0);
 
-            // Azul-Aço Petróleo Acetinado: #2B4C73 (0.169, 0.298, 0.451) <-> #345B87 (0.204, 0.357, 0.529)
             vec3 steelBlueDark = vec3(0.169, 0.298, 0.451); // #2B4C73
             vec3 steelBlueMid  = vec3(0.204, 0.357, 0.529); // #345B87
             vec3 wallColor = mix(steelBlueDark, steelBlueMid, dirShade);
 
             if (absNz > 0.75) {
-              // Faces Horizontais (Topo +Z e Base -Z): quase 100% transparentes (opacity: 0.02)
               gl_FragColor = vec4(wallColor, 0.02 * uGenesisBuildProgress);
             } else {
-              // Paredes Verticais / Laterais da Espessura: opacity 0.22 (variando entre 0.16 e 0.26 conforme ângulo)
               float wallOpacity = mix(0.16, 0.26, dirShade) * uGenesisBuildProgress;
               gl_FragColor = vec4(wallColor, wallOpacity);
             }
             return;
           }
 
+          // MODOS "SOMB" (uShadingMode == 0) e "SOMB+AR" (uShadingMode == 1) DO CALDRA-CODE:
+          // Base em Aço Anodizado / Grafite-Azulado Escuro (#1E2736 -> #252F3F / #283244 -> #334155)
+          // com Reflexo Especular Metálico Acetinado Dinâmico em Prata-Brilhante (#CBD5E1 -> #F8FAFC)
+          // acoplado à câmera (Headlight offset (0.35, 0.45, 0.85)).
           vec3 N = normalize(vWorldNormal);
-          if (!gl_FrontFacing) {
+          if (dot(N, uViewDir) < 0.0) {
             N = -N;
           }
 
-          // 1. Luz Hemisférica (Sky #64748B / Ground #334155)
-          float hemiFactor = clamp(0.5 + 0.5 * dot(N, uUpDir), 0.0, 1.0);
-          vec3 skyColor = vec3(0.392, 0.455, 0.545);    // #64748B (Azul-Aço Claro no topo)
-          vec3 groundColor = vec3(0.200, 0.255, 0.333); // #334155 (Grafite Neutro na base)
-          vec3 hemiAmbient = mix(groundColor, skyColor, hemiFactor);
+          // Normal no espaço da câmera (View Space):
+          // vN.x = direita da tela, vN.y = topo da tela, vN.z = apontando para a câmera
+          vec3 vN = normalize(vec3(
+            dot(N, uCamRight),
+            dot(N, uCamUp),
+            dot(N, uViewDir)
+          ));
 
-          // 2. Key Light Principal (35° frontal-esquerda da câmera com difusão cosseno suave ^0.85)
-          float rawNdotL = max(0.0, dot(N, uKeyLightDir));
-          float keyDiffuse = pow(rawNdotL, 0.85);
-          float fillDiffuse = max(0.0, dot(N, uFillLightDir));
+          // Coordenadas espaciais normalizadas da peça no plano da câmera
+          // (em ISO, compensamos o escorço vertical para que o flange ocupe [-1..+1] em camU e camV)
+          float safeRadius = max(uPartRadius, 25.0);
+          vec3 relPos = (vWorldPos - uPartCenter) / safeRadius;
+          float camU = clamp(dot(relPos, uCamRight) * 1.15, -1.35, 1.35);
+          float camV = clamp(dot(relPos, uCamUp) * 1.55, -1.35, 1.35);
 
-          if (uShadingMode == 0) {
-            // MODO "SÓLIDO" (1º Botão = Renderizador SOMB+AR trazido do Caldra-Code:
-            // Superfície metálica acetinada de estúdio #94A3B8 / #64748B com iluminação direcional de 4 pontos
-            // Key + Fill #DBEAFE + Rim #FFEDD5 + Top #FFFFFF + arestas técnicas nítidas integradas)
-            vec3 keyDirStudio  = normalize(vec3(0.465, 0.698, 0.543));
-            vec3 fillDirStudio = normalize(vec3(-0.700, 0.500, -0.500));
-            vec3 rimDirStudio  = normalize(vec3(0.0, -0.781, -0.625));
-            vec3 topDirStudio  = vec3(0.0, 0.0, 1.0);
+          // Direção da Headlight no espaço da câmera (offset (0.35, 0.45, 0.85) + componente zenital)
+          vec3 viewHeadlightDir = normalize(vec3(0.35, 0.58, 0.73));
+          float faceLight = clamp(max(dot(vN, viewHeadlightDir), dot(N, uKeyLightDir)), 0.0, 1.0);
+          float ndotV = clamp(vN.z, 0.0, 1.0);
 
-            float dKeyCam    = pow(max(0.0, dot(N, uKeyLightDir)), 0.88);
-            float dKeyStudio = max(0.0, dot(N, keyDirStudio));
-            float dFill      = max(0.0, dot(N, fillDirStudio)) * 0.65 + fillDiffuse * 0.35;
-            float dRim       = max(0.0, dot(N, rimDirStudio));
-            float dTop       = max(0.0, dot(N, topDirStudio));
+          // Varredura espacial da luz principal (Headlight) sobre a superfície da peça:
+          // s varia de -1.0 (lado oblíquo em sombra) até +1.0 (zona de reflexo especular da Headlight)
+          float s = camU * 0.56 + camV * 0.83;
+          float crossCoord = -camU * 0.83 + camV * 0.56;
+          float radialFalloff = clamp(1.0 - 0.22 * crossCoord * crossCoord, 0.0, 1.0);
 
-            // Especular metálico calibrado (roughness 0.38, metalness 0.72 do Caldra-Code)
-            vec3 H1 = normalize(uKeyLightDir + uViewDir);
-            vec3 H2 = normalize(keyDirStudio + uViewDir);
-            float spec1 = pow(max(0.0, dot(N, H1)), 24.0);
-            float spec2 = pow(max(0.0, dot(N, H2)), 20.0);
-            float studioSpec = 0.26 * spec1 + 0.14 * spec2;
+          // Paleta Metálica Caldra-Code (Aço Anodizado Escuro -> Prata Acetinado Brilhante):
+          vec3 deepShadowSteel = vec3(0.118, 0.153, 0.212); // #1E2736 (Sombra profunda / contra-luz)
+          vec3 darkAnodized    = vec3(0.145, 0.184, 0.247); // #252F3F (Base Aço Anodizado em ângulo oblíquo)
+          vec3 slateSteelMid   = vec3(0.200, 0.255, 0.333); // #334155 (Meio-tom Grafite-Azulado)
+          vec3 brushedSteel    = vec3(0.420, 0.498, 0.604); // #6B7F9A (Transição Aço Usinado)
+          vec3 silverSatin     = vec3(0.796, 0.835, 0.882); // #CBD5E1 (Reflexo Prata Acetinado)
+          vec3 silverPeak      = vec3(0.973, 0.980, 0.988); // #F8FAFC (Pico Especular Prata-Brilhante)
 
-            vec3 baseSlate = vec3(0.545, 0.612, 0.702); // #8B9CB3 / #94A3B8 calibrado
-            vec3 fillTint  = vec3(0.859, 0.918, 0.996); // #DBEAFE
-            vec3 rimTint   = vec3(1.000, 0.929, 0.835); // #FFEDD5
+          // 1. Corpo base em Aço Anodizado Escuro (#1E2736 -> #252F3F -> #334155) nas regiões oblíquas
+          float obliqueGrad = smoothstep(-0.75, 0.25, s) * (0.35 + 0.65 * faceLight);
+          vec3 baseBody = mix(deepShadowSteel, darkAnodized, smoothstep(0.0, 0.45, faceLight + ndotV * 0.3));
+          baseBody = mix(baseBody, slateSteelMid, obliqueGrad);
 
-            vec3 color = hemiAmbient * 0.48
-                       + baseSlate * (0.22 + dKeyCam * 0.46 + dKeyStudio * 0.22 + dTop * 0.12)
-                       + (baseSlate * fillTint) * (dFill * 0.20)
-                       + (baseSlate * rimTint) * (dRim * 0.14)
-                       + vec3(0.96, 0.98, 1.0) * studioSpec;
+          // 2. Rim Light sutil nas paredes cilíndricas e furos em ângulo rasante (#263040)
+          float cylFactor = clamp(1.0 - abs(N.z), 0.0, 1.0);
+          float rimGrazing = pow(1.0 - ndotV, 2.2) * (0.4 + 0.6 * cylFactor);
+          baseBody += vec3(0.165, 0.212, 0.282) * (rimGrazing * 0.50);
 
-            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-          } else {
-            // MODO "SOMB" (2º Botão = Sólido Sombreado Puro sem arestas sobrepostas, antigo SÓLIDO do Caldra atual)
-            vec3 H = normalize(uKeyLightDir + uViewDir);
-            float ndotH = max(0.0, dot(N, H));
-            float satinSpec = 0.22 * pow(ndotH, 18.0);
+          // 3. Reflexo Especular Metálico Acetinado Dinâmico (#CBD5E1 -> #F8FAFC):
+          // Em faces que refletem a câmera/Headlight, gera o gradiente metálico intenso do Caldra-Code
+          float faceGate = smoothstep(0.18, 0.72, faceLight);
+          float sweepZeroToOne = smoothstep(-0.28, 0.82, s) * radialFalloff;
 
-            vec3 satinBase = vec3(0.565, 0.627, 0.710); // Aço acetinado #90A0B5
-            vec3 color = hemiAmbient * 0.56
-                       + satinBase * (keyDiffuse * 0.60 + fillDiffuse * 0.16)
-                       + vec3(0.94, 0.97, 1.0) * satinSpec;
+          float planarBroad  = pow(sweepZeroToOne, 1.35) * faceGate;
+          float planarMedium = pow(sweepZeroToOne, 2.60) * faceGate;
+          float planarPeak   = pow(sweepZeroToOne, 4.80) * smoothstep(0.42, 0.88, faceLight);
 
-            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-          }
+          // Em paredes cilíndricas curvas (borda externa do flange e paredes internas dos furos),
+          // a normal gira 360°, gerando faixa especular prata-brilhante nítida sobre o cilindro
+          vec2 cylN2 = normalize(vec2(vN.x, vN.z) + vec2(1e-5, 0.0));
+          float cylAlign = max(0.0, dot(cylN2, normalize(vec2(0.42, 0.91))));
+          float cylBroad  = cylFactor * pow(cylAlign, 2.8);
+          float cylMedium = cylFactor * pow(cylAlign, 6.5);
+          float cylPeak   = cylFactor * pow(cylAlign, 16.0);
+
+          float totalBroad  = clamp(max(planarBroad, cylBroad), 0.0, 1.0);
+          float totalMedium = clamp(max(planarMedium, cylMedium), 0.0, 1.0);
+          float totalPeak   = clamp(max(planarPeak, cylPeak), 0.0, 1.0);
+
+          vec3 color = mix(baseBody, brushedSteel, clamp(totalBroad * 0.90, 0.0, 1.0));
+          color = mix(color, silverSatin, clamp(totalMedium * 0.92, 0.0, 1.0));
+          color = mix(color, silverPeak, clamp(totalPeak * 0.88, 0.0, 1.0));
+
+          gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
         }
       `,
       polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
+      polygonOffsetFactor: 1.5,
+      polygonOffsetUnits: 1.5,
       side: THREE.DoubleSide,
       transparent: false,
       depthWrite: true,
@@ -665,25 +690,26 @@ export class ThreeBRepRenderer {
   }
 
   private setupLighting(): void {
-    // 1. Luz Hemisférica (Sky #64748B / Ground #334155) alinhada ao eixo +Z superior
-    this.hemiLight = new THREE.HemisphereLight(0x64748b, 0x334155, 1.15);
+    // 1. Luz Ambiente Fria Contida (#1E293B / #263040, intensity 0.45) — preserva o tom escuro #252F3F/#263040 nas faces oblíquas
+    this.hemiLight = new THREE.HemisphereLight(0x334155, 0x1e293b, 0.45);
     this.hemiLight.position.set(0, 0, 250);
     this.scene.add(this.hemiLight);
 
-    // 2. Key Light Principal (35° à frente-esquerda da câmera)
-    this.keyLight = new THREE.DirectionalLight(0xffffff, 1.25);
-    this.keyLight.position.set(-110, -160, 190);
+    // 2. Headlight Principal Acoplada à Câmera (offset angular (0.35, 0.45, 0.85), intensity 2.2)
+    this.keyLight = new THREE.DirectionalLight(0xf8fafc, 2.2);
+    this.keyLight.position.set(105, 135, 255);
     this.scene.add(this.keyLight);
 
-    // 3. Fill Light Suave Complementar
-    this.fillLight = new THREE.DirectionalLight(0xdbeafe, 0.55);
-    this.fillLight.position.set(130, -90, 90);
+    // 3. Rim Light / Contra-Luz Sutil para separação limpa da peça sobre o fundo
+    this.fillLight = new THREE.DirectionalLight(0x94a3b8, 0.42);
+    this.fillLight.position.set(-140, -110, 90);
     this.scene.add(this.fillLight);
   }
 
   /**
-   * Atualiza os vetores de iluminação acoplados à câmera ativa para leitura tridimensional
-   * perfeita em qualquer ângulo de órbita (Key Light a 35° frontal-esquerda da câmera).
+   * Atualiza os vetores de iluminação acoplados à câmera ativa (Headlight offset (0.35, 0.45, 0.85)
+   * do Caldra-Code) para que, ao girar a peça em 3D, a luz acompanhe o observador e gere o reflexo
+   * especular prata-brilhante (#CBD5E1 -> #F8FAFC) sobre a base de aço anodizado escuro (#252F3F).
    */
   private updateCameraCoupledLighting(): void {
     const viewDir = this.activeCamera.position
@@ -701,33 +727,32 @@ export class ThreeBRepRenderer {
     }
     const orthoUp = new THREE.Vector3().crossVectors(viewDir, camRight).normalize();
 
-    // Key Light posicionada a 35° à frente-esquerda-superior da câmera
-    const angle35Rad = (35 * Math.PI) / 180;
-    const cos35 = Math.cos(angle35Rad);
-    const sin35 = Math.sin(angle35Rad);
+    // Headlight acoplada à câmera com offset angular (0.35, 0.45, 0.85) no espaço da câmera (Caldra-Code)
     const keyDir = new THREE.Vector3()
-      .addScaledVector(viewDir, cos35)
-      .addScaledVector(camRight, -sin35 * 0.78)
-      .addScaledVector(orthoUp, sin35 * 0.62)
+      .addScaledVector(camRight, 0.35)
+      .addScaledVector(orthoUp, 0.45)
+      .addScaledVector(viewDir, 0.85)
       .normalize();
 
-    // Fill Light suave posicionada à direita-inferior da câmera
+    // Rim / Fill Light sutil no quadrante oposto
     const fillDir = new THREE.Vector3()
-      .addScaledVector(viewDir, 0.55)
-      .addScaledVector(camRight, 0.72)
-      .addScaledVector(orthoUp, -0.32)
+      .addScaledVector(camRight, -0.55)
+      .addScaledVector(orthoUp, -0.35)
+      .addScaledVector(viewDir, 0.45)
       .normalize();
 
     this.studioUniforms.uViewDir.value.copy(viewDir);
+    this.studioUniforms.uCamRight.value.copy(camRight);
+    this.studioUniforms.uCamUp.value.copy(orthoUp);
     this.studioUniforms.uKeyLightDir.value.copy(keyDir);
     this.studioUniforms.uFillLightDir.value.copy(fillDir);
     this.studioUniforms.uUpDir.value.set(0, 0, 1);
 
     if (this.keyLight) {
-      this.keyLight.position.copy(keyDir).multiplyScalar(300);
+      this.keyLight.position.copy(keyDir).multiplyScalar(320);
     }
     if (this.fillLight) {
-      this.fillLight.position.copy(fillDir).multiplyScalar(250);
+      this.fillLight.position.copy(fillDir).multiplyScalar(260);
     }
   }
 
@@ -807,11 +832,14 @@ export class ThreeBRepRenderer {
         const isBottomEdge = eMaxZ <= minZ + zTol;
         const isTangentEdge = Boolean(edge.isTangentEdge);
 
+        // Arestas de contorno SOMB+AR: Prata-Gelo Acetinado (#CBD5E1, opacity: 0.85, 1.0px preciso)
         const mat = new THREE.LineBasicMaterial({
-          color: 0xf8fafc,
-          linewidth: isTangentEdge ? 0.75 : 1.4,
+          color: 0xcbd5e1,
+          linewidth: 1.0,
           transparent: true,
-          opacity: isTangentEdge ? 0.42 : 0.92,
+          opacity: isTangentEdge ? 0.0 : 0.85,
+          depthTest: true,
+          depthWrite: false,
         });
 
         const lineGeo = new THREE.BufferGeometry();
@@ -822,6 +850,7 @@ export class ThreeBRepRenderer {
         const line = new THREE.Line(lineGeo, mat);
         line.name = `edge_${edge.edgeIndex}`;
         line.frustumCulled = false;
+        line.renderOrder = 3;
         line.userData = {
           edgeIndex: edge.edgeIndex,
           edgeId: edge.edgeId,
@@ -833,6 +862,25 @@ export class ThreeBRepRenderer {
               : "lateral_wall",
         };
         this.edgesGroup.add(line);
+      }
+    } else if (this.meshGroup.children.length > 0) {
+      // Fallback automático via EdgesGeometry (thresholdAngle = 32° sem linhas verticais falsas em curvas)
+      const solidMesh = this.meshGroup.children[0] as THREE.Mesh;
+      if (solidMesh?.geometry) {
+        const edgesGeo = new THREE.EdgesGeometry(solidMesh.geometry, 32);
+        const mat = new THREE.LineBasicMaterial({
+          color: 0xcbd5e1,
+          linewidth: 1.0,
+          transparent: true,
+          opacity: 0.85,
+          depthTest: true,
+          depthWrite: false,
+        });
+        const segs = new THREE.LineSegments(edgesGeo, mat);
+        segs.name = "edges_auto_32";
+        segs.frustumCulled = false;
+        segs.renderOrder = 3;
+        this.edgesGroup.add(segs);
       }
     }
 
@@ -864,6 +912,14 @@ export class ThreeBRepRenderer {
     if (shape.bounds) {
       this.studioUniforms.uZMin.value = shape.bounds.min.z;
       this.studioUniforms.uZMax.value = Math.max(shape.bounds.min.z + 0.5, shape.bounds.max.z);
+      const cx = 0.5 * (shape.bounds.min.x + shape.bounds.max.x);
+      const cy = 0.5 * (shape.bounds.min.y + shape.bounds.max.y);
+      const cz = 0.5 * (shape.bounds.min.z + shape.bounds.max.z);
+      const dx = Math.max(1, shape.bounds.max.x - shape.bounds.min.x);
+      const dy = Math.max(1, shape.bounds.max.y - shape.bounds.min.y);
+      const dz = Math.max(1, shape.bounds.max.z - shape.bounds.min.z);
+      this.studioUniforms.uPartCenter.value.set(cx, cy, cz);
+      this.studioUniforms.uPartRadius.value = Math.max(20, 0.5 * Math.hypot(dx, dy, dz));
     }
 
     // Reconstrui as 5 camadas Gênese CALDRA caso não haja setBRepWireframeData separado
@@ -1395,9 +1451,9 @@ export class ThreeBRepRenderer {
     }
 
     switch (this.edgeMode) {
-      case "shaded-edges": {
-        // MODO "SÓLIDO" (1º Botão = Renderizador SOMB+AR do Caldra-Code:
-        // Sólido sombreado metálico de estúdio com arestas técnicas de contorno e furos visíveis)
+      case "shaded": {
+        // 1º MODO: "SOMB" DO CALDRA-CODE (Sombreado Metálico Puro sem arestas sobrepostas:
+        // Base Aço Anodizado #252F3F/#283244 + Reflexo Especular Prata-Brilhante #CBD5E1 -> #F8FAFC)
         this.meshGroup.visible = true;
         if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
         this.brepWireframeGroup.visible = false;
@@ -1405,8 +1461,28 @@ export class ThreeBRepRenderer {
         this.studioUniforms.uOpacity.value = 1.0;
         this.baseSolidMaterial.transparent = false;
         this.baseSolidMaterial.depthWrite = true;
-        this.baseSolidMaterial.polygonOffsetFactor = 1;
-        this.baseSolidMaterial.polygonOffsetUnits = 1;
+        this.baseSolidMaterial.polygonOffsetFactor = 1.5;
+        this.baseSolidMaterial.polygonOffsetUnits = 1.5;
+        this.primaryFaceMaterial.transparent = false;
+        this.primaryFaceMaterial.opacity = 1.0;
+
+        this.edgesGroup.visible = false;
+        this.verticesGroup.visible = this.selectionType === "vertex";
+        break;
+      }
+
+      case "shaded-edges": {
+        // 2º MODO: "SOMB+AR" DO CALDRA-CODE (Mesmo corpo metálico escuro com reflexo especular prata
+        // + arestas reais de contorno finas 1.0px em Prata-Gelo Acetinado #CBD5E1 @ 0.85, sem emendas falsas)
+        this.meshGroup.visible = true;
+        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
+        this.brepWireframeGroup.visible = false;
+        this.studioUniforms.uShadingMode.value = 1;
+        this.studioUniforms.uOpacity.value = 1.0;
+        this.baseSolidMaterial.transparent = false;
+        this.baseSolidMaterial.depthWrite = true;
+        this.baseSolidMaterial.polygonOffsetFactor = 1.5;
+        this.baseSolidMaterial.polygonOffsetUnits = 1.5;
         this.primaryFaceMaterial.transparent = false;
         this.primaryFaceMaterial.opacity = 1.0;
 
@@ -1416,30 +1492,12 @@ export class ThreeBRepRenderer {
           const isTangent = Boolean(line.userData?.isTangentEdge);
           line.visible = !isTangent;
           if (!isTangent && line.material instanceof THREE.LineBasicMaterial) {
-            line.material.color.setHex(isDark ? 0xf8fafc : 0x0f172a);
-            line.material.opacity = isDark ? 0.90 : 0.84;
-            line.material.linewidth = 1.5;
+            // Arestas SOMB+AR sempre em Prata-Gelo Acetinado (#CBD5E1, opacity: 0.85) sobre o aço escuro
+            line.material.color.setHex(0xcbd5e1);
+            line.material.opacity = 0.85;
+            line.material.linewidth = 1.0;
           }
         }
-        this.verticesGroup.visible = this.selectionType === "vertex";
-        break;
-      }
-
-      case "shaded": {
-        // MODO "SOMB" (2º Botão = Sólido sombreado puro sem arestas sobrepostas, antigo SÓLIDO do Caldra atual)
-        this.meshGroup.visible = true;
-        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
-        this.brepWireframeGroup.visible = false;
-        this.studioUniforms.uShadingMode.value = 1;
-        this.studioUniforms.uOpacity.value = 1.0;
-        this.baseSolidMaterial.transparent = false;
-        this.baseSolidMaterial.depthWrite = true;
-        this.baseSolidMaterial.polygonOffsetFactor = 1;
-        this.baseSolidMaterial.polygonOffsetUnits = 1;
-        this.primaryFaceMaterial.transparent = false;
-        this.primaryFaceMaterial.opacity = 1.0;
-
-        this.edgesGroup.visible = false;
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
       }
