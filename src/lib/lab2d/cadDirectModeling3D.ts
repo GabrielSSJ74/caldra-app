@@ -2863,20 +2863,52 @@ export function buildDirectTopology3DScene(
           const topRing3D: Vec3Mm[] = hLoop.map((p) => ({ x: p.x, y: p.y, z: hZ1 + 0.06 }));
           const botRing3D: Vec3Mm[] = hLoop.map((p) => ({ x: p.x, y: p.y, z: hZ0 - 0.06 }));
 
+          const holeFlatNormals: Vec3Mm[] = [];
+          for (let i = 0; i < nh; i++) {
+            const next = (i + 1) % nh;
+            const b0 = botRing3D[i]!;
+            const b1 = botRing3D[next]!;
+            const dx = b1.x - b0.x;
+            const dy = b1.y - b0.y;
+            const segLen = Math.hypot(dx, dy) || 1;
+            holeFlatNormals.push({ x: -dy / segLen, y: dx / segLen, z: 0 });
+          }
+          const holeSmoothNormals: Vec3Mm[] = [];
+          const holeIsSmoothVertex: boolean[] = [];
+          for (let i = 0; i < nh; i++) {
+            const prev = (i - 1 + nh) % nh;
+            const nPrev = holeFlatNormals[prev]!;
+            const nCurr = holeFlatNormals[i]!;
+            const dotVal = nPrev.x * nCurr.x + nPrev.y * nCurr.y;
+            if (dotVal > 0.848) {
+              const sx = nPrev.x + nCurr.x;
+              const sy = nPrev.y + nCurr.y;
+              const sLen = Math.hypot(sx, sy) || 1;
+              holeSmoothNormals.push({ x: sx / sLen, y: sy / sLen, z: 0 });
+              holeIsSmoothVertex.push(true);
+            } else {
+              holeSmoothNormals.push(nCurr);
+              holeIsSmoothVertex.push(false);
+            }
+          }
+
           for (let i = 0; i < nh; i++) {
             const next = (i + 1) % nh;
             const b0 = botRing3D[i]!;
             const b1 = botRing3D[next]!;
             const t1 = topRing3D[next]!;
             const t0 = topRing3D[i]!;
-            const dx = b1.x - b0.x;
-            const dy = b1.y - b0.y;
-            const segLen = Math.hypot(dx, dy) || 1;
-            const inNx = -dy / segLen;
-            const inNy = dx / segLen;
+            const flatN = holeFlatNormals[i]!;
+            const nLeft = holeIsSmoothVertex[i] ? holeSmoothNormals[i]! : flatN;
+            const nRight = holeIsSmoothVertex[next] ? holeSmoothNormals[next]! : flatN;
             const baseV = positions.length / 3;
             positions.push(b0.x, b0.y, b0.z, t0.x, t0.y, t0.z, t1.x, t1.y, t1.z, b1.x, b1.y, b1.z);
-            for (let k = 0; k < 4; k++) normals.push(inNx, inNy, 0);
+            normals.push(
+              nLeft.x, nLeft.y, 0,
+              nLeft.x, nLeft.y, 0,
+              nRight.x, nRight.y, 0,
+              nRight.x, nRight.y, 0,
+            );
             indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
             holeArea += triangleArea3D(b0, t0, t1) + triangleArea3D(b0, t1, b1);
           }

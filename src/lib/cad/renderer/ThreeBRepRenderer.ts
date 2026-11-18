@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -136,12 +137,13 @@ export class ThreeBRepRenderer {
   private multiSelection: CadSelectedEntity[] = [];
   private hoveredEntity: CadSelectedEntity | null = null;
 
-  // Materiais Técnicos Industriais (Shapr3D Studio Satin & SolidWorks Technical Matcap & Genesis Glass)
+  // Materiais Técnicos Industriais (CaldraMachinedSteelMaterial — Aço Usinado Prata-Claro Dinâmico)
   private baseSolidMaterial: THREE.ShaderMaterial;
   private studioUniforms: {
     uShadingMode: { value: number };
     uKeyLightDir: { value: THREE.Vector3 };
     uFillLightDir: { value: THREE.Vector3 };
+    uWorldLightDir: { value: THREE.Vector3 };
     uViewDir: { value: THREE.Vector3 };
     uCamRight: { value: THREE.Vector3 };
     uCamUp: { value: THREE.Vector3 };
@@ -154,8 +156,10 @@ export class ThreeBRepRenderer {
     uZMax: { value: number };
     uGenesisBuildProgress: { value: number };
   };
+  private envMapTexture: THREE.Texture | null = null;
   private keyLight: THREE.DirectionalLight | null = null;
   private fillLight: THREE.DirectionalLight | null = null;
+  private worldKeyLight: THREE.DirectionalLight | null = null;
   private hemiLight: THREE.HemisphereLight | null = null;
   private primaryFaceMaterial: THREE.MeshStandardMaterial;
   private secondaryFaceMaterial: THREE.MeshStandardMaterial;
@@ -333,11 +337,12 @@ export class ThreeBRepRenderer {
     this.onGizmoCommitCallback = options.onGizmoCommit;
     this.setupGizmo();
 
-    // 8. Motor de Sombreamento Metálico Acetinado Caldra-Code (1º: SOMB | 2º: SOMB+AR | 3º: ARAME)
+    // 8. Motor de Sombreamento Metálico Dinâmico Caldra-Code (CaldraMachinedSteelMaterial: 1º SOMB | 2º SOMB+AR | 3º ARAME)
     this.studioUniforms = {
       uShadingMode: { value: this.edgeMode === "shaded" ? 0 : this.edgeMode === "wireframe" ? 2 : 1 },
-      uKeyLightDir: { value: new THREE.Vector3(0.35, 0.45, 0.85).normalize() },
-      uFillLightDir: { value: new THREE.Vector3(-0.55, -0.35, 0.45).normalize() },
+      uKeyLightDir: { value: new THREE.Vector3(-0.45, 0.55, 0.70).normalize() },
+      uFillLightDir: { value: new THREE.Vector3(0.55, -0.35, 0.50).normalize() },
+      uWorldLightDir: { value: new THREE.Vector3(-0.40, 0.60, 0.70).normalize() },
       uViewDir: { value: new THREE.Vector3(0, -0.6, 0.8).normalize() },
       uCamRight: { value: new THREE.Vector3(1, 0, 0) },
       uCamUp: { value: new THREE.Vector3(0, 0, 1) },
@@ -355,14 +360,16 @@ export class ThreeBRepRenderer {
       uniforms: this.studioUniforms,
       vertexShader: /* glsl */ `
         varying vec3 vWorldNormal;
+        varying vec3 vViewNormal;
         varying vec3 vWorldPos;
         varying vec3 vViewPos;
         void main() {
           vec4 worldPosition = modelMatrix * vec4(position, 1.0);
           vWorldPos = worldPosition.xyz;
-          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+          vViewNormal = normalize(normalMatrix * normal);
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          vViewPos = -mvPosition.xyz;
+          vViewPos = mvPosition.xyz;
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -370,6 +377,7 @@ export class ThreeBRepRenderer {
         uniform int uShadingMode;
         uniform vec3 uKeyLightDir;
         uniform vec3 uFillLightDir;
+        uniform vec3 uWorldLightDir;
         uniform vec3 uViewDir;
         uniform vec3 uCamRight;
         uniform vec3 uCamUp;
@@ -382,6 +390,7 @@ export class ThreeBRepRenderer {
         uniform float uZMax;
         uniform float uGenesisBuildProgress;
         varying vec3 vWorldNormal;
+        varying vec3 vViewNormal;
         varying vec3 vWorldPos;
         varying vec3 vViewPos;
 
@@ -408,83 +417,100 @@ export class ThreeBRepRenderer {
             return;
           }
 
-          // MODOS "SOMB" (uShadingMode == 0) e "SOMB+AR" (uShadingMode == 1) DO CALDRA-CODE:
-          // Base em Aço Anodizado / Grafite-Azulado Escuro (#1E2736 -> #252F3F / #283244 -> #334155)
-          // com Reflexo Especular Metálico Acetinado Dinâmico em Prata-Brilhante (#CBD5E1 -> #F8FAFC)
-          // acoplado à câmera (Headlight offset (0.35, 0.45, 0.85)).
-          vec3 N = normalize(vWorldNormal);
-          if (dot(N, uViewDir) < 0.0) {
-            N = -N;
+          // ============================================================================
+          // CALDRA MACHINED STEEL MATERIAL (MODOS "SOMB" E "SOMB+AR" — ESTILO CALDRA-CODE)
+          // Aço Usinado Prata-Claro de Alta Claridade com Varredura Especular Dinâmica
+          // dependente da posição e do ângulo da câmera (Perspectiva e ORTO).
+          // ============================================================================
+
+          // 1. Paleta de Aço Usinado Claro (Zero Tons Escuros Pesados):
+          vec3 colorShadow    = vec3(0.36, 0.43, 0.52); // #5C6E85 Prata-Azulado Acetinado nas sombras (nunca mais escuro que isso!)
+          vec3 colorMidtone   = vec3(0.68, 0.74, 0.81); // #ADBDD0 Aço Usinado Claro médio
+          vec3 colorHighlight = vec3(0.97, 0.98, 1.00); // #F8FAFC Branco-Prata Especular puro
+
+          // Orientação consistente da normal em relação ao observador:
+          vec3 N_world = normalize(vWorldNormal);
+          if (dot(N_world, uViewDir) < 0.0) {
+            N_world = -N_world;
           }
 
-          // Normal no espaço da câmera (View Space):
-          // vN.x = direita da tela, vN.y = topo da tela, vN.z = apontando para a câmera
-          vec3 vN = normalize(vec3(
-            dot(N, uCamRight),
-            dot(N, uCamUp),
-            dot(N, uViewDir)
+          // Normal no espaço da câmera (View Space ortonormal):
+          vec3 N_view = normalize(vec3(
+            dot(N_world, uCamRight),
+            dot(N_world, uCamUp),
+            dot(N_world, uViewDir)
           ));
 
-          // Coordenadas espaciais normalizadas da peça no plano da câmera
-          // (em ISO, compensamos o escorço vertical para que o flange ocupe [-1..+1] em camU e camV)
+          // Coordenadas espaciais normalizadas da peça no espaço da câmera (funciona em Perspectiva e ORTO):
           float safeRadius = max(uPartRadius, 25.0);
-          vec3 relPos = (vWorldPos - uPartCenter) / safeRadius;
-          float camU = clamp(dot(relPos, uCamRight) * 1.15, -1.35, 1.35);
-          float camV = clamp(dot(relPos, uCamUp) * 1.55, -1.35, 1.35);
+          vec3 relWorld = (vWorldPos - uPartCenter) / safeRadius;
+          vec2 partViewXY = vec2(
+            clamp(dot(relWorld, uCamRight) * 1.08, -1.4, 1.4),
+            clamp(dot(relWorld, uCamUp) * 1.42, -1.4, 1.4)
+          );
+          vec2 rawViewXY = clamp(vViewPos.xy / (safeRadius * 1.35), -1.5, 1.5);
+          vec2 effectiveXY = mix(partViewXY, rawViewXY, 0.28);
 
-          // Direção da Headlight no espaço da câmera (offset (0.35, 0.45, 0.85) + componente zenital)
-          vec3 viewHeadlightDir = normalize(vec3(0.35, 0.58, 0.73));
-          float faceLight = clamp(max(dot(vN, viewHeadlightDir), dot(N, uKeyLightDir)), 0.0, 1.0);
-          float ndotV = clamp(vN.z, 0.0, 1.0);
+          // 2. Varredura Especular Contínua na Face Plana (Spatial + View-Angle Sweep):
+          // Direção de luz no espaço da câmera (o termo vViewPos * 0.0015 e effectiveXY criam variação espacial de ponta a ponta mesmo em ORTO):
+          vec3 L_view = normalize(vec3(-0.45, 0.55, 0.70) - vViewPos * 0.0015 - vec3(effectiveXY * 0.42, 0.0));
+          // Direção de luz do mundo (ancorada à prancheta):
+          vec3 L_world = normalize(uWorldLightDir);
 
-          // Varredura espacial da luz principal (Headlight) sobre a superfície da peça:
-          // s varia de -1.0 (lado oblíquo em sombra) até +1.0 (zona de reflexo especular da Headlight)
-          float s = camU * 0.56 + camV * 0.83;
-          float crossCoord = -camU * 0.83 + camV * 0.56;
-          float radialFalloff = clamp(1.0 - 0.22 * crossCoord * crossCoord, 0.0, 1.0);
+          // Vetor de visão local e Half-Vector (H_view) para reflexo Blinn-Phong de aço escovado:
+          vec3 V_view = normalize(vec3(-effectiveXY * 0.46, 1.0) - vViewPos * 0.0012);
+          vec3 H_view = normalize(L_view + V_view);
 
-          // Paleta Metálica Caldra-Code (Aço Anodizado Escuro -> Prata Acetinado Brilhante):
-          vec3 deepShadowSteel = vec3(0.118, 0.153, 0.212); // #1E2736 (Sombra profunda / contra-luz)
-          vec3 darkAnodized    = vec3(0.145, 0.184, 0.247); // #252F3F (Base Aço Anodizado em ângulo oblíquo)
-          vec3 slateSteelMid   = vec3(0.200, 0.255, 0.333); // #334155 (Meio-tom Grafite-Azulado)
-          vec3 brushedSteel    = vec3(0.420, 0.498, 0.604); // #6B7F9A (Transição Aço Usinado)
-          vec3 silverSatin     = vec3(0.796, 0.835, 0.882); // #CBD5E1 (Reflexo Prata Acetinado)
-          vec3 silverPeak      = vec3(0.973, 0.980, 0.988); // #F8FAFC (Pico Especular Prata-Brilhante)
+          // Projeção da luz da prancheta no espaço da câmera para que o degradê gire e deslize ao orbitar a câmera:
+          vec2 worldLightInView = vec2(dot(L_world, uCamRight), dot(L_world, uCamUp));
+          vec2 dynamicSweepAxis = normalize(vec2(-0.65, 0.76) + worldLightInView * 0.58);
 
-          // 1. Corpo base em Aço Anodizado Escuro (#1E2736 -> #252F3F -> #334155) nas regiões oblíquas
-          float obliqueGrad = smoothstep(-0.75, 0.25, s) * (0.35 + 0.65 * faceLight);
-          vec3 baseBody = mix(deepShadowSteel, darkAnodized, smoothstep(0.0, 0.45, faceLight + ndotV * 0.3));
-          baseBody = mix(baseBody, slateSteelMid, obliqueGrad);
+          // Deslocamento dinâmico de claridade conforme a inclinação da peça/câmera na Órbita 3D:
+          float tiltShift = (N_view.x * -0.26 + N_view.y * 0.32) + (dot(N_world, L_world) - 0.5) * 0.36;
 
-          // 2. Rim Light sutil nas paredes cilíndricas e furos em ângulo rasante (#263040)
-          float cylFactor = clamp(1.0 - abs(N.z), 0.0, 1.0);
-          float rimGrazing = pow(1.0 - ndotV, 2.2) * (0.4 + 0.6 * cylFactor);
-          baseBody += vec3(0.165, 0.212, 0.282) * (rimGrazing * 0.50);
+          vec2 vPosDir = length(vViewPos.xy) > 1e-4 ? normalize(vViewPos.xy) : dynamicSweepAxis;
+          float viewPosSweep = dot(vPosDir, vec2(-0.65, 0.76)) * 0.5 + 0.5;
+          float spatialSweep = clamp(dot(effectiveXY, dynamicSweepAxis) * 0.50 + 0.52 + tiltShift, 0.0, 1.0);
+          float surfaceSweep = clamp(mix(spatialSweep, viewPosSweep, 0.18), 0.0, 1.0);
 
-          // 3. Reflexo Especular Metálico Acetinado Dinâmico (#CBD5E1 -> #F8FAFC):
-          // Em faces que refletem a câmera/Headlight, gera o gradiente metálico intenso do Caldra-Code
-          float faceGate = smoothstep(0.18, 0.72, faceLight);
-          float sweepZeroToOne = smoothstep(-0.28, 0.82, s) * radialFalloff;
+          // Termo difuso metálico (NdotL em viewSpace + worldSpace):
+          float diffView  = clamp(dot(N_view, L_view), 0.0, 1.0);
+          float diffWorld = clamp(dot(N_world, L_world) * 0.5 + 0.5, 0.0, 1.0);
+          float NdotL = clamp(diffView * 0.65 + diffWorld * 0.35, 0.0, 1.0);
 
-          float planarBroad  = pow(sweepZeroToOne, 1.35) * faceGate;
-          float planarMedium = pow(sweepZeroToOne, 2.60) * faceGate;
-          float planarPeak   = pow(sweepZeroToOne, 4.80) * smoothstep(0.42, 0.88, faceLight);
+          // Lobo especular Blinn-Phong largo de aço escovado (pow 14.0) e lobo especular fino de alto brilho (pow 48.0):
+          float specBroad = pow(max(dot(N_view, H_view), 0.0), 14.0);
+          float specFine  = pow(max(dot(N_view, H_view), 0.0), 48.0);
 
-          // Em paredes cilíndricas curvas (borda externa do flange e paredes internas dos furos),
-          // a normal gira 360°, gerando faixa especular prata-brilhante nítida sobre o cilindro
-          vec2 cylN2 = normalize(vec2(vN.x, vN.z) + vec2(1e-5, 0.0));
-          float cylAlign = max(0.0, dot(cylN2, normalize(vec2(0.42, 0.91))));
-          float cylBroad  = cylFactor * pow(cylAlign, 2.8);
-          float cylMedium = cylFactor * pow(cylAlign, 6.5);
-          float cylPeak   = cylFactor * pow(cylAlign, 16.0);
+          // Sombreamento contínuo em faces planas (topo/base de flanges, chapas e perfis):
+          float planarLum = clamp(surfaceSweep * 0.58 + NdotL * 0.42, 0.0, 1.0);
+          vec3 planarColor = mix(colorShadow, colorMidtone, smoothstep(0.0, 0.54, planarLum));
+          float planarSpecMix = clamp(
+            smoothstep(0.40, 0.95, surfaceSweep) * 0.64 + specBroad * 0.54 + specFine * 0.46,
+            0.0,
+            1.0
+          );
+          planarColor = mix(planarColor, colorHighlight, planarSpecMix);
 
-          float totalBroad  = clamp(max(planarBroad, cylBroad), 0.0, 1.0);
-          float totalMedium = clamp(max(planarMedium, cylMedium), 0.0, 1.0);
-          float totalPeak   = clamp(max(planarPeak, cylPeak), 0.0, 1.0);
+          // 3. Iluminação Cilíndrica Realista nas Paredes Internas dos Furos e na Borda Externa:
+          float cylFactor = smoothstep(0.15, 0.65, 1.0 - abs(N_world.z));
+          vec2 cylN2 = normalize(N_view.xy + vec2(1e-5, 0.0));
+          float cylAlign = dot(cylN2, dynamicSweepAxis) * 0.5 + 0.5;
+          float cylLum = clamp(cylAlign * 0.64 + diffWorld * 0.36, 0.0, 1.0);
+          vec3 cylColor = mix(colorShadow, colorMidtone, smoothstep(0.04, 0.56, cylLum));
+          float cylSpecBroad = pow(max(dot(cylN2, dynamicSweepAxis), 0.0), 6.0);
+          float cylSpecFine  = pow(max(dot(cylN2, dynamicSweepAxis), 0.0), 26.0);
+          float cylSpecMix = clamp(cylSpecBroad * 0.68 + cylSpecFine * 0.48 + specBroad * 0.35, 0.0, 1.0);
+          cylColor = mix(cylColor, colorHighlight, cylSpecMix);
 
-          vec3 color = mix(baseBody, brushedSteel, clamp(totalBroad * 0.90, 0.0, 1.0));
-          color = mix(color, silverSatin, clamp(totalMedium * 0.92, 0.0, 1.0));
-          color = mix(color, silverPeak, clamp(totalPeak * 0.88, 0.0, 1.0));
+          vec3 color = mix(planarColor, cylColor, cylFactor);
+
+          // Realce de borda Fresnel ultra-sutil nas quinas no modo SOMB (1º botão):
+          if (uShadingMode == 0) {
+            float ndotV = clamp(N_view.z, 0.0, 1.0);
+            float fresnel = pow(1.0 - ndotV, 3.0) * 0.16;
+            color = mix(color, colorHighlight, fresnel);
+          }
 
           gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
         }
@@ -537,10 +563,10 @@ export class ThreeBRepRenderer {
     });
 
     this.edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0xf8fafc,
-      linewidth: 1.5,
+      color: 0xf1f5f9,
+      linewidth: 1.15,
       transparent: true,
-      opacity: 0.88,
+      opacity: 0.90,
     });
 
     this.primaryEdgeMaterial = new THREE.LineBasicMaterial({
@@ -690,26 +716,43 @@ export class ThreeBRepRenderer {
   }
 
   private setupLighting(): void {
-    // 1. Luz Ambiente Fria Contida (#1E293B / #263040, intensity 0.45) — preserva o tom escuro #252F3F/#263040 nas faces oblíquas
-    this.hemiLight = new THREE.HemisphereLight(0x334155, 0x1e293b, 0.45);
-    this.hemiLight.position.set(0, 0, 250);
+    // 0. Mapa de Ambiente de Estúdio Real (IBL via PMREMGenerator + RoomEnvironment)
+    try {
+      const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+      pmremGenerator.compileEquirectangularShader();
+      this.envMapTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.scene.environment = this.envMapTexture;
+      pmremGenerator.dispose();
+    } catch {
+      // Fallback silencioso se o contexto WebGL não suportar PMREM
+    }
+
+    // 1. Luz Hemisférica Fria Clara de Estúdio — garante que nenhuma face fique preta ou chumbo-escura
+    this.hemiLight = new THREE.HemisphereLight(0xf8fafc, 0x5c6e85, 0.85);
+    this.hemiLight.position.set(0, 0, 300);
     this.scene.add(this.hemiLight);
 
-    // 2. Headlight Principal Acoplada à Câmera (offset angular (0.35, 0.45, 0.85), intensity 2.2)
-    this.keyLight = new THREE.DirectionalLight(0xf8fafc, 2.2);
-    this.keyLight.position.set(105, 135, 255);
+    // 2. Key Light Principal no Espaço da Câmera (position: (-1.2*R, +1.5*R, +1.8*R))
+    this.keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    this.keyLight.position.set(-240, 300, 360);
     this.scene.add(this.keyLight);
 
-    // 3. Rim Light / Contra-Luz Sutil para separação limpa da peça sobre o fundo
-    this.fillLight = new THREE.DirectionalLight(0x94a3b8, 0.42);
-    this.fillLight.position.set(-140, -110, 90);
+    // 3. Fill Light Fria no Espaço da Câmera (position: (+1.4*R, -0.8*R, +1.2*R))
+    this.fillLight = new THREE.DirectionalLight(0xcbd5e1, 1.15);
+    this.fillLight.position.set(280, -160, 240);
     this.scene.add(this.fillLight);
+
+    // 4. World Key Light (Luz Direcional de Referência da Prancheta fixa no mundo)
+    this.worldKeyLight = new THREE.DirectionalLight(0xf8fafc, 1.35);
+    this.worldKeyLight.position.set(400, -300, 800);
+    this.scene.add(this.worldKeyLight);
   }
 
   /**
-   * Atualiza os vetores de iluminação acoplados à câmera ativa (Headlight offset (0.35, 0.45, 0.85)
-   * do Caldra-Code) para que, ao girar a peça em 3D, a luz acompanhe o observador e gere o reflexo
-   * especular prata-brilhante (#CBD5E1 -> #F8FAFC) sobre a base de aço anodizado escuro (#252F3F).
+   * Atualiza a cada frame o Camera-Space Light Rig (Key Light em (-1.2*R, +1.5*R, +1.8*R)
+   * e Fill Light em (+1.4*R, -0.8*R, +1.2*R)) combinadas com a World Key Light fixa na prancheta,
+   * fazendo com que a claridade e o gradiente de aço usinado prateado deslizem dinamicamente
+   * sobre a peça ao girar, inclinar ou mover a câmera na Órbita 3D.
    */
   private updateCameraCoupledLighting(): void {
     const viewDir = this.activeCamera.position
@@ -727,32 +770,38 @@ export class ThreeBRepRenderer {
     }
     const orthoUp = new THREE.Vector3().crossVectors(viewDir, camRight).normalize();
 
-    // Headlight acoplada à câmera com offset angular (0.35, 0.45, 0.85) no espaço da câmera (Caldra-Code)
+    const R = Math.max(this.studioUniforms.uPartRadius.value, 120);
+
+    // Key Light de Câmera: (-1.2 * R, +1.5 * R, +1.8 * R)
     const keyDir = new THREE.Vector3()
-      .addScaledVector(camRight, 0.35)
-      .addScaledVector(orthoUp, 0.45)
-      .addScaledVector(viewDir, 0.85)
+      .addScaledVector(camRight, -1.2)
+      .addScaledVector(orthoUp, 1.5)
+      .addScaledVector(viewDir, 1.8)
       .normalize();
 
-    // Rim / Fill Light sutil no quadrante oposto
+    // Fill Light de Câmera: (+1.4 * R, -0.8 * R, +1.2 * R)
     const fillDir = new THREE.Vector3()
-      .addScaledVector(camRight, -0.55)
-      .addScaledVector(orthoUp, -0.35)
-      .addScaledVector(viewDir, 0.45)
+      .addScaledVector(camRight, 1.4)
+      .addScaledVector(orthoUp, -0.8)
+      .addScaledVector(viewDir, 1.2)
       .normalize();
+
+    // World Key Light fixa na prancheta: direção (-0.4, 0.6, 0.7) combinada com (400, -300, 800)
+    const worldDir = new THREE.Vector3(-0.4, 0.6, 0.7).normalize();
 
     this.studioUniforms.uViewDir.value.copy(viewDir);
     this.studioUniforms.uCamRight.value.copy(camRight);
     this.studioUniforms.uCamUp.value.copy(orthoUp);
     this.studioUniforms.uKeyLightDir.value.copy(keyDir);
     this.studioUniforms.uFillLightDir.value.copy(fillDir);
+    this.studioUniforms.uWorldLightDir.value.copy(worldDir);
     this.studioUniforms.uUpDir.value.set(0, 0, 1);
 
     if (this.keyLight) {
-      this.keyLight.position.copy(keyDir).multiplyScalar(320);
+      this.keyLight.position.copy(this.controls.target).addScaledVector(keyDir, R * 2.2);
     }
     if (this.fillLight) {
-      this.fillLight.position.copy(fillDir).multiplyScalar(260);
+      this.fillLight.position.copy(this.controls.target).addScaledVector(fillDir, R * 2.0);
     }
   }
 
@@ -832,12 +881,12 @@ export class ThreeBRepRenderer {
         const isBottomEdge = eMaxZ <= minZ + zTol;
         const isTangentEdge = Boolean(edge.isTangentEdge);
 
-        // Arestas de contorno SOMB+AR: Prata-Gelo Acetinado (#CBD5E1, opacity: 0.85, 1.0px preciso)
+        // Arestas de contorno SOMB+AR: Branco-Prata Fino e Nítido (#F1F5F9 / #FFFFFF, 1.15px, opacity: 0.90)
         const mat = new THREE.LineBasicMaterial({
-          color: 0xcbd5e1,
-          linewidth: 1.0,
+          color: 0xf1f5f9,
+          linewidth: 1.15,
           transparent: true,
-          opacity: isTangentEdge ? 0.0 : 0.85,
+          opacity: isTangentEdge ? 0.0 : 0.90,
           depthTest: true,
           depthWrite: false,
         });
@@ -869,10 +918,10 @@ export class ThreeBRepRenderer {
       if (solidMesh?.geometry) {
         const edgesGeo = new THREE.EdgesGeometry(solidMesh.geometry, 32);
         const mat = new THREE.LineBasicMaterial({
-          color: 0xcbd5e1,
-          linewidth: 1.0,
+          color: 0xf1f5f9,
+          linewidth: 1.15,
           transparent: true,
-          opacity: 0.85,
+          opacity: 0.90,
           depthTest: true,
           depthWrite: false,
         });
@@ -1472,8 +1521,8 @@ export class ThreeBRepRenderer {
       }
 
       case "shaded-edges": {
-        // 2º MODO: "SOMB+AR" DO CALDRA-CODE (Mesmo corpo metálico escuro com reflexo especular prata
-        // + arestas reais de contorno finas 1.0px em Prata-Gelo Acetinado #CBD5E1 @ 0.85, sem emendas falsas)
+        // 2º MODO: "SOMB+AR" DO CALDRA-CODE (Mesmo corpo CaldraMachinedSteelMaterial do SOMB
+        // + arestas reais de contorno finas 1.15px em Branco-Prata Nítido #F1F5F9 @ 0.90, sem emendas falsas)
         this.meshGroup.visible = true;
         if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
         this.brepWireframeGroup.visible = false;
@@ -1492,10 +1541,10 @@ export class ThreeBRepRenderer {
           const isTangent = Boolean(line.userData?.isTangentEdge);
           line.visible = !isTangent;
           if (!isTangent && line.material instanceof THREE.LineBasicMaterial) {
-            // Arestas SOMB+AR sempre em Prata-Gelo Acetinado (#CBD5E1, opacity: 0.85) sobre o aço escuro
-            line.material.color.setHex(0xcbd5e1);
-            line.material.opacity = 0.85;
-            line.material.linewidth = 1.0;
+            // Arestas SOMB+AR sempre em Branco-Prata Fino e Nítido (#F1F5F9, opacity: 0.90, 1.15px)
+            line.material.color.setHex(0xf1f5f9);
+            line.material.opacity = 0.90;
+            line.material.linewidth = 1.15;
           }
         }
         this.verticesGroup.visible = this.selectionType === "vertex";
@@ -2822,6 +2871,10 @@ export class ThreeBRepRenderer {
       this.gizmoTargetMesh = null;
     }
 
+    if (this.envMapTexture) {
+      this.envMapTexture.dispose();
+      this.envMapTexture = null;
+    }
     this.baseSolidMaterial.dispose();
     this.depthPrePassMaterial.dispose();
     this.genesisVisibleLaserMat.dispose();

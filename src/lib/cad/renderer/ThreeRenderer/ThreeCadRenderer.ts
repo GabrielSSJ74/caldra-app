@@ -11,6 +11,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { CadMesh } from "../../core/CadTopology";
 import type { CadSelectedEntity, CadSelectionType } from "../../core/CadSelection";
 
@@ -39,6 +40,7 @@ export class ThreeCadRenderer {
   private boundaryLines: THREE.LineSegments | null = null;
   private internalLines: THREE.LineSegments | null = null;
   private selectionMesh: THREE.Mesh | null = null;
+  private envMapTexture: THREE.Texture | null = null;
 
   // Estado atual
   private currentMesh: CadMesh | null = null;
@@ -52,7 +54,7 @@ export class ThreeCadRenderer {
   private onSelectCallback?: (entity: CadSelectedEntity | null, multi: boolean) => void;
 
   // Materiais calibrados
-  private solidMaterial: THREE.MeshStandardMaterial;
+  private solidMaterial: THREE.MeshPhysicalMaterial;
   private wireframeMaterial: THREE.MeshBasicMaterial;
   private boundaryLineMaterial: THREE.LineBasicMaterial;
   private internalLineMaterial: THREE.LineBasicMaterial;
@@ -83,7 +85,7 @@ export class ThreeCadRenderer {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.15;
     container.appendChild(this.renderer.domElement);
 
     // 4. Controles Orbit
@@ -100,14 +102,17 @@ export class ThreeCadRenderer {
     this.modelGroup = new THREE.Group();
     this.scene.add(this.modelGroup);
 
-    // 7. Iluminação técnica de estúdio de engenharia (key + fill + rim + soft ambient)
+    // 7. Iluminação técnica de estúdio de engenharia (RoomEnvironment IBL + Camera-Space Rig + World Key Light)
     this.setupLighting();
 
-    // 8. Materiais Metálicos Caldra-Code (Aço Anodizado #283244 + Reflexo Especular Prata + Arestas Prata-Gelo #CBD5E1)
-    this.solidMaterial = new THREE.MeshStandardMaterial({
-      color: new THREE.Color("#283244"),
-      metalness: 0.68,
-      roughness: 0.26,
+    // 8. CaldraMachinedSteelMaterial (Aço Usinado Prata-Claro #ADBDD0 / #F8FAFC + Arestas #F1F5F9)
+    this.solidMaterial = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color("#cbd5e1"),
+      metalness: 0.78,
+      roughness: 0.22,
+      envMapIntensity: 1.35,
+      clearcoat: 0.18,
+      clearcoatRoughness: 0.25,
       flatShading: false,
       side: THREE.DoubleSide,
       polygonOffset: true,
@@ -122,21 +127,21 @@ export class ThreeCadRenderer {
       opacity: 0.35,
     });
 
-    // Bordas externas / aberturas SOMB+AR: Prata-Gelo Acetinado (#CBD5E1, opacity: 0.85)
+    // Bordas externas / aberturas SOMB+AR: Branco-Prata Fino e Nítido (#F1F5F9, 1.15px, opacity: 0.90)
     this.boundaryLineMaterial = new THREE.LineBasicMaterial({
-      color: new THREE.Color("#cbd5e1"),
-      linewidth: 1,
+      color: new THREE.Color("#f1f5f9"),
+      linewidth: 1.15,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.90,
       depthTest: true,
     });
 
-    // Geratrizes / divisões técnicas para SOMB+AR: cinza claro suave
+    // Geratrizes / divisões técnicas para SOMB+AR: prata claro suave
     this.internalLineMaterial = new THREE.LineBasicMaterial({
-      color: new THREE.Color("#94a3b8"),
+      color: new THREE.Color("#cbd5e1"),
       linewidth: 1,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.72,
       depthTest: true,
     });
 
@@ -163,25 +168,36 @@ export class ThreeCadRenderer {
   }
 
   private setupLighting(): void {
-    // Luz ambiente fria contida (#1E293B / #263040) para preservar o tom grafite-azulado escuro nas faces oblíquas
-    const ambientLight = new THREE.AmbientLight(0x1e293b, 0.45);
-    this.scene.add(ambientLight);
+    try {
+      const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+      pmremGenerator.compileEquirectangularShader();
+      this.envMapTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.scene.environment = this.envMapTexture;
+      pmremGenerator.dispose();
+    } catch {
+      // Fallback silencioso
+    }
 
-    // Headlight técnica principal intensa para gerar o reflexo especular prata-brilhante (#CBD5E1 -> #F8FAFC)
-    const keyLight = new THREE.DirectionalLight(0xf8fafc, 2.2);
-    keyLight.position.set(175, 225, 425);
+    // Luz hemisférica fria clara (#F8FAFC / #5C6E85) garantindo zero faces pretas ou chumbo-escuras
+    const hemiLight = new THREE.HemisphereLight(0xf8fafc, 0x5c6e85, 0.95);
+    this.scene.add(hemiLight);
+
+    // Key Light Principal no Espaço da Câmera (-1.2*R, +1.5*R, +1.8*R)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    keyLight.position.set(-240, 300, 360);
     this.camera.add(keyLight);
+
+    // Fill Light Fria no Espaço da Câmera (+1.4*R, -0.8*R, +1.2*R)
+    const fillLight = new THREE.DirectionalLight(0xcbd5e1, 1.15);
+    fillLight.position.set(280, -160, 240);
+    this.camera.add(fillLight);
+
     this.scene.add(this.camera);
 
-    // Luz de preenchimento (Fill Light)
-    const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.45);
-    fillLight.position.set(-300, -200, -200);
-    this.scene.add(fillLight);
-
-    // Luz de borda / silhueta (Rim Light)
-    const rimLight = new THREE.DirectionalLight(0xcbd5e1, 0.4);
-    rimLight.position.set(0, -500, 300);
-    this.scene.add(rimLight);
+    // World Key Light (Luz Direcional de Referência da Prancheta fixa no mundo)
+    const worldKeyLight = new THREE.DirectionalLight(0xf8fafc, 1.35);
+    worldKeyLight.position.set(400, -300, 800);
+    this.scene.add(worldKeyLight);
   }
 
   private setupEvents(): void {
@@ -657,6 +673,10 @@ export class ThreeCadRenderer {
     el.removeEventListener("pointerdown", this.onPointerDown);
 
     this.clearModel();
+    if (this.envMapTexture) {
+      this.envMapTexture.dispose();
+      this.envMapTexture = null;
+    }
     this.solidMaterial.dispose();
     this.wireframeMaterial.dispose();
     this.boundaryLineMaterial.dispose();

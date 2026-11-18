@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import { toast, notify } from "@/lib/lab2d/chamferNotify";
@@ -94,32 +94,9 @@ import { useDeclareImmersive } from "@/lib/ui/immersive";
 import type { VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
 
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  importer: () => Promise<{ default: T }>,
-): React.LazyExoticComponent<T> {
-  return lazy(async () => {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        return await importer();
-      } catch (err) {
-        lastError = err;
-        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
-      }
-    }
-    throw lastError;
-  });
-}
-
-const ExportDialog = lazyWithRetry(() =>
-  import("@/components/lab2d/ExportDialog").then((m) => ({ default: m.ExportDialog })),
-);
-const ImportDialog = lazyWithRetry(() =>
-  import("@/components/lab2d/ImportDialog").then((m) => ({ default: m.ImportDialog })),
-);
-const VisionDialog = lazyWithRetry(() =>
-  import("@/components/lab2d/VisionDialog").then((m) => ({ default: m.VisionDialog })),
-);
+import { ExportDialog } from "@/components/lab2d/ExportDialog";
+import { ImportDialog } from "@/components/lab2d/ImportDialog";
+import { VisionDialog } from "@/components/lab2d/VisionDialog";
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -305,15 +282,9 @@ import {
   type MorphTransitionState,
 } from "@/lib/cad/sketch/sketch3dBridge";
 
-const Cad3DStage = lazyWithRetry(() =>
-  import("@/components/lab2d/Cad3DStage").then((m) => ({ default: m.Cad3DStage })),
-);
-const ChamferCenterDialog = lazyWithRetry(() =>
-  import("./ChamferCenterDialog").then((m) => ({ default: m.ChamferCenterDialog })),
-);
-const ChamferScaleDialog = lazyWithRetry(() =>
-  import("./ChamferScaleDialog").then((m) => ({ default: m.ChamferScaleDialog })),
-);
+import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
+import { ChamferCenterDialog } from "./ChamferCenterDialog";
+import { ChamferScaleDialog } from "./ChamferScaleDialog";
 import {
   findCornerAtPoint,
   findAllCornersInEntities,
@@ -418,9 +389,7 @@ import {
   type BRepWireframeLayerConfig,
 } from "@/lib/lab2d/chamferBRepWireframe3D";
 
-const ChamferUnified3DViewport = lazyWithRetry(() =>
-  import("./ChamferUnified3DViewport").then((m) => ({ default: m.ChamferUnified3DViewport })),
-);
+import { ChamferUnified3DViewport } from "./ChamferUnified3DViewport";
 import {
   buildDirectTopology3DScene,
   consolidateStitchedLoopsInEntities2D,
@@ -494,37 +463,15 @@ import {
 } from "@/lib/lab2d/isometricEngine";
 import { ChamferIsoPlaneHUD } from "./ChamferIsoPlaneHUD";
 
-const loadChamferSemanticPalette = () =>
-  import("./ChamferSemanticPalette").then((m) => ({ default: m.ChamferSemanticPalette }));
-const ChamferSemanticPalette = lazyWithRetry(loadChamferSemanticPalette);
-const ChamferClipboardModal = lazyWithRetry(() =>
-  import("./ChamferClipboardModal").then((m) => ({ default: m.ChamferClipboardModal })),
-);
-const ChamferFabricationPassportModal = lazyWithRetry(() =>
-  import("./ChamferFabricationPassportModal").then((m) => ({
-    default: m.ChamferFabricationPassportModal,
-  })),
-);
-const ChamferTopologyHealthModal = lazyWithRetry(() =>
-  import("./ChamferTopologyHealthModal").then((m) => ({ default: m.ChamferTopologyHealthModal })),
-);
-const ChamferVariablesModal = lazyWithRetry(() =>
-  import("./ChamferVariablesModal").then((m) => ({ default: m.ChamferVariablesModal })),
-);
-const ChamferPresetsModal = lazyWithRetry(() =>
-  import("./ChamferPresetsModal").then((m) => ({ default: m.ChamferPresetsModal })),
-);
-const ChamferTechnicalSheetModal = lazyWithRetry(() =>
-  import("./ChamferTechnicalSheetModal").then((m) => ({ default: m.ChamferTechnicalSheetModal })),
-);
-const CaldraIntegratedWorkshopModal = lazyWithRetry(() =>
-  import("./CaldraIntegratedWorkshopModal").then((m) => ({
-    default: m.CaldraIntegratedWorkshopModal,
-  })),
-);
-const ChamferIsoConvertModal = lazyWithRetry(() =>
-  import("./ChamferIsoConvertModal").then((m) => ({ default: m.ChamferIsoConvertModal })),
-);
+import { ChamferSemanticPalette } from "./ChamferSemanticPalette";
+import { ChamferClipboardModal } from "./ChamferClipboardModal";
+import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
+import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
+import { ChamferVariablesModal } from "./ChamferVariablesModal";
+import { ChamferPresetsModal } from "./ChamferPresetsModal";
+import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
+import { CaldraIntegratedWorkshopModal } from "./CaldraIntegratedWorkshopModal";
+import { ChamferIsoConvertModal } from "./ChamferIsoConvertModal";
 import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
 import {
   evaluateGeometricIntent,
@@ -565,11 +512,7 @@ import {
   ChamferTouchDynamicHud,
   type LockedDimensionsState,
 } from "./ChamferTouchDynamicHud";
-const Chamfer3DGizmoAndLoftOverlay = lazyWithRetry(() =>
-  import("./Chamfer3DGizmoAndLoftOverlay").then((m) => ({
-    default: m.Chamfer3DGizmoAndLoftOverlay,
-  })),
-);
+import { Chamfer3DGizmoAndLoftOverlay } from "./Chamfer3DGizmoAndLoftOverlay";
 import {
   buildLoft3DMesh,
   createLoft3DEntity,
@@ -8974,14 +8917,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [activeArrayType, isArrayPickingCenter, arrayPolarParams, arrayLinearParams, tool, pending.length, selected.length]);
   void operationFeedback;
 
-  // Pré-aquece o chunk do CHAMFER INTENT e do CAD 3D Stage em background após o canvas 2D estar interativo
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadChamferSemanticPalette();
-      void import("@/components/lab2d/Cad3DStage");
-    }, 180);
-    return () => window.clearTimeout(timer);
-  }, []);
+
 
   // Memoiza a geometria calculada das cotas associativas e automáticas (evita recálculo a 60Hz no pointermove)
   const drawnDims = useMemo(
