@@ -80,6 +80,7 @@ import type { DirectModeling3DTool } from "@/lib/lab2d/cadDirectModeling3D";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { dispatchChamferParametricPanel } from "./chamferParametricEvents";
 
 /** Ícone vetorial minimalista de Nós / Vértices Interligados para o Micro-Dock */
 function ControlNodesIcon({ className }: { className?: string }) {
@@ -547,6 +548,9 @@ export function ChamferCadToolbar({
         detail: { tool: nextTool },
       }),
     );
+    if (nextTool === "color_material_3d") {
+      dispatchChamferParametricPanel("section");
+    }
   };
 
   // BARRA VERTICAL EXCLUSIVA DE FERRAMENTAS 3D (MODO CAD 3D)
@@ -2040,6 +2044,46 @@ export function ChamferCadToolbar({
                 {/* 4. GRUPO: PRECISÃO / RESTRIÇÕES */}
                 {openCat === "precisao" && (
                   <div className="flex flex-col gap-1 font-mono text-xs">
+                    <div className="grid grid-cols-2 gap-1 pb-0.5">
+                      <button
+                        type="button"
+                        data-testid="chamfer-pre-constraints-btn"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          dispatchChamferParametricPanel("constraints");
+                          setOpenCat("none");
+                        }}
+                        style={{
+                          backgroundColor: "var(--chamfer-accent-soft)",
+                          borderColor: "var(--chamfer-accent-border)",
+                          color: "var(--chamfer-accent)",
+                        }}
+                        className="flex items-center justify-center gap-1 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition hover:brightness-110 cursor-pointer"
+                        title="Abrir Gaveta de Restrições 2D, Graus de Liberdade (DOF) e Autorrestringir"
+                      >
+                        <Sparkles className="size-3 shrink-0" />
+                        <span>Restrições 2D</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="chamfer-pre-params-btn"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          dispatchChamferParametricPanel("parameters");
+                          setOpenCat("none");
+                        }}
+                        style={{
+                          backgroundColor: "var(--chamfer-surface-elevated)",
+                          borderColor: "var(--chamfer-border)",
+                          color: "var(--chamfer-text-primary)",
+                        }}
+                        className="flex items-center justify-center gap-1 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition hover:brightness-110 cursor-pointer"
+                        title="Abrir Gaveta de Parâmetros (fx), Sweep e Configurações"
+                      >
+                        <span style={{ color: "var(--chamfer-accent)" }}>fx</span>
+                        <span>Parâmetros</span>
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
@@ -2557,6 +2601,26 @@ export function ChamferCadToolbar({
                         <span className="text-slate-400 text-[10px]">mm</span>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      data-testid="chamfer-chp-parametric-sheet-btn"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        dispatchChamferParametricPanel("sheet");
+                        setOpenCat("none");
+                      }}
+                      style={{
+                        backgroundColor: "var(--chamfer-accent)",
+                        borderColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }}
+                      className="flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[10.5px] font-bold transition hover:brightness-110 cursor-pointer"
+                      title="Abrir Gaveta de Chapa Metálica (BA/OSSB/BD, Abas A/B, Tabela de Dobras e DXF Inside-Out)"
+                    >
+                      <Layers className="size-3.5 shrink-0" />
+                      <span>Chapa & DXF Inside-Out</span>
+                    </button>
 
                     <FlyoutItem
                       label="Modelar Flanges (Abas)"

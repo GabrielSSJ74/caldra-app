@@ -468,6 +468,11 @@ import { ChamferClipboardModal } from "./ChamferClipboardModal";
 import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
 import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
 import { ChamferVariablesModal } from "./ChamferVariablesModal";
+import { ChamferParametricOrchestrator } from "./ChamferParametricOrchestrator";
+import {
+  dispatchChamferParametricPanel,
+  useChamferParametricStatus,
+} from "./chamferParametricEvents";
 import { ChamferPresetsModal } from "./ChamferPresetsModal";
 import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
 import { CaldraIntegratedWorkshopModal } from "./CaldraIntegratedWorkshopModal";
@@ -815,6 +820,7 @@ function getOperationFeedback(
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const { setTheme: setAppTheme, unit } = useSettings();
+  const parametricStatus = useChamferParametricStatus();
   const {
     isDark,
     isAmoled,
@@ -9852,6 +9858,50 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             )}
 
+            {/* BOTÃO COMPACTO [ fx ] — PARÂMETROS & VARIANTES (INTEGRADO À BARRA SUPERIOR, MESMO FORMATO DO CALC) */}
+            {!solidOpen && (
+              <button
+                type="button"
+                data-testid="chamfer-topbar-fx-btn"
+                data-cmd-id="parameters.manage"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  dispatchChamferParametricPanel("parameters");
+                }}
+                title="Abrir / Fechar Gaveta de Parâmetros (fx), Sweep e Configurações"
+                aria-label="Parâmetros e Variantes"
+                style={
+                  parametricStatus.activePanel === "parameters"
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        borderColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                        padding: "0 7px",
+                        gap: "4px",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border-strong)",
+                        color: "var(--chamfer-text-primary)",
+                        padding: "0 7px",
+                        gap: "4px",
+                      }
+                }
+                className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold tracking-wider transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
+              >
+                <span
+                  style={{
+                    color:
+                      parametricStatus.activePanel === "parameters"
+                        ? "var(--chamfer-accent-contrast)"
+                        : "var(--chamfer-accent)",
+                  }}
+                >
+                  fx
+                </span>
+              </button>
+            )}
+
             {/* BOTÃO DE MODO FOCO RÁPIDO [ ⛶ Foco ] */}
             <button
               type="button"
@@ -9952,17 +10002,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               isDark={isDark}
             />
             <IconBtn
-              label="Corte CNC"
-              onClick={() => setCncOpen(true)}
+              label={activeMode === "3d" ? "Seção 3D" : "Corte CNC"}
+              onClick={() => {
+                if (activeMode === "3d") {
+                  dispatchChamferParametricPanel("section");
+                } else {
+                  setCncOpen(true);
+                }
+              }}
               icon={Scissors}
-              title="Ferramenta de Corte e Exportação DXF CNC direta"
+              active={
+                activeMode === "3d" &&
+                (parametricStatus.activePanel === "section" || parametricStatus.sectionEnabled)
+              }
+              title={
+                activeMode === "3d"
+                  ? "Abrir Gaveta de Corte em Seção 3D (Hachurado) e Massa"
+                  : "Ferramenta de Corte e Exportação DXF CNC direta"
+              }
               isDark={isDark}
             />
             <IconBtn
-              label="Comando (Q)"
-              onClick={() => setQuickCommandOpen(true)}
+              label="Busca"
+              onClick={() => dispatchChamferParametricPanel("sbox")}
               icon={Search}
-              title="Busca rápida de comandos CAD (Atalho: Q ou Ctrl+K)"
+              active={parametricStatus.activePanel === "sbox"}
+              title="Busca rápida de comandos CAD 2D/3D (Press-Pull, Thin Extrude, Furo Industrial, Chapa, Seção)"
               isDark={isDark}
             />
             <IconBtn
@@ -16214,6 +16279,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
             {/* LADO DIREITO: 3 GRUPOS LÓGICOS (1. PRIMÁRIOS VISÍVEIS | 2. PRECISÃO | 3. FLUXO/CNC) */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* CHIP INLINE DE HISTÓRICO / TIMELINE PARAMÉTRICA EMBUTIDO NA BARRA INFERIOR */}
+              <button
+                type="button"
+                data-testid="chamfer-statusbar-timeline-btn"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  dispatchChamferParametricPanel("timeline");
+                }}
+                style={
+                  parametricStatus.timelineOpen
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        borderColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: parametricStatus.rollbackActive
+                          ? "var(--chamfer-status-warning)"
+                          : "var(--chamfer-border-strong)",
+                        color: "var(--chamfer-text-primary)",
+                      }
+                }
+                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase whitespace-nowrap transition-colors hover:brightness-110 cursor-pointer"
+                title="Expandir / Recolher Linha do Tempo Paramétrica e Rollback"
+              >
+                <span>⏱</span>
+                <span>Histórico ({parametricStatus.featureCount})</span>
+              </button>
+
               {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ÁREA */}
               <button
                 type="button"
@@ -17598,6 +17693,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
         </Suspense>
       )}
+
+      {/* ORQUESTRADOR PARAMÉTRICO UNIFICADO (PILARES 1–8 — ERRORBOUNDARIES INDEPENDENTES) */}
+      <ChamferParametricOrchestrator
+        entities={entities}
+        selection={selection}
+        thickness={thickness}
+        activeMode={activeMode}
+        onThicknessChange={(v) => setThickness(v)}
+        onNotify={(msg) => toast.info(msg)}
+      />
 
       {/* DUAL TOOL HUD */}
       {dualToolSecondary && (

@@ -155,7 +155,20 @@ export class ThreeBRepRenderer {
     uZMin: { value: number };
     uZMax: { value: number };
     uGenesisBuildProgress: { value: number };
+    uSectionEnabled: { value: number };
+    uSectionPlane: { value: THREE.Vector4 };
   };
+  // Section Analysis (Pilar 7): Plano de corte + Stencil Buffer Cap hachurado 45°
+  private sectionClipPlane: THREE.Plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+  private sectionEnabled = false;
+  private sectionStencilGroup: THREE.Group;
+  private sectionCapMesh: THREE.Mesh | null = null;
+  private sectionHatchTexture: THREE.CanvasTexture | null = null;
+  private sectionBackStencilMat: THREE.MeshBasicMaterial;
+  private sectionFrontStencilMat: THREE.MeshBasicMaterial;
+  private sectionCapMaterial: THREE.MeshBasicMaterial;
+  private sectionBackMesh: THREE.Mesh | null = null;
+  private sectionFrontMesh: THREE.Mesh | null = null;
   private envMapTexture: THREE.Texture | null = null;
   private keyLight: THREE.DirectionalLight | null = null;
   private fillLight: THREE.DirectionalLight | null = null;
@@ -283,12 +296,14 @@ export class ThreeBRepRenderer {
 
     this.activeCamera = this.isOrtho ? this.orthoCamera : this.camera;
 
-    // 3. Renderer WebGL
+    // 3. Renderer WebGL (com Stencil Buffer habilitado para Section Analysis Cap hachurado)
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
+      stencil: true,
       powerPreference: "high-performance",
     });
+    this.renderer.localClippingEnabled = true;
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -317,6 +332,8 @@ export class ThreeBRepRenderer {
     this.loftPreviewGroup = new THREE.Group();
     this.selectionOverlayGroup = new THREE.Group();
     this.measurementGroup = new THREE.Group();
+    this.sectionStencilGroup = new THREE.Group();
+    this.sectionStencilGroup.visible = false;
 
     this.rootGroup.add(this.meshGroup);
     this.rootGroup.add(this.edgesGroup);
@@ -326,7 +343,52 @@ export class ThreeBRepRenderer {
     this.rootGroup.add(this.loftPreviewGroup);
     this.rootGroup.add(this.selectionOverlayGroup);
     this.rootGroup.add(this.measurementGroup);
+    this.rootGroup.add(this.sectionStencilGroup);
     this.scene.add(this.rootGroup);
+
+    // Materiais Stencil Buffer 2-passos + Tampa Hachurada 45° para Section Analysis (Pilar 7)
+    this.sectionBackStencilMat = new THREE.MeshBasicMaterial({
+      depthWrite: false,
+      depthTest: false,
+      colorWrite: false,
+      stencilWrite: true,
+      stencilFunc: THREE.AlwaysStencilFunc,
+      side: THREE.BackSide,
+      stencilFail: THREE.IncrementWrapStencilOp,
+      stencilZFail: THREE.IncrementWrapStencilOp,
+      stencilZPass: THREE.IncrementWrapStencilOp,
+      clippingPlanes: [this.sectionClipPlane],
+    });
+    this.sectionFrontStencilMat = new THREE.MeshBasicMaterial({
+      depthWrite: false,
+      depthTest: false,
+      colorWrite: false,
+      stencilWrite: true,
+      stencilFunc: THREE.AlwaysStencilFunc,
+      side: THREE.FrontSide,
+      stencilFail: THREE.DecrementWrapStencilOp,
+      stencilZFail: THREE.DecrementWrapStencilOp,
+      stencilZPass: THREE.DecrementWrapStencilOp,
+      clippingPlanes: [this.sectionClipPlane],
+    });
+    this.sectionHatchTexture = this.createDiagonalHatchTexture();
+    this.sectionCapMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      map: this.sectionHatchTexture,
+      side: THREE.DoubleSide,
+      stencilWrite: true,
+      stencilRef: 0,
+      stencilFunc: THREE.NotEqualStencilFunc,
+      stencilFail: THREE.ReplaceStencilOp,
+      stencilZFail: THREE.ReplaceStencilOp,
+      stencilZPass: THREE.ReplaceStencilOp,
+    });
+    const capGeo = new THREE.PlaneGeometry(4000, 4000);
+    this.sectionCapMesh = new THREE.Mesh(capGeo, this.sectionCapMaterial);
+    this.sectionCapMesh.name = "section_analysis_hatch_cap";
+    this.sectionCapMesh.frustumCulled = false;
+    this.sectionCapMesh.renderOrder = 6;
+    this.sectionStencilGroup.add(this.sectionCapMesh);
 
     // 6. Configuração de Iluminação de Estúdio 3 Fontes Acoplada à Câmera
     this.setupLighting();
@@ -354,6 +416,8 @@ export class ThreeBRepRenderer {
       uZMin: { value: 0.0 },
       uZMax: { value: 10.0 },
       uGenesisBuildProgress: { value: 1.0 },
+      uSectionEnabled: { value: 0.0 },
+      uSectionPlane: { value: new THREE.Vector4(0, 0, -1, 0) },
     };
 
     this.baseSolidMaterial = new THREE.ShaderMaterial({
@@ -389,12 +453,17 @@ export class ThreeBRepRenderer {
         uniform float uZMin;
         uniform float uZMax;
         uniform float uGenesisBuildProgress;
+        uniform float uSectionEnabled;
+        uniform vec4 uSectionPlane;
         varying vec3 vWorldNormal;
         varying vec3 vViewNormal;
         varying vec3 vWorldPos;
         varying vec3 vViewPos;
 
         void main() {
+          if (uSectionEnabled > 0.5 && dot(vWorldPos, uSectionPlane.xyz) + uSectionPlane.w < 0.0) {
+            discard;
+          }
           if (uShadingMode == 2) {
             // CAMADA 3 (MODO ARAME) — ESPESSURA EM AZUL-AÇO PETRÓLEO ACETINADO (#2B4C73 / #345B87, opacity: 0.22)
             // E FACES HORIZONTAIS (TOPO +Z E BASE -Z) QUASE 100% TRANSPARENTES (opacity: 0.02)
@@ -856,6 +925,18 @@ export class ThreeBRepRenderer {
       depthMesh.visible = this.edgeMode === "wireframe";
       this.depthPrePassMesh = depthMesh;
       this.meshGroup.add(depthMesh);
+
+      // Atualiza malhas de Stencil Cap (2 passos) compartilhando a mesma BufferGeometry
+      if (this.sectionBackMesh) this.sectionStencilGroup.remove(this.sectionBackMesh);
+      if (this.sectionFrontMesh) this.sectionStencilGroup.remove(this.sectionFrontMesh);
+      this.sectionBackMesh = new THREE.Mesh(geometry, this.sectionBackStencilMat);
+      this.sectionBackMesh.frustumCulled = false;
+      this.sectionBackMesh.renderOrder = 4;
+      this.sectionFrontMesh = new THREE.Mesh(geometry, this.sectionFrontStencilMat);
+      this.sectionFrontMesh.frustumCulled = false;
+      this.sectionFrontMesh.renderOrder = 5;
+      this.sectionStencilGroup.add(this.sectionBackMesh);
+      this.sectionStencilGroup.add(this.sectionFrontMesh);
     }
 
     if (edges && edges.edges.length > 0) {
@@ -2876,6 +2957,17 @@ export class ThreeBRepRenderer {
       this.envMapTexture = null;
     }
     this.baseSolidMaterial.dispose();
+    this.sectionBackStencilMat.dispose();
+    this.sectionFrontStencilMat.dispose();
+    this.sectionCapMaterial.dispose();
+    if (this.sectionCapMesh) {
+      this.sectionCapMesh.geometry.dispose();
+      this.sectionCapMesh = null;
+    }
+    if (this.sectionHatchTexture) {
+      this.sectionHatchTexture.dispose();
+      this.sectionHatchTexture = null;
+    }
     this.depthPrePassMaterial.dispose();
     this.genesisVisibleLaserMat.dispose();
     this.genesisXRayLaserMat.dispose();
@@ -2905,5 +2997,72 @@ export class ThreeBRepRenderer {
     if (dom.parentElement) {
       dom.parentElement.removeChild(dom);
     }
+  }
+
+  private createDiagonalHatchTexture(): THREE.CanvasTexture | null {
+    if (typeof document === "undefined") return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#1E293B";
+      ctx.fillRect(0, 0, 64, 64);
+      ctx.strokeStyle = "#38BDF8";
+      ctx.lineWidth = 2.5;
+      for (let i = -64; i < 128; i += 12) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i + 64, 64);
+        ctx.stroke();
+      }
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(90, 90);
+    return tex;
+  }
+
+  /**
+   * Pilar 7 — Section Analysis Ao Vivo com Stencil Buffer Cap hachurado 45°
+   */
+  public setSectionPlane(config: {
+    enabled: boolean;
+    axis: "XY" | "XZ" | "YZ";
+    offsetMm: number;
+    flipped?: boolean;
+  }): void {
+    this.sectionEnabled = Boolean(config.enabled);
+    const sign = config.flipped ? 1 : -1;
+    const normal =
+      config.axis === "XY"
+        ? new THREE.Vector3(0, 0, sign)
+        : config.axis === "XZ"
+          ? new THREE.Vector3(0, sign, 0)
+          : new THREE.Vector3(sign, 0, 0);
+    const constant = -sign * config.offsetMm;
+
+    this.sectionClipPlane.set(normal, constant);
+    this.studioUniforms.uSectionEnabled.value = this.sectionEnabled ? 1.0 : 0.0;
+    this.studioUniforms.uSectionPlane.value.set(normal.x, normal.y, normal.z, constant);
+
+    this.sectionStencilGroup.visible = this.sectionEnabled && this.edgeMode !== "wireframe";
+    if (this.sectionCapMesh) {
+      const coplanar = new THREE.Vector3();
+      this.sectionClipPlane.coplanarPoint(coplanar);
+      this.sectionCapMesh.position.copy(coplanar);
+      this.sectionCapMesh.lookAt(coplanar.clone().add(normal));
+    }
+
+    // Aplica o mesmo plano de corte às arestas visíveis para corte limpo em SOMB+AR
+    this.edgesGroup.traverse((obj) => {
+      const mat = (obj as THREE.Line).material as THREE.Material | undefined;
+      if (mat) {
+        mat.clippingPlanes = this.sectionEnabled ? [this.sectionClipPlane] : [];
+      }
+    });
+
+    this.requestRender();
   }
 }

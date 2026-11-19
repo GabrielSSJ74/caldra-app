@@ -100,6 +100,7 @@ import {
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { dispatchChamferParametricPanel } from "./chamferParametricEvents";
 
 /* ============================================================================
  * ERROR BOUNDARY DA CASCA "PRUMO" (REVERSÃO AUTOMÁTICA PARA "COMPACT")
@@ -2261,6 +2262,37 @@ export function ChamferPrumoSpatialUI({
               </span>
             </button>
           )}
+
+          {/* Instrumentos Paramétricos Integrados ao Hub PRUMO (Zero Pílulas Flutuantes Soltas) */}
+          <div className="grid grid-cols-4 gap-1 pt-0.5">
+            {(
+              [
+                { id: "parameters", label: "fx Parâm.", testId: "prumo-hub-fx-btn" },
+                { id: "timeline", label: "⏱ Hist.", testId: "prumo-hub-timeline-btn" },
+                { id: "sheet", label: "Chapa", testId: "prumo-hub-sheet-btn" },
+                { id: "section", label: "✂ Seção", testId: "prumo-hub-section-btn" },
+              ] as const
+            ).map((btn) => (
+              <button
+                key={btn.id}
+                type="button"
+                data-testid={btn.testId}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setHubOpen(false);
+                  dispatchChamferParametricPanel(btn.id);
+                }}
+                style={{
+                  backgroundColor: "var(--chamfer-surface-elevated)",
+                  borderColor: "var(--chamfer-accent-border)",
+                  color: "var(--chamfer-text-primary)",
+                }}
+                className="flex flex-col items-center justify-center rounded-xl border px-1 py-1.5 font-mono text-[9.5px] font-bold transition hover:brightness-110 cursor-pointer"
+              >
+                <span style={{ color: "var(--chamfer-accent)" }}>{btn.label}</span>
+              </button>
+            ))}
+          </div>
 
           {/* Ações Rápidas do Hub */}
           <div className="grid grid-cols-2 gap-1.5 pt-0.5">

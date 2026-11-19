@@ -81,6 +81,7 @@ import {
   Bug,
   CopyCheck,
   Calculator,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -114,6 +115,10 @@ import type { ArrayType, PolarArrayParams, LinearArrayParams } from "@/lib/lab2d
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 import type { ChamferSidebarTab } from "./sidebar";
 import type { Vec2 } from "@/lib/geometry/types";
+import {
+  dispatchChamferParametricPanel,
+  useChamferParametricStatus,
+} from "./chamferParametricEvents";
 
 export type PortraitDockMode =
   | "desenho"
@@ -1080,6 +1085,81 @@ export function ChamferPortraitTopBar({
                     title="Flutuando"
                   />
                 )}
+              </span>
+            </button>
+          )}
+
+          {/* Botões Compactos Paramétricos Integrados na Barra Superior Retrato: [ fx ] [ 🔍 ] [ ✂ ] */}
+          <button
+            type="button"
+            data-testid="chamfer-portrait-fx-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              dispatchChamferParametricPanel("parameters");
+            }}
+            aria-label="Parâmetros e Variantes (fx)"
+            title="Parâmetros (fx), Sweep e Configurações"
+            className="group flex h-[44px] w-[30px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
+          >
+            <span
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-accent)",
+              }}
+              className="chamfer-theme-fade-2s flex size-7 items-center justify-center rounded-lg border font-mono text-[10px] font-bold group-active:scale-95"
+            >
+              fx
+            </span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="chamfer-portrait-search-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              dispatchChamferParametricPanel("sbox");
+            }}
+            aria-label="Busca Rápida de Comandos"
+            title="Busca Rápida de Comandos 2D/3D, Chapa e Seção"
+            className="group flex h-[44px] w-[30px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
+          >
+            <span
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="chamfer-theme-fade-2s flex size-7 items-center justify-center rounded-lg border group-active:scale-95"
+            >
+              <Search className="size-3.5" />
+            </span>
+          </button>
+
+          {activeMode === "3d" && (
+            <button
+              type="button"
+              data-testid="chamfer-portrait-section-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("selection");
+                dispatchChamferParametricPanel("section");
+              }}
+              aria-label="Corte em Seção 3D"
+              title="Abrir Corte em Seção 3D e Massa"
+              className="group flex h-[44px] w-[30px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
+            >
+              <span
+                style={{
+                  backgroundColor: "var(--chamfer-surface-elevated)",
+                  borderColor: "var(--chamfer-border)",
+                  color: "var(--chamfer-accent)",
+                }}
+                className="chamfer-theme-fade-2s flex size-7 items-center justify-center rounded-lg border group-active:scale-95"
+              >
+                <Scissors className="size-3.5" />
               </span>
             </button>
           )}
@@ -2274,6 +2354,7 @@ export function ChamferPortraitCanvasMicroPill({
 }: ChamferPortraitCanvasMicroPillProps) {
   const [zoomGridPopoverOpen, setZoomGridPopoverOpen] = useState(false);
   const [planPopoverOpen, setPlanPopoverOpen] = useState(false);
+  const parametricStatus = useChamferParametricStatus();
 
   const dx = temporaryOrigin ? cursor.x - temporaryOrigin.p.x : cursor.x;
   const dy = temporaryOrigin ? cursor.y - temporaryOrigin.p.y : cursor.y;
@@ -2408,6 +2489,29 @@ export function ChamferPortraitCanvasMicroPill({
             <span>Z:{safeZoom}%</span>
             <span className="opacity-50">·</span>
             <span>G:{showGrid ? `${gridMm}mm` : "OFF"}</span>
+          </button>
+
+          <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
+
+          {/* Segmento Inline: ⏱ Histórico (N) embutido na micro-pílula de status */}
+          <button
+            type="button"
+            data-testid="chamfer-portrait-timeline-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              dispatchChamferParametricPanel("timeline");
+            }}
+            style={
+              parametricStatus.timelineOpen
+                ? { color: "var(--chamfer-accent)", fontWeight: 700 }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            title="Expandir / Recolher Linha do Tempo Paramétrica e Rollback"
+            className="flex shrink-0 items-center gap-0.5 font-bold cursor-pointer"
+          >
+            <span>⏱</span>
+            <span>{parametricStatus.featureCount}</span>
           </button>
 
           <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
