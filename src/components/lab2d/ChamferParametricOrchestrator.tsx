@@ -1,5 +1,5 @@
 /**
- * CALDRA CHAMFER — ORQUESTRADOR PARAMÉTRICO UNIFICADO (PILARES 1–8)
+ * CALDRA CHAMFER — ORQUESTRADOR PARAMÉTRICO UNIFICADO (PILARES 1–8 + BEND TREE)
  *
  * - ZERO pílulas flutuantes soltas sobre o canvas: todos os gatilhos moram integrados nas barras
  *   já estabelecidas do CHAMFER (Barra Superior, Barra Lateral PRE/CHP/3D, Barra Inferior de Status,
@@ -7,6 +7,8 @@
  * - Regra estrita de exclusividade (1 painel por vez): abrir qualquer Gaveta Lateral Direita
  *   (`fx Parâmetros`, `Chapa`, `Seção`, `Restrições`, `Busca`) recolhe automaticamente a Timeline,
  *   e expandir a faixa fina da Timeline fecha qualquer gaveta aberta.
+ * - Integra a arquitetura completa `SheetMetalBody` + `BendTree` + `DihedralBendDetector` com
+ *   projeção 3D ao vivo no `ChamferUnified3DViewport` e alça angular arrastável 3D.
  * - Cada instrumento isolado em seu próprio ErrorBoundary.
  */
 
@@ -26,17 +28,38 @@ import {
   type SketchConstraintType,
 } from "@/chamfer/sketch/constraintSolver";
 import { projectCurrentViewToDxf } from "@/chamfer/inspect/sectionAndInspect";
+import {
+  DEFAULT_SHEET_METAL_RULES,
+  addEdgeFlangeToBody,
+  addHoleOrCutoutToBody,
+  createContourFlangeBody,
+  editBendNodeInBody,
+  foldSheetMetalBody,
+  refoldSheetMetalBody,
+  swapFixedRootFlange,
+  unfoldSheetMetalBody,
+  updateSheetMetalBodyRule,
+  type BendDirection,
+  type SheetMetalBody,
+  type SheetMetalRule,
+} from "@/chamfer/sheetMetal/bendTree";
+import { evaluateBendTree, validateBendInputs } from "@/chamfer/sheetMetal/bendMath";
+import { detectDihedralBendsFromPolyline2D } from "@/chamfer/sheetMetal/dihedralDetector";
+import { chamferParameterStore } from "@/chamfer/core/parameterStore";
 import { ChamferInstrumentErrorBoundary } from "./ChamferInstrumentErrorBoundary";
 import { ChamferParametricTimelineBar } from "./ChamferParametricTimelineBar";
 import { ChamferParametersSheet } from "./ChamferParametersSheet";
 import {
   ChamferParametricSuiteDrawer,
   type ParametricSuiteTab,
+  type SheetFoldFormPayload,
 } from "./ChamferParametricSuiteDrawer";
 import { ChamferRadialMenu, type Radial3DContextKind } from "./ChamferRadialMenu";
+import { ChamferBendAngleHandle3D } from "./ChamferBendAngleHandle3D";
 import {
   CHAMFER_PARAMETRIC_ACTION_EVENT,
   broadcastChamferParametricStatus,
+  broadcastChamferSheetMetal3D,
   type ChamferParametricAction,
   type ChamferParametricPanelId,
 } from "./chamferParametricEvents";
@@ -68,26 +91,31 @@ function deriveInitialDocFromEntities(
   const { engine } = createChamferParametricEngine(
     createEmptyParametricDocument(STEEL_DENSITY_KG_M3),
   );
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const circles: Array<{ cx: number; cy: number; r: number }> = [];
 
   for (const e of entities) {
-    if (e.kind === "line") {
-      minX = Math.min(minX, e.a.x, e.b.x);
-      maxX = Math.max(maxX, e.a.x, e.b.x);
-      minY = Math.min(minY, e.a.y, e.b.y);
-      maxY = Math.max(maxY, e.a.y, e.b.y);
-    } else if (e.kind === "circle") {
-      minX = Math.min(minX, e.c.x - e.r);
-      maxX = Math.max(maxX, e.c.x + e.r);
-      minY = Math.min(minY, e.c.y - e.r);
-      maxY = Math.max(maxY, e.c.y + e.r);
-      circles.push({ cx: e.c.x, cy: e.c.y, r: e.r });
-    } else if (e.kind === "rect") {
-      minX = Math.min(minX, e.x, e.x + e.w);
-      maxX = Math.max(maxX, e.x, e.x + e.w);
-      minY = Math.min(minY, e.y, e.y + e.h);
-      maxY = Math.max(maxY, e.y, e.y + e.h);
+    if (e.type === "line") {
+      minX = Math.min(minX, e.x1, e.x2);
+      maxX = Math.max(maxX, e.x1, e.x2);
+      minY = Math.min(minY, e.y1, e.y2);
+      maxY = Math.max(maxY, e.y1, e.y2);
+    } else if (e.type === "circle") {
+      minX = Math.min(minX, e.cx - e.r);
+      maxX = Math.max(maxX, e.cx + e.r);
+      minY = Math.min(minY, e.cy - e.r);
+      maxY = Math.max(maxY, e.cy + e.r);
+      circles.push({ cx: e.cx, cy: e.cy, r: e.r });
+    } else if (e.type === "polyline") {
+      for (const pt of e.pts) {
+        minX = Math.min(minX, pt.x);
+        maxX = Math.max(maxX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxY = Math.max(maxY, pt.y);
+      }
     }
   }
 
@@ -119,6 +147,62 @@ function deriveInitialDocFromEntities(
   return engine.getState();
 }
 
+function findMatchingRule(thicknessMm: number): SheetMetalRule {
+  return (
+    DEFAULT_SHEET_METAL_RULES.find((r) => Math.abs(r.thicknessMm - thicknessMm) < 0.25) ?? {
+      ...DEFAULT_SHEET_METAL_RULES[4]!,
+      thicknessMm: Math.max(0.5, thicknessMm || 3),
+      innerRadiusMm: Math.max(0.5, thicknessMm || 3),
+    }
+  );
+}
+
+function extractOpenPolylineFromEntities(entities: Entity[]): Array<[number, number]> {
+  // 1. Procura polilinha aberta/fechada com >= 3 vértices
+  for (const e of entities) {
+    if (e.type === "polyline" && e.pts.length >= 3) {
+      return e.pts.map((pt) => [pt.x, pt.y]);
+    }
+  }
+  // 2. Encadeia segmentos de linha conectados
+  const lines = entities.filter((e): e is Extract<Entity, { type: "line" }> => e.type === "line");
+  if (lines.length >= 2) {
+    const chain: Array<[number, number]> = [
+      [lines[0]!.x1, lines[0]!.y1],
+      [lines[0]!.x2, lines[0]!.y2],
+    ];
+    const used = new Set<number>([0]);
+    let progressed = true;
+    while (progressed && used.size < lines.length) {
+      progressed = false;
+      const tail = chain[chain.length - 1]!;
+      for (let i = 0; i < lines.length; i++) {
+        if (used.has(i)) continue;
+        const l = lines[i]!;
+        if (Math.hypot(l.x1 - tail[0], l.y1 - tail[1]) < 1.5) {
+          chain.push([l.x2, l.y2]);
+          used.add(i);
+          progressed = true;
+          break;
+        }
+        if (Math.hypot(l.x2 - tail[0], l.y2 - tail[1]) < 1.5) {
+          chain.push([l.x1, l.y1]);
+          used.add(i);
+          progressed = true;
+          break;
+        }
+      }
+    }
+    if (chain.length >= 3) return chain;
+  }
+  // 3. Fallback industrial em L (40x30) para teste instantâneo do detector diedro
+  return [
+    [0, 0],
+    [40, 0],
+    [40, 30],
+  ];
+}
+
 export function ChamferParametricOrchestrator({
   entities,
   selection,
@@ -142,6 +226,23 @@ export function ChamferParametricOrchestrator({
     deriveInitialDocFromEntities(entities, thickness),
   );
 
+  // Estado lógico canônico da Chapa Metálica (BendTree separada 100% da malha visual Three.js)
+  const [sheetBody, setSheetBody] = useState<SheetMetalBody>(() =>
+    createContourFlangeBody({
+      name: "Chapa L 40×30",
+      extrudeWidthMm: 80,
+      externalLegsMm: [40, 30],
+      bendAnglesDeg: [90],
+      rule: findMatchingRule(thickness),
+    }),
+  );
+  const [sheet3DPreviewActive, setSheet3DPreviewActive] = useState(false);
+  const [selectedBendId, setSelectedBendId] = useState<string | null>(() => "bend_01");
+  const [detectionChipText, setDetectionChipText] = useState<string | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [draftFoldAngleDeg, setDraftFoldAngleDeg] = useState(90);
+  const [draftFoldDirection, setDraftFoldDirection] = useState<BendDirection>("UP");
+
   // Ressincroniza altura/espessura quando `thickness` do projeto muda
   useEffect(() => {
     setDocState((prev) => {
@@ -152,7 +253,35 @@ export function ChamferParametricOrchestrator({
       );
       return engineBundleRef.current!.evaluator.evaluate({ ...prev, features: nextFeatures });
     });
+    setSheetBody((prev) => {
+      if (Math.abs(prev.rule.thicknessMm - thickness) < 0.05) return prev;
+      return updateSheetMetalBodyRule(prev, findMatchingRule(thickness));
+    });
   }, [thickness]);
+
+  // Projeta a malha 3D gerada pela BendTree no ChamferUnified3DViewport quando o preview 3D de Chapa está ativo
+  useEffect(() => {
+    if (!sheet3DPreviewActive || activeMode !== "3d") {
+      broadcastChamferSheetMetal3D({ active: false, shape: null });
+      return;
+    }
+    try {
+      const evaluated = evaluateBendTree(sheetBody);
+      broadcastChamferSheetMetal3D({
+        active: true,
+        shape: evaluated.tessellatedShape,
+        label: sheetBody.name,
+      });
+    } catch (err) {
+      setSheetError(err instanceof Error ? err.message : "Erro ao avaliar cinemática 3D da chapa");
+    }
+  }, [sheetBody, sheet3DPreviewActive, activeMode]);
+
+  useEffect(() => {
+    return () => {
+      broadcastChamferSheetMetal3D({ active: false, shape: null });
+    };
+  }, []);
 
   // Estado Section Analysis (Pilar 7) sincronizado com ThreeBRepRenderer
   const [sectionState, setSectionState] = useState<ChamferSectionPlaneEventDetail>({
@@ -214,20 +343,315 @@ export function ChamferParametricOrchestrator({
     });
   }, [activeSheet, timelineOpen, docState.features.length, docState.rollbackIndex, sectionState.enabled]);
 
+  // Helper para registrar operações da Chapa Metálica na Timeline Paramétrica
+  const appendSheetTimelineNode = useCallback(
+    (node: Omit<TimelineFeatureNode, "id" | "suppressed" | "dependsOn"> & { id?: string }) => {
+      setDocState((prev) => {
+        const nextNode: TimelineFeatureNode = {
+          id: node.id ?? `sheet_${prev.features.length + 1}`,
+          name: node.name,
+          type: node.type,
+          suppressed: false,
+          dependsOn: [],
+          params: node.params,
+        };
+        return engineBundleRef.current!.evaluator.evaluate({
+          ...prev,
+          features: [...prev.features, nextNode],
+        });
+      });
+    },
+    [],
+  );
+
+  // Resolve expressão paramétrica de ângulo a partir do ParameterStore (ex: `ang_dobra`)
+  const resolveAngleWithExpression = useCallback((fallbackDeg: number, expr?: string): number => {
+    if (!expr || !expr.trim()) return fallbackDeg;
+    const map = chamferParameterStore.getValueMap();
+    const key = expr.trim();
+    if (key in map && Number.isFinite(map[key])) {
+      return map[key]!;
+    }
+    const parsed = Number(key.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : fallbackDeg;
+  }, []);
+
+  // Operações da BendTree de Chapa Metálica
+  const handleSheetRuleChange = useCallback((rule: SheetMetalRule) => {
+    setSheetError(null);
+    setSheetBody((prev) => updateSheetMetalBodyRule(prev, rule));
+  }, []);
+
+  const handleSheetFold = useCallback(
+    (payload: SheetFoldFormPayload) => {
+      setSheetError(null);
+      const resolvedAngle = resolveAngleWithExpression(payload.targetAngleDeg, payload.angleExpression);
+      const check = validateBendInputs({
+        angleDeg: resolvedAngle,
+        thicknessMm: sheetBody.rule.thicknessMm,
+        innerRadiusMm: payload.innerRadiusMm,
+        kFactor: payload.kFactor,
+      });
+      if (!check.ok) {
+        setSheetError(check.error ?? "Parâmetros de dobra inválidos");
+        return;
+      }
+
+      const res = foldSheetMetalBody(sheetBody, {
+        distanceFromEdgeMm: payload.distanceFromEdgeMm,
+        childExternalLegMm: payload.childExternalLegMm,
+        targetAngleDeg: resolvedAngle,
+        angleExpression: payload.angleExpression,
+        direction: payload.direction,
+        innerRadiusMm: payload.innerRadiusMm,
+        kFactor: payload.kFactor,
+        bendPosition: payload.bendPosition,
+        invertFixedSide: payload.invertFixedSide,
+      });
+      if (!res.ok) {
+        setSheetError(res.error ?? "Falha ao executar Dobrar (Fold)");
+        return;
+      }
+      setSheetBody(res.body);
+      const newBendId = res.createdBendId ?? Object.keys(res.body.bends).slice(-1)[0] ?? null;
+      setSelectedBendId(newBendId);
+      if (activeMode === "3d") setSheet3DPreviewActive(true);
+      appendSheetTimelineNode({
+        id: newBendId ?? undefined,
+        name: `Dobrar ${resolvedAngle.toFixed(1)}° ${payload.direction === "UP" ? "CIMA" : "BAIXO"}`,
+        type: "sheetFold",
+        params: {
+          bendId: newBendId,
+          targetAngleDeg: resolvedAngle,
+          angleExpression: payload.angleExpression,
+          direction: payload.direction,
+          distanceFromEdgeMm: payload.distanceFromEdgeMm,
+          childExternalLegMm: payload.childExternalLegMm,
+          innerRadiusMm: payload.innerRadiusMm,
+          kFactor: payload.kFactor,
+          bendPosition: payload.bendPosition,
+          invertFixedSide: payload.invertFixedSide,
+        },
+      });
+      onNotify?.(`Dobra ${resolvedAngle.toFixed(1)}° (${payload.direction === "UP" ? "CIMA" : "BAIXO"}) registrada.`);
+    },
+    [sheetBody, activeMode, appendSheetTimelineNode, resolveAngleWithExpression, onNotify],
+  );
+
+  const handleSheetAddEdgeFlange = useCallback(
+    (payload: {
+      externalLengthMm: number;
+      targetAngleDeg: number;
+      direction: BendDirection;
+      innerRadiusMm: number;
+      kFactor: number;
+      angleExpression?: string;
+    }) => {
+      setSheetError(null);
+      const resolvedAngle = resolveAngleWithExpression(payload.targetAngleDeg, payload.angleExpression);
+      const res = addEdgeFlangeToBody(sheetBody, {
+        externalLengthMm: payload.externalLengthMm,
+        targetAngleDeg: resolvedAngle,
+        angleExpression: payload.angleExpression,
+        direction: payload.direction,
+        innerRadiusMm: payload.innerRadiusMm,
+        kFactor: payload.kFactor,
+      });
+      if (!res.ok) {
+        setSheetError(res.error ?? "Falha ao adicionar Edge Flange");
+        return;
+      }
+      setSheetBody(res.body);
+      const newBendId = res.createdBendId ?? Object.keys(res.body.bends).slice(-1)[0] ?? null;
+      setSelectedBendId(newBendId);
+      if (activeMode === "3d") setSheet3DPreviewActive(true);
+      appendSheetTimelineNode({
+        id: newBendId ?? undefined,
+        name: `Edge Flange ${payload.externalLengthMm}mm (${resolvedAngle.toFixed(1)}°)`,
+        type: "sheetEdgeFlange",
+        params: { ...payload, targetAngleDeg: resolvedAngle, bendId: newBendId },
+      });
+    },
+    [sheetBody, activeMode, appendSheetTimelineNode, resolveAngleWithExpression],
+  );
+
+  const handleSheetCreateContourFlange = useCallback(
+    (payload: { preset: "L" | "U" | "Z"; legA: number; legB: number; widthMm: number; angleDeg: number }) => {
+      setSheetError(null);
+      try {
+        const legs =
+          payload.preset === "L"
+            ? [payload.legA, payload.legB]
+            : [payload.legA, payload.legB, payload.legA];
+        const signedAngles =
+          payload.preset === "L"
+            ? [payload.angleDeg]
+            : payload.preset === "Z"
+              ? [payload.angleDeg, -payload.angleDeg]
+              : [payload.angleDeg, payload.angleDeg];
+        const body = createContourFlangeBody({
+          name: `Perfil ${payload.preset} ${payload.legA}×${payload.legB}`,
+          extrudeWidthMm: payload.widthMm,
+          externalLegsMm: legs,
+          bendAnglesDeg: signedAngles,
+          rule: sheetBody.rule,
+        });
+        setSheetBody(body);
+        setSelectedBendId(Object.keys(body.bends)[0] ?? null);
+        if (activeMode === "3d") setSheet3DPreviewActive(true);
+        appendSheetTimelineNode({
+          name: `Contour Flange ${payload.preset}`,
+          type: "sheetContourFlange",
+          params: {
+            extrudeWidthMm: payload.widthMm,
+            externalLegsMm: legs,
+            bendAnglesDeg: signedAngles,
+          },
+        });
+      } catch (err) {
+        setSheetError(err instanceof Error ? err.message : "Falha ao gerar Contour Flange");
+      }
+    },
+    [sheetBody.rule, activeMode, appendSheetTimelineNode],
+  );
+
+  const handleSheetDetectDihedral = useCallback(() => {
+    setSheetError(null);
+    const poly = extractOpenPolylineFromEntities(entities);
+    const detected = detectDihedralBendsFromPolyline2D(
+      poly,
+      Math.max(0.5, thickness || sheetBody.rule.thicknessMm),
+      80,
+      sheetBody.rule,
+    );
+    if (!detected.ok || !detected.body) {
+      setSheetError(detected.error ?? "Nenhuma dobra diedra detectada no perfil atual.");
+      return;
+    }
+    setSheetBody(detected.body);
+    setSelectedBendId(Object.keys(detected.body.bends)[0] ?? null);
+    setDetectionChipText(detected.confirmationChipText);
+    if (activeMode === "3d") setSheet3DPreviewActive(true);
+    onNotify?.(detected.confirmationChipText);
+  }, [entities, thickness, sheetBody.rule, activeMode, onNotify]);
+
+  const handleSheetUnfold = useCallback(
+    (bendIds?: string[]) => {
+      setSheetError(null);
+      let workingBody = sheetBody;
+      // Se ainda não há dobras registradas na BendTree, dispara o Detector Automático de Ângulo Diedro!
+      if (Object.keys(workingBody.bends).length === 0) {
+        const poly = extractOpenPolylineFromEntities(entities);
+        const detected = detectDihedralBendsFromPolyline2D(
+          poly,
+          Math.max(0.5, thickness || workingBody.rule.thicknessMm),
+          80,
+          workingBody.rule,
+        );
+        if (detected.ok && detected.body) {
+          workingBody = detected.body;
+          setDetectionChipText(detected.confirmationChipText);
+        }
+      }
+      const next = unfoldSheetMetalBody(workingBody, bendIds);
+      setSheetBody(next);
+      if (activeMode === "3d") setSheet3DPreviewActive(true);
+      appendSheetTimelineNode({
+        name: bendIds?.length ? `Desdobrar (${bendIds.length})` : "Desdobrar Todas",
+        type: "sheetUnfold",
+        params: { bendIds },
+      });
+    },
+    [sheetBody, entities, thickness, activeMode, appendSheetTimelineNode],
+  );
+
+  const handleSheetRefold = useCallback(
+    (bendIds?: string[]) => {
+      setSheetError(null);
+      const next = refoldSheetMetalBody(sheetBody, bendIds);
+      setSheetBody(next);
+      if (activeMode === "3d") setSheet3DPreviewActive(true);
+      appendSheetTimelineNode({
+        name: bendIds?.length ? `Redobrar (${bendIds.length})` : "Redobrar Todas",
+        type: "sheetRefold",
+        params: { bendIds },
+      });
+    },
+    [sheetBody, activeMode, appendSheetTimelineNode],
+  );
+
+  const handleSheetEditBend = useCallback(
+    (
+      bendId: string,
+      patch: { targetAngleDeg?: number; direction?: BendDirection; innerRadiusMm?: number; kFactor?: number },
+    ) => {
+      setSheetError(null);
+      setSheetBody((prev) => {
+        const res = editBendNodeInBody(prev, bendId, patch);
+        if (!res.ok) {
+          setSheetError(res.error ?? "Ângulo inválido");
+          return prev;
+        }
+        return res.body;
+      });
+      if (patch.targetAngleDeg !== undefined) {
+        setDraftFoldAngleDeg(patch.targetAngleDeg);
+      }
+      if (patch.direction) {
+        setDraftFoldDirection(patch.direction);
+      }
+    },
+    [],
+  );
+
+  const handleSheetSwapFixedRoot = useCallback(() => {
+    setSheetBody((prev) => {
+      const flangeIds = Object.keys(prev.flanges);
+      if (flangeIds.length < 2) return prev;
+      const idx = flangeIds.indexOf(prev.rootFlangeId);
+      const nextRoot = flangeIds[(idx + 1) % flangeIds.length]!;
+      return swapFixedRootFlange(prev, nextRoot);
+    });
+  }, []);
+
+  const handleSheetAddHole = useCallback(
+    (payload: { diameterMm: number; x: number; y: number; acrossUnfoldedBend?: boolean }) => {
+      setSheetError(null);
+      const res = addHoleOrCutoutToBody(sheetBody, {
+        cx: payload.x,
+        cy: payload.y,
+        diameterMm: payload.diameterMm,
+        acrossBend: Boolean(payload.acrossUnfoldedBend),
+      });
+      if (!res.ok) {
+        setSheetError(res.error ?? "Erro ao adicionar furo");
+        return;
+      }
+      setSheetBody(res.body);
+      appendSheetTimelineNode({
+        name: `Furo Chapa Ø${payload.diameterMm}mm`,
+        type: "sheetHole",
+        params: { ...payload },
+      });
+    },
+    [sheetBody, appendSheetTimelineNode],
+  );
+
   // Estado do Solver 2D & DOF (Pilar 3)
   const [sketchConflict, setSketchConflict] = useState<string | undefined>(undefined);
   const [extraConstraintsCount, setExtraConstraintsCount] = useState(0);
 
   const dofSummary = useMemo(() => {
-    const lineEntities = entities.filter((e) => e.kind === "line").slice(0, 12);
+    const lineEntities = entities
+      .filter((e): e is Extract<Entity, { type: "line" }> => e.type === "line")
+      .slice(0, 12);
     const pts: ParametricSketch2D["points"] = [];
     const lines: ParametricSketch2D["lines"] = [];
     lineEntities.forEach((l, idx) => {
-      if (l.kind !== "line") return;
       const aId = `p_${idx}_a`;
       const bId = `p_${idx}_b`;
-      pts.push({ id: aId, x: l.a.x, y: l.a.y, fixed: idx === 0 });
-      pts.push({ id: bId, x: l.b.x, y: l.b.y });
+      pts.push({ id: aId, x: l.x1, y: l.y1, fixed: idx === 0 });
+      pts.push({ id: bId, x: l.x2, y: l.y2 });
       lines.push({ id: l.id, p1: aId, p2: bId });
     });
     if (pts.length === 0) {
@@ -269,7 +693,7 @@ export function ChamferParametricOrchestrator({
       startX = e.clientX;
       startY = e.clientY;
       timer = setTimeout(() => {
-        triggerHaptic("heavy");
+        triggerHaptic("confirm");
         setRadial3D({
           open: true,
           pos: { x: startX, y: startY },
@@ -327,28 +751,24 @@ export function ChamferParametricOrchestrator({
       }> = [];
 
       for (const e of entities) {
-        if (e.kind === "line") {
-          edges3D.push({ a: { x: e.a.x, y: e.a.y, z: 0 }, b: { x: e.b.x, y: e.b.y, z: 0 } });
+        if (e.type === "line") {
+          edges3D.push({ a: { x: e.x1, y: e.y1, z: 0 }, b: { x: e.x2, y: e.y2, z: 0 } });
           edges3D.push({
-            a: { x: e.a.x, y: e.a.y, z: thickness },
-            b: { x: e.b.x, y: e.b.y, z: thickness },
+            a: { x: e.x1, y: e.y1, z: thickness },
+            b: { x: e.x2, y: e.y2, z: thickness },
             hidden: true,
           });
-        } else if (e.kind === "circle") {
+        } else if (e.type === "circle") {
           circles3D.push({
-            center: { x: e.c.x, y: e.c.y, z: thickness },
+            center: { x: e.cx, y: e.cy, z: thickness },
             radius: e.r,
             normal: { x: 0, y: 0, z: 1 },
           });
-        } else if (e.kind === "rect") {
-          const corners = [
-            { x: e.x, y: e.y, z: 0 },
-            { x: e.x + e.w, y: e.y, z: 0 },
-            { x: e.x + e.w, y: e.y + e.h, z: 0 },
-            { x: e.x, y: e.y + e.h, z: 0 },
-          ];
-          for (let i = 0; i < 4; i++) {
-            edges3D.push({ a: corners[i]!, b: corners[(i + 1) % 4]! });
+        } else if (e.type === "polyline" && e.pts.length >= 2) {
+          for (let i = 0; i < e.pts.length - 1; i++) {
+            const p0 = e.pts[i]!;
+            const p1 = e.pts[i + 1]!;
+            edges3D.push({ a: { x: p0.x, y: p0.y, z: 0 }, b: { x: p1.x, y: p1.y, z: 0 } });
           }
         }
       }
@@ -376,8 +796,8 @@ export function ChamferParametricOrchestrator({
     let circles = 0;
     for (const e of entities) {
       if (!selSet.has(e.id)) continue;
-      if (e.kind === "line") lines++;
-      else if (e.kind === "circle") circles++;
+      if (e.type === "line") lines++;
+      else if (e.type === "circle") circles++;
     }
     return { points: 0, lines: lines || 2, circles };
   }, [entities, selection]);
@@ -395,8 +815,37 @@ export function ChamferParametricOrchestrator({
     activeSheet === "constraints" ||
     activeSheet === "sbox";
 
+  const activeSelectedBend =
+    (selectedBendId ? sheetBody.bends[selectedBendId] : null) ??
+    Object.values(sheetBody.bends)[0] ??
+    null;
+
   return (
     <>
+      {/* ALÇA ANGULAR 3D ARRASTÁVEL (SOMENTE QUANDO PREVIEW 3D DE CHAPA ESTÁ ATIVO NO MODO 3D) */}
+      <ChamferInstrumentErrorBoundary instrumentName="Alça Angular 3D">
+        <ChamferBendAngleHandle3D
+          visible={activeMode === "3d" && sheet3DPreviewActive && activeSheet === "sheet" && Boolean(activeSelectedBend)}
+          angleDeg={activeSelectedBend?.targetAngleDeg ?? draftFoldAngleDeg}
+          direction={activeSelectedBend?.direction ?? draftFoldDirection}
+          label={activeSelectedBend ? `Dobra ${activeSelectedBend.bendId}` : "Dobra Ativa"}
+          onChangeAngle={(nextDeg) => {
+            setDraftFoldAngleDeg(nextDeg);
+            if (activeSelectedBend) {
+              handleSheetEditBend(activeSelectedBend.bendId, { targetAngleDeg: nextDeg });
+            }
+          }}
+          onToggleDirection={() => {
+            const nextDir: BendDirection =
+              (activeSelectedBend?.direction ?? draftFoldDirection) === "UP" ? "DOWN" : "UP";
+            setDraftFoldDirection(nextDir);
+            if (activeSelectedBend) {
+              handleSheetEditBend(activeSelectedBend.bendId, { direction: nextDir });
+            }
+          }}
+        />
+      </ChamferInstrumentErrorBoundary>
+
       {/* FAIXA HORIZONTAL FINA DA TIMELINE ACOPLADA ACIMA DA BARRA INFERIOR (FECHADA POR PADRÃO) */}
       <ChamferInstrumentErrorBoundary instrumentName="Timeline Paramétrica">
         <ChamferParametricTimelineBar
@@ -466,6 +915,17 @@ export function ChamferParametricOrchestrator({
             if (name === "chapa" && val >= 0.5 && val <= 100) {
               onThicknessChange(val);
             }
+            // Atualiza automaticamente qualquer dobra cuja angleExpression referencia este parâmetro
+            setSheetBody((prev) => {
+              let next = prev;
+              for (const b of Object.values(prev.bends)) {
+                if (b.angleExpression && b.angleExpression.trim() === name && val > 0 && val <= 180) {
+                  const res = editBendNodeInBody(next, b.bendId, { targetAngleDeg: val });
+                  if (res.ok) next = res.body;
+                }
+              }
+              return next;
+            });
           }}
           onConfigurationApplied={(cfgName) => {
             onNotify?.(`Configuração aplicada: ${cfgName}`);
@@ -487,19 +947,41 @@ export function ChamferParametricOrchestrator({
           selectionCounts={selectionCounts}
           activeThicknessMm={thickness}
           onSheetRuleThicknessChange={onThicknessChange}
+          sheetBody={sheetBody}
+          sheet3DPreviewActive={sheet3DPreviewActive}
+          onToggleSheet3DPreview={() => setSheet3DPreviewActive((v) => !v)}
+          selectedBendId={selectedBendId}
+          onSelectBendId={setSelectedBendId}
+          detectionChipText={detectionChipText}
+          sheetError={sheetError}
+          onSheetRuleChange={handleSheetRuleChange}
+          onSheetFold={handleSheetFold}
+          onSheetAddEdgeFlange={handleSheetAddEdgeFlange}
+          onSheetCreateContourFlange={handleSheetCreateContourFlange}
+          onSheetUnfold={handleSheetUnfold}
+          onSheetRefold={handleSheetRefold}
+          onSheetEditBend={handleSheetEditBend}
+          onSheetSwapFixedRoot={handleSheetSwapFixedRoot}
+          onSheetAddHole={handleSheetAddHole}
+          onSheetDetectDihedral={handleSheetDetectDihedral}
+          draftFoldAngleDeg={draftFoldAngleDeg}
+          draftFoldDirection={draftFoldDirection}
+          onDraftFoldAngleChange={setDraftFoldAngleDeg}
+          onDraftFoldDirectionChange={setDraftFoldDirection}
           onApplyConstraint={(type: SketchConstraintType) => {
             setSketchConflict(undefined);
             setExtraConstraintsCount((c) => c + 1);
             onNotify?.(`Restrição "${type}" aplicada ao esboço.`);
           }}
           onAutoConstrain={() => {
-            const lineEntities = entities.filter((e) => e.kind === "line").slice(0, 12);
+            const lineEntities = entities
+              .filter((e): e is Extract<Entity, { type: "line" }> => e.type === "line")
+              .slice(0, 12);
             const pts: ParametricSketch2D["points"] = [];
             const lines: ParametricSketch2D["lines"] = [];
             lineEntities.forEach((l, idx) => {
-              if (l.kind !== "line") return;
-              pts.push({ id: `p${idx}a`, x: l.a.x, y: l.a.y });
-              pts.push({ id: `p${idx}b`, x: l.b.x, y: l.b.y });
+              pts.push({ id: `p${idx}a`, x: l.x1, y: l.y1 });
+              pts.push({ id: `p${idx}b`, x: l.x2, y: l.y2 });
               lines.push({ id: l.id, p1: `p${idx}a`, p2: `p${idx}b` });
             });
             const autoRes = autoConstrainSketch({ points: pts, lines, circles: [], constraints: [] });
@@ -521,6 +1003,14 @@ export function ChamferParametricOrchestrator({
               setActiveSheet("section");
             } else if (cmdId === "inspect.viewToDxf") {
               handleExportCurrentViewDxf(false);
+            } else if (cmdId === "sheet.unfold") {
+              setTimelineOpen(false);
+              setActiveSheet("sheet");
+              handleSheetUnfold();
+            } else if (cmdId === "sheet.refold") {
+              setTimelineOpen(false);
+              setActiveSheet("sheet");
+              handleSheetRefold();
             } else if (cmdId.startsWith("sheet.")) {
               setTimelineOpen(false);
               setActiveSheet("sheet");
@@ -551,14 +1041,15 @@ export function ChamferParametricOrchestrator({
               handleSectionChange({ ...sectionState, enabled: true });
               setTimelineOpen(false);
               setActiveSheet("section");
-            } else if (actionId === "edge_flange") {
+            } else if (actionId === "sketch_on_face") {
               setTimelineOpen(false);
-              setActiveSheet("sheet");
-            } else if (actionId === "edit_feature") {
-              setActiveSheet("none");
-              setTimelineOpen(true);
-            } else {
+              setActiveSheet("constraints");
+            } else if (actionId === "press_pull") {
+              onNotify?.("Press-Pull ativo: arraste a face selecionada.");
+            } else if (actionId === "fillet_3d" || actionId === "chamfer_3d") {
               onRunLegacyCommand?.(actionId);
+            } else if (actionId === "hide_body") {
+              onNotify?.("Visibilidade do corpo alternada.");
             }
           }}
         />

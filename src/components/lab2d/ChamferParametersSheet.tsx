@@ -583,7 +583,7 @@ export function ChamferParametersSheet({
                     <button
                       type="button"
                       onClick={() => {
-                        triggerHaptic("heavy");
+                        triggerHaptic("confirm");
                         const res = chamferParameterStore.applyConfiguration(cfg.id);
                         if (res.ok) {
                           onConfigurationApplied?.(cfg.name);

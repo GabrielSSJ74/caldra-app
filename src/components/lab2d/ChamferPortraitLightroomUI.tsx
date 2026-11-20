@@ -3137,7 +3137,7 @@ const TOOL_LABELS_PT: Record<string, string> = {
   point: "Ponto",
   text: "Texto",
   trim: "Aparar",
-  smart_trim: "Encontro",
+  smart_trim: "Aparar",
   extend: "Estender",
   offset: "Offset",
   fillet: "Filete R",
@@ -3145,6 +3145,7 @@ const TOOL_LABELS_PT: Record<string, string> = {
   divide: "Dividir",
   dim: "Cotar",
   measure: "Medir",
+  polar_ref: "Ref. Polar",
   loft_3d: "Loft 3D",
 };
 
@@ -4760,18 +4761,9 @@ export function ChamferPortraitBottomBars({
                 cmdId="mod.trim"
                 icon={Scissors}
                 label="Aparar"
-                active={tool === "trim"}
+                active={tool === "trim" || tool === "smart_trim"}
                 heightPx={itemHeightPx}
                 onClick={() => onPickTool("trim")}
-                isDark={isDark}
-              />
-              <CarouselToolItem
-                cmdId="mod.smart_trim"
-                icon={Scissors}
-                label="Até Encontro"
-                active={tool === "smart_trim"}
-                heightPx={itemHeightPx}
-                onClick={() => onPickTool("smart_trim")}
                 isDark={isDark}
               />
               <CarouselToolItem
@@ -5106,9 +5098,9 @@ export function ChamferPortraitBottomBars({
               {onUseSelectedEdge && (
                 <CarouselToolItem
                   cmdId="pre.use_edge"
-                  icon={CornerDownRight}
-                  label="Usar Borda"
-                  disabled={!hasSelection}
+                  icon={Crosshair}
+                  label="Ref. Polar"
+                  active={tool === "polar_ref"}
                   heightPx={itemHeightPx}
                   onClick={onUseSelectedEdge}
                   isDark={isDark}

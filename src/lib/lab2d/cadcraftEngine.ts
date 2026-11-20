@@ -52,6 +52,7 @@ export type OriginClassification = "PRESERVAR" | "COMPLETAR" | "CC" | "CC*" | "E
 export type ChamferTargetMenu = "SEL" | "CRI" | "MOD" | "PRE" | "MED" | "COR";
 
 export type GripEditMode = "stretch" | "move" | "rotate" | "scale" | "mirror";
+export type LineCreationMode = "end_to_end" | "center_radius";
 export type RectCreationMode = "corners" | "center" | "three_point";
 export type CircleCreationMode = "center_radius" | "center_diameter" | "two_point" | "three_point" | "ttr";
 export type PolygonCreationMode = "inscribed" | "circumscribed" | "across_flats";
@@ -1573,13 +1574,13 @@ export const CHAMFER_COMMAND_REGISTRY: CommandRegistryEntry[] = [
     enabled: (s) => s.entities.length > 0,
   },
   {
-    id: "smart_trim",
-    namePtBr: "Aparar (Toque & Swipe-to-Trim)",
+    id: "trim",
+    namePtBr: "Trim / Aparar (Toque & Faca)",
     aliases: ["tr", "trim", "aparar", "swipe"],
     origin: "CC*",
     targetMenu: "MOD",
-    description: "Toque no trecho ou deslize o dedo cruzando múltiplos segmentos",
-    keywords: ["Swipe-to-Trim", "Encontro Real", "Projetado"],
+    description: "Toque ou deslize tipo faca sobre trechos para marcar e confirmar o corte exato",
+    keywords: ["Swipe-to-Trim", "Encontro Real", "Projetado", "Confirmar Corte"],
     enabled: (s) => s.entities.length > 0,
   },
   {

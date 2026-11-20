@@ -15,6 +15,7 @@ import type { Vec2 } from "@/lib/geometry/types";
 import type { Entity } from "@/lib/lab2d/core";
 import type {
   GripEditMode,
+  LineCreationMode,
   PolylineSegmentMode,
   RectCreationMode,
   CircleCreationMode,
@@ -51,6 +52,10 @@ export interface ChamferTouchDynamicHudProps {
   isDark?: boolean;
 
   // Sub-modos paramétricos das ferramentas CRI / MOD / SEL
+  lineMode?: LineCreationMode;
+  onChangeLineMode?: (m: LineCreationMode) => void;
+  polylineCreationMode?: LineCreationMode;
+  onChangePolylineCreationMode?: (m: LineCreationMode) => void;
   polylineSegMode: PolylineSegmentMode;
   onTogglePolylineSegMode: () => void;
   onUndoLastPolylineVertex: () => void;
@@ -116,6 +121,10 @@ export function ChamferTouchDynamicHud({
   basePoint,
   cursorPoint,
   isDark = true,
+  lineMode = "end_to_end",
+  onChangeLineMode,
+  polylineCreationMode = "end_to_end",
+  onChangePolylineCreationMode,
   polylineSegMode,
   onTogglePolylineSegMode,
   onUndoLastPolylineVertex,
@@ -261,14 +270,13 @@ export function ChamferTouchDynamicHud({
   };
 
   const hasTransientBanner =
+    activeTool === "line" ||
     activeTool === "polyline" ||
     activeTool === "rect" ||
     activeTool === "circle" ||
     activeTool === "polygon" ||
     activeTool === "slot" ||
     activeTool === "node" ||
-    activeTool === "smart_trim" ||
-    activeTool === "trim" ||
     activeTool === "offset" ||
     activeTool === "construction_line" ||
     activeTool === "spline";
@@ -302,10 +310,89 @@ export function ChamferTouchDynamicHud({
             isDark ? "text-slate-100" : "text-slate-800",
           )}
         >
-          {/* Chips para POLILINHA COMPOSTA (Linha ↔ Arco Tangente) */}
+          {/* Chips para LINHA (Ponta-Ponta | Centro-Raio Simétrica) */}
+          {activeTool === "line" && (
+            <>
+              <span
+                className="font-bold px-1 shrink-0"
+                style={{ color: "var(--chamfer-accent, #E11D48)" }}
+              >
+                LINHA:
+              </span>
+              {(
+                [
+                  ["end_to_end", "Ponta-Ponta"],
+                  ["center_radius", "Centro-Raio"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  data-testid={`chamfer-line-mode-${mId}`}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangeLineMode?.(mId);
+                  }}
+                  style={
+                    lineMode === mId
+                      ? { backgroundColor: "var(--chamfer-accent, #E11D48)", color: "#FFFFFF" }
+                      : undefined
+                  }
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    lineMode === mId
+                      ? "shadow-xs"
+                      : isDark
+                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Chips para POLILINHA COMPOSTA (Ponta-Ponta | Centro-Raio + Linha ↔ Arco Tangente) */}
           {activeTool === "polyline" && (
             <>
-              <span className="font-bold text-red-400 px-1">POLI</span>
+              <span
+                className="font-bold px-1 shrink-0"
+                style={{ color: "var(--chamfer-accent, #E11D48)" }}
+              >
+                POLILINHA:
+              </span>
+              {(
+                [
+                  ["end_to_end", "Ponta-Ponta"],
+                  ["center_radius", "Centro-Raio"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  data-testid={`chamfer-polyline-mode-${mId}`}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangePolylineCreationMode?.(mId);
+                  }}
+                  style={
+                    polylineCreationMode === mId
+                      ? { backgroundColor: "var(--chamfer-accent, #E11D48)", color: "#FFFFFF" }
+                      : undefined
+                  }
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    polylineCreationMode === mId
+                      ? "shadow-xs"
+                      : isDark
+                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
               <button
                 type="button"
                 onClick={() => {
@@ -569,22 +656,7 @@ export function ChamferTouchDynamicHud({
             </>
           )}
 
-          {/* Chips para APARAR (TOQUE & SWIPE-TO-TRIM) */}
-          {(activeTool === "smart_trim" || activeTool === "trim") && (
-            <>
-              <span className="font-bold text-red-400 px-1 shrink-0">APARAR:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onToggleSmartTrimMode();
-                }}
-                className="rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-400 px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
-              >
-                {smartTrimMode === "real" ? "Encontro Real" : "Projetado"}
-              </button>
-            </>
-          )}
+          {/* TRIM unificado agora usa ChamferSmartTrimControlBar como barra única superior */}
 
           {/* Chips para OFFSET PARALELO */}
           {activeTool === "offset" && (

@@ -30,11 +30,11 @@ export class ChamferInstrumentErrorBoundary extends React.Component<Props, State
     };
   }
 
-  componentDidCatch(error: Error) {
+  override componentDidCatch(error: Error) {
     console.error(`[CHAMFER:${this.props.instrumentName}] Falha isolada:`, error);
   }
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return (
         <div

@@ -216,8 +216,38 @@ import {
   ChamferSmartTrimSvgOverlay,
   ChamferSmartTrimControlBar,
 } from "./ChamferSmartTrimOverlay";
+import {
+  ChamferPolarReferenceSvgOverlay,
+  ChamferPolarReferenceControlBar,
+  type LivePolarRefPreview,
+} from "./ChamferPolarReferenceOverlay";
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
 import { ChamferArrayHUD } from "./ChamferArrayHUD";
+import {
+  computeUniversalFillet2D,
+  detectDirectFilletCorner,
+  findFilletTargetAtPoint,
+  filletArcToSvgPath,
+  type FilletTargetHit,
+  type UniversalFilletResult,
+} from "@/chamfer/tools/universalFillet2D";
+import {
+  hitTestTrimSubPiece,
+  collectTrimSubPiecesCrossedByFence,
+  buildTrimBatchPreview,
+  commitTrimBatch,
+  type TrimSubPiece,
+  type TrimBatchPreview,
+} from "@/chamfer/tools/trimEngine2D";
+import {
+  detectPolarRefOrigin,
+  evaluateLivePolarReference,
+  createPolarReferenceItem,
+  findNearestPolarRefSnap,
+  computeCenterRadiusLineGeometry,
+  type PolarReferenceItem,
+  type PolarRefOriginAnchor,
+} from "@/chamfer/tools/polarReferenceEngine";
 import {
   ChamferPortraitTopBar,
   ChamferPortraitCanvasMicroPill,
@@ -507,6 +537,7 @@ import {
   findOverlappingEntitiesAtPoint,
   runBoolean2DOnSelection,
   type GripEditMode,
+  type LineCreationMode,
   type PolylineSegmentMode,
   type RectCreationMode,
   type CircleCreationMode,
@@ -598,6 +629,7 @@ export type Tool =
   | "divide"
   | "center"
   | "slot"
+  | "polar_ref"
   | "loft_3d";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
@@ -1125,6 +1157,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [orbitElevationDeg, setOrbitElevationDeg] = useState<number>(90);
 
   /* SUB-MODOS PARAMÉTRICOS E MOBILE TOUCH (CADCraft -> CHAMFER CAD) */
+  const [lineMode, setLineMode] = useState<LineCreationMode>("end_to_end");
+  const [polylineCreationMode, setPolylineCreationMode] = useState<LineCreationMode>("end_to_end");
   const [polylineSegMode, setPolylineSegMode] = useState<PolylineSegmentMode>("line");
   const polylineSegModesRef = useRef<PolylineSegmentMode[]>([]);
   const [rectMode, setRectMode] = useState<RectCreationMode>("corners");
@@ -1141,7 +1175,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   });
   const [overlappingCandidates, setOverlappingCandidates] = useState<Entity[]>([]);
   const swipeTrimFenceRef = useRef<Vec2[]>([]);
+  const trimPointerDownWorldRef = useRef<Vec2 | null>(null);
   const [swipeTrimCutPreview, setSwipeTrimCutPreview] = useState<[Vec2, Vec2][]>([]);
+  const [trimMarkedKeys, setTrimMarkedKeys] = useState<string[]>([]);
+  const [trimHoverPiece, setTrimHoverPiece] = useState<TrimSubPiece | null>(null);
+  const [trimInstantMode, setTrimInstantMode] = useState<boolean>(false);
+  const [trimFenceTrail, setTrimFenceTrail] = useState<Vec2[]>([]);
   const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
   const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
   const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("wireframe");
@@ -1246,6 +1285,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     corner: DetectedCorner;
     calc: FilletCalculation;
   } | null>(null);
+  const [filletFirstPick, setFilletFirstPick] = useState<FilletTargetHit | null>(null);
+  const [filletSecondPick, setFilletSecondPick] = useState<FilletTargetHit | null>(null);
+  const [universalFilletResult, setUniversalFilletResult] = useState<UniversalFilletResult | null>(null);
+  const [filletSolutionIdx, setFilletSolutionIdx] = useState<number>(0);
+  const [filletErrorHint, setFilletErrorHint] = useState<string | null>(null);
   const [chamferPreview, setChamferPreview] = useState<{
     corner: DetectedCorner;
     calc: ChamferCalculation;
@@ -1649,6 +1693,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const smartPickCandidateRef = useRef<SmartPickCandidate | null>(null);
   const pastReferenceSnapshotsRef = useRef<ReferenceServiceState[]>([]);
   const futureReferenceSnapshotsRef = useRef<ReferenceServiceState[]>([]);
+
+  /* REF. POLAR — COTA DE REFERÊNCIA NÃO-VETORIAL (LINHA VERMELHA PONTILHADA + ALVO ⊕) */
+  const [polarRefs, setPolarRefs] = useState<PolarReferenceItem[]>([]);
+  const polarRefsRef = useRef<PolarReferenceItem[]>([]);
+  polarRefsRef.current = polarRefs;
+  const pastPolarRefsRef = useRef<PolarReferenceItem[][]>([]);
+  const futurePolarRefsRef = useRef<PolarReferenceItem[][]>([]);
+  const [polarRefOriginAnchor, setPolarRefOriginAnchor] = useState<PolarRefOriginAnchor | null>(null);
+  const [polarRefHoveredOrigin, setPolarRefHoveredOrigin] = useState<PolarRefOriginAnchor | null>(null);
+  const [polarRefLivePreview, setPolarRefLivePreview] = useState<LivePolarRefPreview | null>(null);
+  const [polarRefLockedDist, setPolarRefLockedDist] = useState<number | null>(null);
+  const [polarRefLockedAngle, setPolarRefLockedAngle] = useState<number | null>(null);
+  const [polarSnapOn, setPolarSnapOn] = useState<boolean>(true);
 
   useEffect(() => {
     return ReferenceService.subscribe((nextRefState) => {
@@ -2470,8 +2527,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         ...pastReferenceSnapshotsRef.current.slice(-49),
         ReferenceService.getSnapshot(),
       ];
+      pastPolarRefsRef.current = [
+        ...pastPolarRefsRef.current.slice(-49),
+        polarRefsRef.current,
+      ];
       future.current = [];
       futureReferenceSnapshotsRef.current = [];
+      futurePolarRefsRef.current = [];
       setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
       const updated = typeof next === "function" ? next(prev) : next;
       const seenIds = new Set<string>();
@@ -2583,6 +2645,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ];
       ReferenceService.restoreSnapshot(prevRefSnap);
     }
+    const prevPolarSnap = pastPolarRefsRef.current.pop();
+    if (prevPolarSnap !== undefined) {
+      futurePolarRefsRef.current = [polarRefsRef.current, ...futurePolarRefsRef.current];
+      polarRefsRef.current = prevPolarSnap;
+      setPolarRefs(prevPolarSnap);
+    }
     setEntities((prev) => {
       future.current = [prev, ...future.current];
       ReferenceService.syncWithEntities(last);
@@ -2606,6 +2674,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       futureReferenceSnapshotsRef.current = restRefSnaps;
       ReferenceService.restoreSnapshot(nextRefSnap);
     }
+    const [nextPolarSnap, ...restPolarSnaps] = futurePolarRefsRef.current;
+    if (nextPolarSnap !== undefined) {
+      pastPolarRefsRef.current = [...pastPolarRefsRef.current, polarRefsRef.current];
+      futurePolarRefsRef.current = restPolarSnaps;
+      polarRefsRef.current = nextPolarSnap;
+      setPolarRefs(nextPolarSnap);
+    }
     setEntities((prev) => {
       past.current = [...past.current, prev];
       ReferenceService.syncWithEntities(next);
@@ -2615,6 +2690,144 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     triggerHaptic("medium");
     toast.success("Ação refeita");
   }, []);
+
+  /** Registra alteração de Referências Polares na pilha de Undo/Redo sem poluir entidades vetoriais. */
+  const commitPolarRefs = useCallback((nextRefs: PolarReferenceItem[]) => {
+    setEntities((curEntities) => {
+      past.current = [...past.current.slice(-49), curEntities];
+      pastReferenceSnapshotsRef.current = [
+        ...pastReferenceSnapshotsRef.current.slice(-49),
+        ReferenceService.getSnapshot(),
+      ];
+      pastPolarRefsRef.current = [
+        ...pastPolarRefsRef.current.slice(-49),
+        polarRefsRef.current,
+      ];
+      future.current = [];
+      futureReferenceSnapshotsRef.current = [];
+      futurePolarRefsRef.current = [];
+      polarRefsRef.current = nextRefs;
+      setPolarRefs(nextRefs);
+      setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
+      return curEntities;
+    });
+  }, []);
+
+  // Limpa estados transitórios de Trim / Fillet / Ref. Polar ao trocar de ferramenta
+  useEffect(() => {
+    if (tool !== "trim" && tool !== "smart_trim") {
+      setTrimMarkedKeys([]);
+      setTrimHoverPiece(null);
+      setTrimFenceTrail([]);
+      swipeTrimFenceRef.current = [];
+      trimPointerDownWorldRef.current = null;
+    }
+    if (tool !== "fillet") {
+      setFilletFirstPick(null);
+      setFilletSecondPick(null);
+      setUniversalFilletResult(null);
+      setFilletSolutionIdx(0);
+      setFilletErrorHint(null);
+    }
+    if (tool !== "polar_ref") {
+      setPolarRefOriginAnchor(null);
+      setPolarRefHoveredOrigin(null);
+      setPolarRefLivePreview(null);
+      setPolarRefLockedDist(null);
+      setPolarRefLockedAngle(null);
+    }
+  }, [tool]);
+
+  // Recalcula o preview do Fillet Universal ao mudar o raio R ou índice da solução
+  useEffect(() => {
+    if (tool !== "fillet" || !filletFirstPick || !filletSecondPick) return;
+    const entA = entities.find((e) => e.id === filletFirstPick.entity.id);
+    const entB = entities.find((e) => e.id === filletSecondPick.entity.id);
+    if (!entA || !entB) return;
+    const recomputed = computeUniversalFillet2D(
+      entA,
+      filletFirstPick.clickPoint,
+      entB,
+      filletSecondPick.clickPoint,
+      filletR,
+      entities,
+      filletSolutionIdx,
+    );
+    setUniversalFilletResult(recomputed);
+    setFilletErrorHint(recomputed.ok ? null : (recomputed.error ?? null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filletR, filletSolutionIdx]);
+
+  // Preview analítico em tempo real do Trim Unificado (trechos marcados + hover em curva real)
+  const trimBatchPreview: TrimBatchPreview | null = useMemo(() => {
+    if (tool !== "trim" && tool !== "smart_trim") return null;
+    return buildTrimBatchPreview(entities, trimMarkedKeys, trimHoverPiece, smartTrimMode);
+  }, [tool, entities, trimMarkedKeys, trimHoverPiece, smartTrimMode]);
+
+  const handleConfirmTrimCut = useCallback(() => {
+    if (trimMarkedKeys.length === 0) return;
+    const res = commitTrimBatch(entities, trimMarkedKeys, smartTrimMode);
+    if (res.removedSubPiecesCount > 0) {
+      commit(res.updatedEntities);
+      triggerHaptic("success");
+      toast.success(
+        `Trim confirmado: ${res.removedSubPiecesCount} trecho(s) aparado(s) em 1 operação Undo.`,
+      );
+    } else {
+      toast.info("Nenhum trecho válido selecionado para corte.");
+    }
+    setTrimMarkedKeys([]);
+    setTrimHoverPiece(null);
+    setTrimFenceTrail([]);
+    swipeTrimFenceRef.current = [];
+  }, [entities, trimMarkedKeys, smartTrimMode, commit]);
+
+  const handleConfirmLivePolarRef = useCallback(
+    (override?: { distanceMm?: number; angleDeg?: number }) => {
+      if (!polarRefOriginAnchor) return;
+      const effLockedDist = override?.distanceMm ?? polarRefLockedDist;
+      const effLockedAngle = override?.angleDeg ?? polarRefLockedAngle;
+      const evalRes = evaluateLivePolarReference({
+        originAnchor: polarRefOriginAnchor,
+        rawCursor: cursorRef.current,
+        orthoOn,
+        polarSnapOn,
+        lockedDistanceMm: effLockedDist,
+        lockedAngleDeg: effLockedAngle,
+      });
+      const finalDist = override?.distanceMm ?? polarRefLivePreview?.distanceMm ?? evalRes.distanceMm;
+      const finalAng = override?.angleDeg ?? polarRefLivePreview?.angleDeg ?? evalRes.angleDeg;
+      if (finalDist < 0.05) {
+        toast.info("Defina uma distância maior que 0 mm para fixar a Ref. Polar.");
+        return;
+      }
+      const item = createPolarReferenceItem({
+        origin: polarRefOriginAnchor.point,
+        distanceMm: finalDist,
+        angleDeg: finalAng,
+        originLabel: polarRefOriginAnchor.label,
+        isPerpendicularToEdge: polarRefLivePreview?.isPerpendicularToEdge ?? evalRes.isPerpendicularToEdge,
+      });
+      commitPolarRefs([...polarRefsRef.current, item]);
+      setPolarRefOriginAnchor(null);
+      setPolarRefLivePreview(null);
+      setPolarRefLockedDist(null);
+      setPolarRefLockedAngle(null);
+      triggerHaptic("success");
+      toast.success(
+        `⌖ Ref. Polar fixada: d = ${item.distanceMm.toFixed(1)} mm • ∠ ${item.angleDeg.toFixed(1)}° (alvo ⊕ magnético pronto).`,
+      );
+    },
+    [
+      polarRefOriginAnchor,
+      polarRefLivePreview,
+      orthoOn,
+      polarSnapOn,
+      polarRefLockedDist,
+      polarRefLockedAngle,
+      commitPolarRefs,
+    ],
+  );
 
   /* -------------------------------------------------- handoff da Traçagem */
   useEffect(() => {
@@ -2977,6 +3190,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
       const tol = (nudgeHudVisible ? 6 : 12) / view.k;
+
+      // Prioridade absoluta para Alvos Magnéticos ⊕ das Cotas de Referência Polar (Ref. Polar)
+      const polarSnap = findNearestPolarRefSnap(p, polarRefsRef.current, tol * 1.5);
+      if (polarSnap) {
+        return { x: polarSnap.point.x, y: polarSnap.point.y };
+      }
 
       // Prioridade máxima para Âncoras A–E, Divisores ÷N e Encontros de Guias do ReferenceService
       const refCandidates = ReferenceService.snapCandidates(entities);
@@ -3831,13 +4050,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* QUICK COMMANDS DO CHAMFER CAD */
   const quickCommands: QuickCommandItem[] = useMemo(() => [
     {
-      id: "smart_trim",
-      title: "Aparar até o Encontro (Smart Trim)",
-      keywords: ["trim", "aparar", "cortar", "limite", "encontro"],
+      id: "trim",
+      title: "Trim / Aparar (Toque & Faca)",
+      keywords: ["trim", "aparar", "cortar", "limite", "encontro", "faca"],
       category: "modificar",
-      description: "Localiza automaticamente o limite e apara até o encontro real.",
+      description: "Toque ou arraste sobre trechos para marcar e confirmar o corte analítico exato.",
       icon: Scissors,
-      action: () => setTool("smart_trim"),
+      action: () => setTool("trim"),
+    },
+    {
+      id: "polar_ref",
+      title: "Ref. Polar (Referência Não-Vetorial)",
+      keywords: ["ref polar", "polar", "referencia", "alvo", "guia", "cota", "graus"],
+      category: "precisao",
+      description: "Cria linha vermelha pontilhada de referência não-vetorial com alvo magnético ⊕.",
+      icon: Crosshair,
+      action: () => setTool("polar_ref"),
     },
     {
       id: "center_shapes",
@@ -3924,8 +4152,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       icon: Zap,
       action: () => {
         setTool("offset");
-        setDualToolSecondary("smart_trim");
-        toast.success("Dual Tool ativada: Offset + Smart Trim.");
+        setDualToolSecondary("trim");
+        toast.success("Dual Tool ativada: Offset + Aparar.");
       },
     },
     {
@@ -4855,19 +5083,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [selection, commit]);
 
   const handleUseSelectedEdge = useCallback(() => {
-    const sourceEntities =
-      selection.length > 0 ? entities.filter((e) => selection.includes(e.id)) : entities;
-    const edges = GeometricReferenceEngine.extractEdges(sourceEntities);
-    if (edges.length > 0) {
-      const bestEdge =
-        GeometricReferenceEngine.findNearestEdge(cursor, edges, 1000)?.edge ?? edges[0]!;
-      setActiveEdge(bestEdge);
-      triggerHaptic("action");
-      toast.success(`✓ Borda de referência ativa: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
-    } else {
-      toast.info("Nenhuma borda linear encontrada. Desenhe ou selecione uma peça com aresta reta.");
-    }
-  }, [selection, entities, cursor]);
+    setTool((prev) => (prev === "polar_ref" ? "select" : "polar_ref"));
+    triggerHaptic("selection");
+  }, []);
 
   const handlePlanificar = useCallback(() => {
     transitionTo3D("3d");
@@ -5920,6 +6138,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         finishPolyline(true);
         return;
       }
+      if (
+        tool === "polyline" &&
+        polylineCreationMode === "center_radius" &&
+        pending.length === 1
+      ) {
+        const center = pending[0]!;
+        const geom = computeCenterRadiusLineGeometry(center, nextPoint);
+        if (geom.lengthMm >= 0.05) {
+          polylineSegModesRef.current.push(polylineSegMode);
+          setPending([geom.start, geom.end]);
+          setDraft({
+            id: uid(),
+            layer: activeLayer,
+            type: "line",
+            x1: geom.end.x,
+            y1: geom.end.y,
+            x2: geom.end.x,
+            y2: geom.end.y,
+          });
+          triggerHaptic("tap");
+          return;
+        }
+      }
       if (pending.length > 0) {
         polylineSegModesRef.current.push(polylineSegMode);
       }
@@ -6112,41 +6353,67 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
-    if (tool === "trim") {
-      swipeTrimFenceRef.current = [raw];
-      setSwipeTrimCutPreview([]);
-      const hit = hitTest(raw);
-      if (hit) {
-        const result = removeEntityOnly(entities, groups, hit.id);
-        commit(result.entities);
-        setGroups(result.groups);
-        setSelection((ids) => ids.filter((id) => id !== hit.id));
-        toast.success("Entidade removida.");
-        swipeTrimFenceRef.current = [];
+    if (tool === "polar_ref") {
+      if (!polarRefOriginAnchor) {
+        const anchor = detectPolarRefOrigin(
+          raw,
+          entities,
+          18 / Math.max(0.05, view.k),
+          temporaryOrigin?.p ?? null,
+        );
+        setPolarRefOriginAnchor(anchor);
+        setPolarRefLockedDist(null);
+        setPolarRefLockedAngle(null);
+        const live = evaluateLivePolarReference({
+          originAnchor: anchor,
+          rawCursor: anchor.point,
+          orthoOn,
+          polarSnapOn,
+        });
+        setPolarRefLivePreview({ originAnchor: anchor, ...live });
+        triggerHaptic("tap");
+        toast.info(`⌖ Origem Ref. Polar fixada (${anchor.label}). Arraste ou defina d / ∠.`);
+      } else {
+        const live = evaluateLivePolarReference({
+          originAnchor: polarRefOriginAnchor,
+          rawCursor: raw,
+          orthoOn,
+          polarSnapOn,
+          lockedDistanceMm: polarRefLockedDist,
+          lockedAngleDeg: polarRefLockedAngle,
+        });
+        if (live.distanceMm >= 0.05) {
+          const item = createPolarReferenceItem({
+            origin: polarRefOriginAnchor.point,
+            distanceMm: live.distanceMm,
+            angleDeg: live.angleDeg,
+            originLabel: polarRefOriginAnchor.label,
+            isPerpendicularToEdge: live.isPerpendicularToEdge,
+          });
+          commitPolarRefs([...polarRefsRef.current, item]);
+          setPolarRefOriginAnchor(null);
+          setPolarRefLivePreview(null);
+          setPolarRefLockedDist(null);
+          setPolarRefLockedAngle(null);
+          triggerHaptic("success");
+          toast.success(
+            `⌖ Ref. Polar fixada: d = ${item.distanceMm.toFixed(1)} mm • ∠ ${item.angleDeg.toFixed(1)}°`,
+          );
+        } else {
+          toast.info("Afaste o cursor da origem para definir a distância da Ref. Polar.");
+        }
       }
       return;
     }
-    if (tool === "smart_trim") {
+    if (tool === "trim" || tool === "smart_trim") {
+      trimPointerDownWorldRef.current = raw;
       swipeTrimFenceRef.current = [raw];
+      setTrimFenceTrail([raw]);
       setSwipeTrimCutPreview([]);
-      const hit = hitTest(raw);
-      if (hit) {
-        const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
-        if (preview && preview.activeCandidate) {
-          const cand = preview.activeCandidate;
-          triggerHaptic("action");
-          commit((list) => {
-            const filtered = list.filter((e) => e.id !== preview.targetEntity.id);
-            const additions = [cand.trimmedEntity];
-            if (cand.extraTrimmedEntities) {
-              additions.push(...cand.extraTrimmedEntities);
-            }
-            return [...filtered, ...additions];
-          });
-          toast.success("Geometria aparada até o encontro.");
-          setSmartTrimPreview(null);
-          swipeTrimFenceRef.current = [];
-        }
+      try {
+        (ev.currentTarget as Element | null)?.setPointerCapture?.(ev.pointerId);
+      } catch {
+        // Ignora se elemento não suporta pointer capture no ambiente atual
       }
       return;
     }
@@ -6182,34 +6449,138 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
-    if (tool === "fillet" || tool === "chamfer") {
-      const tol = 16 / view.k;
-      const corner = findCornerAtPoint(raw, entities, tol);
-      if (corner) {
-        if (tool === "fillet") {
-          const res = applyFilletToCorner(corner, filletR, entities);
-          if (res.success) {
-            commit(res.updatedEntities);
+    if (tool === "fillet") {
+      const tol = 16 / Math.max(0.05, view.k);
+      if (!filletFirstPick) {
+        // 1-clique direto próximo a uma quina (Linha×Linha, Polilinha ou Retângulo)
+        const directRes = detectDirectFilletCorner(raw, entities, filletR, tol);
+        if (directRes) {
+          if (directRes.ok && directRes.activeSolution) {
+            commit(directRes.activeSolution.updatedEntities);
             triggerHaptic("action");
-            toast.success(`Filete R${filletR} mm aplicado no canto.`);
+            toast.success(`Filete R${filletR} mm aplicado (arco real sem facetamento).`);
             setFilletPreview(null);
+            setUniversalFilletResult(null);
+            setFilletErrorHint(null);
             setSelection([]);
             return;
           }
-        } else {
-          const res = applyChamferToCorner(corner, filletR, filletR, entities);
-          if (res.success) {
-            commit(res.updatedEntities);
-            triggerHaptic("action");
-            toast.success(`Chanfro ${filletR} mm aplicado no canto.`);
-            setChamferPreview(null);
-            setSelection([]);
+          if (directRes.error) {
+            setFilletErrorHint(directRes.error);
+            toast.warning(directRes.error);
             return;
           }
         }
+        // Seleção sequencial Universal (Linha, Arco, Círculo, Retângulo ou Polilinha)
+        const firstHit = findFilletTargetAtPoint(raw, entities, tol);
+        if (!firstHit) {
+          toast.info("Toque em uma Linha, Arco, Círculo ou vértice de canto para aplicar Filete R.");
+          return;
+        }
+        setFilletFirstPick(firstHit);
+        setFilletSolutionIdx(0);
+        setFilletErrorHint(null);
+        setSelection([firstHit.entity.id]);
+        triggerHaptic("selection");
+        toast.info("1ª entidade selecionada. Toque na 2ª entidade (Linha, Arco ou Círculo).");
+        return;
       }
 
-      // Permite também seleção sequencial de 2 linhas concorrentes
+      // 2º clique: busca 2ª entidade (ou outro segmento da mesma polilinha)
+      const secondHit = findFilletTargetAtPoint(raw, entities, tol);
+      if (!secondHit) {
+        setFilletFirstPick(null);
+        setFilletSecondPick(null);
+        setUniversalFilletResult(null);
+        setFilletErrorHint(null);
+        setSelection([]);
+        return;
+      }
+      const firstSegIdx =
+        filletFirstPick.primitive.kind === "line"
+          ? filletFirstPick.primitive.polylineSegIndex
+          : undefined;
+      const secondSegIdx =
+        secondHit.primitive.kind === "line" ? secondHit.primitive.polylineSegIndex : undefined;
+      if (secondHit.entity.id === filletFirstPick.entity.id && secondSegIdx === firstSegIdx) {
+        // Se já existe solução ativa exibida, confirma com 2º toque
+        if (universalFilletResult?.ok && universalFilletResult.activeSolution) {
+          commit(universalFilletResult.activeSolution.updatedEntities);
+          triggerHaptic("action");
+          toast.success(`Filete R${filletR} mm aplicado.`);
+          setFilletFirstPick(null);
+          setFilletSecondPick(null);
+          setUniversalFilletResult(null);
+          setFilletErrorHint(null);
+          setSelection([]);
+        }
+        return;
+      }
+
+      const res = computeUniversalFillet2D(
+        filletFirstPick.entity,
+        filletFirstPick.clickPoint,
+        secondHit.entity,
+        secondHit.clickPoint,
+        filletR,
+        entities,
+        filletSolutionIdx,
+      );
+      if (!res.ok || !res.activeSolution) {
+        const msg = res.error ?? "Não foi possível concordar estas entidades com o raio atual.";
+        setFilletSecondPick(secondHit);
+        setFilletErrorHint(msg);
+        setUniversalFilletResult(res);
+        toast.warning(msg);
+        return;
+      }
+
+      // Se houver apenas 1 solução (ou o usuário clicou novamente no mesmo par já em prévia), aplica imediatamente
+      const samePairPreviewed =
+        universalFilletResult?.ok &&
+        universalFilletResult.activeSolution &&
+        filletSecondPick?.entity.id === secondHit.entity.id;
+
+      if (res.solutions.length === 1 || samePairPreviewed) {
+        const chosen = samePairPreviewed ? universalFilletResult!.activeSolution! : res.activeSolution;
+        commit(chosen.updatedEntities);
+        triggerHaptic("action");
+        toast.success(`Filete R${filletR} mm aplicado (arco analítico exato).`);
+        setFilletFirstPick(null);
+        setFilletSecondPick(null);
+        setUniversalFilletResult(null);
+        setFilletErrorHint(null);
+        setFilletSolutionIdx(0);
+        setSelection([]);
+        return;
+      }
+
+      // Múltiplas soluções possíveis (ex.: Linha×Círculo ou Círculo×Círculo): exibe prévia e botão Alternar Solução
+      setFilletSecondPick(secondHit);
+      setUniversalFilletResult(res);
+      setFilletErrorHint(null);
+      setSelection([filletFirstPick.entity.id, secondHit.entity.id]);
+      triggerHaptic("selection");
+      toast.info(
+        `${res.solutions.length} concordâncias possíveis. Use "Alternar Solução" ou clique em "Aplicar R${filletR}".`,
+      );
+      return;
+    }
+    if (tool === "chamfer") {
+      const tol = 16 / view.k;
+      const corner = findCornerAtPoint(raw, entities, tol);
+      if (corner) {
+        const res = applyChamferToCorner(corner, filletR, filletR, entities);
+        if (res.success) {
+          commit(res.updatedEntities);
+          triggerHaptic("action");
+          toast.success(`Chanfro ${filletR} mm aplicado no canto.`);
+          setChamferPreview(null);
+          setSelection([]);
+          return;
+        }
+      }
+
       const hit = hitTest(raw);
       if (!hit) return;
       if (!selection.length) {
@@ -6230,30 +6601,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           farB: { x: hit.x2, y: hit.y2 },
         };
 
-        if (tool === "fillet") {
-          const res = applyFilletToCorner(cornerLines, filletR, entities);
-          if (res.success) {
-            commit(res.updatedEntities);
-            triggerHaptic("action");
-            toast.success(`Filete R${filletR} mm aplicado entre as linhas.`);
-            setSelection([]);
-            setFilletPreview(null);
-            return;
-          }
-        } else {
-          const res = applyChamferToCorner(cornerLines, filletR, filletR, entities);
-          if (res.success) {
-            commit(res.updatedEntities);
-            triggerHaptic("action");
-            toast.success(`Chanfro ${filletR} mm aplicado entre as linhas.`);
-            setSelection([]);
-            setChamferPreview(null);
-            return;
-          }
+        const res = applyChamferToCorner(cornerLines, filletR, filletR, entities);
+        if (res.success) {
+          commit(res.updatedEntities);
+          triggerHaptic("action");
+          toast.success(`Chanfro ${filletR} mm aplicado entre as linhas.`);
+          setSelection([]);
+          setChamferPreview(null);
+          return;
         }
       }
 
-      toast.error("Não foi possível concordar estas entidades.");
+      toast.error("Não foi possível chanfrar estas entidades.");
       return;
     }
     if (tool === "divide") {
@@ -6276,6 +6635,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setPending([p]);
     setDraft(
       buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane, {
+        lineMode,
         rectMode,
         circleMode,
         polygonMode,
@@ -6400,6 +6760,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           swipeTrimFenceRef.current.push(rawPt);
         }
       }
+      setTrimFenceTrail([...swipeTrimFenceRef.current]);
     }
 
     if (tool === "freehand" && freehandDrawingRef.current && ptrsRef.current.size === 1) {
@@ -6766,36 +7127,116 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLiveDimensions([]);
     }
 
-    if (tool === "smart_trim" || tool === "trim") {
-      if (swipeTrimFenceRef.current.length >= 2) {
-        const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
-        setSwipeTrimCutPreview(tx.cutSegmentsPreview);
-      }
-
-      if (tool === "smart_trim") {
-        const hit = hitTest(raw);
-        if (hit) {
-          const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
-          setSmartTrimPreview(preview);
-        } else {
-          setSmartTrimPreview(null);
-        }
+    if (tool === "polar_ref") {
+      if (polarRefOriginAnchor) {
+        const live = evaluateLivePolarReference({
+          originAnchor: polarRefOriginAnchor,
+          rawCursor: raw,
+          orthoOn,
+          polarSnapOn,
+          lockedDistanceMm: polarRefLockedDist,
+          lockedAngleDeg: polarRefLockedAngle,
+        });
+        setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...live });
+        setPolarRefHoveredOrigin(null);
+        setLoupeCadPos(live.target);
+      } else {
+        const hovered = detectPolarRefOrigin(
+          raw,
+          entities,
+          18 / Math.max(0.05, view.k),
+          temporaryOrigin?.p ?? null,
+        );
+        setPolarRefHoveredOrigin(hovered);
+        setPolarRefLivePreview(null);
+        setLoupeCadPos(hovered.point);
       }
     }
 
-    if (tool === "fillet" || tool === "chamfer") {
+    if (tool === "smart_trim" || tool === "trim") {
+      if (swipeTrimFenceRef.current.length >= 2) {
+        const startPt = swipeTrimFenceRef.current[0]!;
+        const endPt = swipeTrimFenceRef.current[swipeTrimFenceRef.current.length - 1]!;
+        if (dist(startPt, endPt) > 4 / Math.max(0.05, view.k)) {
+          const crossed = collectTrimSubPiecesCrossedByFence(
+            swipeTrimFenceRef.current,
+            entities,
+            smartTrimMode,
+          );
+          if (crossed.length > 0) {
+            setTrimMarkedKeys((prev) => {
+              const set = new Set(prev);
+              let changed = false;
+              for (const piece of crossed) {
+                if (!set.has(piece.key)) {
+                  set.add(piece.key);
+                  changed = true;
+                }
+              }
+              return changed ? Array.from(set) : prev;
+            });
+          }
+        }
+        setTrimHoverPiece(null);
+      } else {
+        const hovered = hitTestTrimSubPiece(
+          raw,
+          entities,
+          14 / Math.max(0.05, view.k),
+          smartTrimMode,
+        );
+        setTrimHoverPiece(hovered?.subPiece ?? null);
+      }
+    }
+
+    if (tool === "fillet") {
+      const tol = 16 / Math.max(0.05, view.k);
+      if (filletFirstPick) {
+        const secondHit = findFilletTargetAtPoint(raw, entities, tol);
+        const firstSegIdx =
+          filletFirstPick.primitive.kind === "line"
+            ? filletFirstPick.primitive.polylineSegIndex
+            : undefined;
+        const secondSegIdx =
+          secondHit && secondHit.primitive.kind === "line"
+            ? secondHit.primitive.polylineSegIndex
+            : undefined;
+        if (
+          secondHit &&
+          (secondHit.entity.id !== filletFirstPick.entity.id || secondSegIdx !== firstSegIdx)
+        ) {
+          const res = computeUniversalFillet2D(
+            filletFirstPick.entity,
+            filletFirstPick.clickPoint,
+            secondHit.entity,
+            secondHit.clickPoint,
+            filletR,
+            entities,
+            filletSolutionIdx,
+          );
+          setFilletSecondPick(secondHit);
+          setUniversalFilletResult(res);
+          setFilletErrorHint(res.ok ? null : (res.error ?? null));
+        }
+      } else {
+        const directRes = detectDirectFilletCorner(raw, entities, filletR, tol);
+        if (directRes) {
+          setUniversalFilletResult(directRes);
+          setFilletErrorHint(directRes.ok ? null : (directRes.error ?? null));
+        } else {
+          setUniversalFilletResult(null);
+          setFilletErrorHint(null);
+        }
+      }
+      setFilletPreview(null);
+      setChamferPreview(null);
+    } else if (tool === "chamfer") {
       const tol = 16 / view.k;
       const corner = findCornerAtPoint(raw, entities, tol);
       if (corner) {
-        if (tool === "fillet") {
-          const calc = calculateFillet(corner.corner, corner.farA, corner.farB, filletR);
-          setFilletPreview(calc ? { corner, calc } : null);
-          setChamferPreview(null);
-        } else {
-          const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
-          setChamferPreview(calc ? { corner, calc } : null);
-          setFilletPreview(null);
-        }
+        const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
+        setChamferPreview(calc ? { corner, calc } : null);
+        setFilletPreview(null);
       } else {
         setFilletPreview(null);
         setChamferPreview(null);
@@ -6896,15 +7337,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         pt = projectOrthoSegment(lastPoint, pt);
       }
       setLoupeCadPos(pt);
-      setDraft({
-        id: uid(),
-        layer: activeLayer,
-        type: "line",
-        x1: lastPoint.x,
-        y1: lastPoint.y,
-        x2: pt.x,
-        y2: pt.y,
-      });
+      if (
+        tool === "polyline" &&
+        polylineCreationMode === "center_radius" &&
+        pending.length === 1
+      ) {
+        const geom = computeCenterRadiusLineGeometry(lastPoint, pt);
+        setDraft({
+          id: uid(),
+          layer: activeLayer,
+          type: "line",
+          x1: geom.start.x,
+          y1: geom.start.y,
+          x2: geom.end.x,
+          y2: geom.end.y,
+        });
+      } else {
+        setDraft({
+          id: uid(),
+          layer: activeLayer,
+          type: "line",
+          x1: lastPoint.x,
+          y1: lastPoint.y,
+          x2: pt.x,
+          y2: pt.y,
+        });
+      }
       return;
     }
     if (pending.length === 1 && draftRef.current) {
@@ -6955,6 +7413,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       setDraft(
         buildDraft(tool, p0, targetP, activeLayer, filletR, drawingProjection, isoPlane, {
+          lineMode,
           rectMode,
           circleMode,
           polygonMode,
@@ -7390,20 +7849,71 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // Finaliza Swipe-to-Trim se o usuário arrastou uma cerca de corte sobre segmentos
-    if ((tool === "smart_trim" || tool === "trim") && swipeTrimFenceRef.current.length >= 2) {
-      const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
+    // Finaliza TRIM UNIFICADO (Toque direto ou Arraste tipo Faca com Confirmação Obrigatória)
+    if (tool === "smart_trim" || tool === "trim") {
+      const fence = swipeTrimFenceRef.current;
+      const downPt = trimPointerDownWorldRef.current ?? fence[0] ?? cursorRef.current;
+      const endPt = fence.length > 0 ? fence[fence.length - 1]! : cursorRef.current;
+      const isSwipe = fence.length >= 2 && dist(downPt, endPt) > 4 / Math.max(0.05, view.k);
+
       swipeTrimFenceRef.current = [];
+      trimPointerDownWorldRef.current = null;
+      setTrimFenceTrail([]);
       setSwipeTrimCutPreview([]);
-      if (tx.trimmedCount > 0) {
-        commit(tx.updatedEntities);
-        triggerHaptic("action");
-        toast.success(`Swipe-to-Trim: ${tx.trimmedCount} trecho(s) aparado(s) em 1 operação Undo.`);
-        setSmartTrimPreview(null);
+
+      if (isSwipe) {
+        const crossed = collectTrimSubPiecesCrossedByFence(fence, entities, smartTrimMode);
+        if (crossed.length > 0) {
+          const nextKeys = Array.from(
+            new Set([...trimMarkedKeys, ...crossed.map((c) => c.key)]),
+          );
+          if (trimInstantMode) {
+            const res = commitTrimBatch(entities, nextKeys, smartTrimMode);
+            if (res.removedSubPiecesCount > 0) {
+              commit(res.updatedEntities);
+              triggerHaptic("action");
+              toast.success(
+                `Trim Instantâneo: ${res.removedSubPiecesCount} trecho(s) aparado(s) em 1 Undo.`,
+              );
+            }
+            setTrimMarkedKeys([]);
+          } else {
+            setTrimMarkedKeys(nextKeys);
+            triggerHaptic("selection");
+          }
+        }
         return;
       }
+
+      // Toque direto: seleciona ou desmarca o sub-trecho exato sob o toque
+      const hitPiece = hitTestTrimSubPiece(
+        downPt,
+        entities,
+        14 / Math.max(0.05, view.k),
+        smartTrimMode,
+      );
+      if (hitPiece) {
+        const hitKey = hitPiece.subPiece.key;
+        if (trimInstantMode) {
+          const res = commitTrimBatch(entities, [hitKey], smartTrimMode);
+          if (res.removedSubPiecesCount > 0) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success("Trecho aparado instantaneamente.");
+          }
+          setTrimMarkedKeys([]);
+        } else {
+          setTrimMarkedKeys((prev) =>
+            prev.includes(hitKey) ? prev.filter((k) => k !== hitKey) : [...prev, hitKey],
+          );
+          triggerHaptic("selection");
+        }
+      }
+      return;
     }
     swipeTrimFenceRef.current = [];
+    trimPointerDownWorldRef.current = null;
+    setTrimFenceTrail([]);
     setSwipeTrimCutPreview([]);
 
     // Fluxo de Toque com Smart Pick (<= 24px) e Ciclo do MARCO GEOMÉTRICO / ÂNCORA (A–E) (Seção 4.2):
@@ -7493,6 +8003,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const draftState =
           drawingProjection !== "isometric"
             ? createPendingDraftShapeState(tool, activeDraft, p0, p1, activeLayer, filletR, {
+                lineMode: tool === "line" ? lineMode : "end_to_end",
+                centerPoint: tool === "line" && lineMode === "center_radius" ? p0 : undefined,
                 rectMode,
                 circleMode,
                 polygonMode,
@@ -7663,6 +8175,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       } else if (pending.length === 1) {
         setDraft(
           buildDraft(tool, pending[0]!, nextCursor, activeLayer, filletR, drawingProjection, isoPlane, {
+            lineMode,
             rectMode,
             circleMode,
             polygonMode,
@@ -7672,21 +8185,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             slotWidthMm,
           }),
         );
+      } else if (tool === "polar_ref" && polarRefOriginAnchor) {
+        const live = evaluateLivePolarReference({
+          originAnchor: polarRefOriginAnchor,
+          rawCursor: nextCursor,
+          orthoOn,
+          polarSnapOn,
+          lockedDistanceMm: polarRefLockedDist,
+          lockedAngleDeg: polarRefLockedAngle,
+        });
+        setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...live });
       } else if (pendingDraftShapeRef.current && pending.length === 0) {
         const curDraftShape = pendingDraftShapeRef.current;
         const nextP1 = {
           x: Number((curDraftShape.p1.x + delta.x).toFixed(4)),
           y: Number((curDraftShape.p1.y + delta.y).toFixed(4)),
         };
+        const anchorPt =
+          curDraftShape.lineMode === "center_radius" && curDraftShape.centerPoint
+            ? curDraftShape.centerPoint
+            : curDraftShape.p0;
         const rebuiltEntity = buildDraft(
           curDraftShape.tool,
-          curDraftShape.p0,
+          anchorPt,
           nextP1,
           activeLayer,
           curDraftShape.cornerRadiusMm ?? filletR,
           drawingProjection,
           isoPlane,
           {
+            lineMode: curDraftShape.lineMode,
             rectMode: curDraftShape.rectMode,
             circleMode: curDraftShape.circleMode ?? circleMode,
             polygonMode: curDraftShape.polygonMode,
@@ -7700,11 +8228,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           const updatedState = createPendingDraftShapeState(
             curDraftShape.tool,
             { ...rebuiltEntity, id: curDraftShape.entity.id },
-            curDraftShape.p0,
+            anchorPt,
             nextP1,
             activeLayer,
             curDraftShape.cornerRadiusMm ?? filletR,
             {
+              lineMode: curDraftShape.lineMode,
+              centerPoint: curDraftShape.centerPoint,
               rectMode: curDraftShape.rectMode,
               circleMode: curDraftShape.circleMode ?? circleMode,
               polygonMode: curDraftShape.polygonMode,
@@ -7736,6 +8266,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       temporaryOrigin,
       activeLayer,
       filletR,
+      lineMode,
       rectMode,
       circleMode,
       polygonMode,
@@ -7743,6 +8274,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       polygonAcrossFlatsMm,
       slotMode,
       slotWidthMm,
+      polarRefOriginAnchor,
+      orthoOn,
+      polarSnapOn,
+      polarRefLockedDist,
+      polarRefLockedAngle,
       interactionGuideMode,
       lockedConstraints,
       setPendingDraftShape,
@@ -7758,6 +8294,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const p = (smartSnap ?? snapHit)?.p ?? cursor;
     if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
 
+    if (tool === "polar_ref") {
+      if (!polarRefOriginAnchor) {
+        const anchor = detectPolarRefOrigin(
+          p,
+          entities,
+          18 / Math.max(0.05, view.k),
+          temporaryOrigin?.p ?? null,
+        );
+        setPolarRefOriginAnchor(anchor);
+        const live = evaluateLivePolarReference({
+          originAnchor: anchor,
+          rawCursor: anchor.point,
+          orthoOn,
+          polarSnapOn,
+        });
+        setPolarRefLivePreview({ originAnchor: anchor, ...live });
+        triggerHaptic("tap");
+        toast.info(`⌖ Origem Ref. Polar fixada (${anchor.label}).`);
+      } else {
+        handleConfirmLivePolarRef();
+      }
+      return;
+    }
+
     if (tool === "point") {
       commit((e) => [...e, { id: uid(), layer: activeLayer, type: "point", x: p.x, y: p.y }]);
       toast.success(`Ponto fixado em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
@@ -7768,6 +8328,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (shouldClosePolyline(pending, p, 10 / view.k)) {
         finishPolyline(true);
         return;
+      }
+      if (polylineCreationMode === "center_radius" && pending.length === 1) {
+        const geom = computeCenterRadiusLineGeometry(pending[0]!, p);
+        if (geom.lengthMm >= 0.05) {
+          setPending([geom.start, geom.end]);
+          setDraft({
+            id: uid(),
+            layer: activeLayer,
+            type: "line",
+            x1: geom.end.x,
+            y1: geom.end.y,
+            x2: geom.end.x,
+            y2: geom.end.y,
+          });
+          return;
+        }
       }
       setPending((q) => [...q, p]);
       setDraft({
@@ -7819,6 +8395,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "slot"
     ) {
       const draftOpts = {
+        lineMode,
         rectMode,
         circleMode,
         polygonMode,
@@ -7849,6 +8426,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     snapHit,
     cursor,
     tool,
+    entities,
+    temporaryOrigin,
+    polarRefOriginAnchor,
+    orthoOn,
+    polarSnapOn,
+    handleConfirmLivePolarRef,
+    polylineCreationMode,
     commit,
     commitPendingDraftShape,
     activeLayer,
@@ -7856,6 +8440,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     view.k,
     finishPolyline,
     filletR,
+    lineMode,
     rectMode,
     circleMode,
     polygonMode,
@@ -7984,6 +8569,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setSelection([]);
         setMeasures([]);
         setFilletPreview(null);
+        setFilletFirstPick(null);
+        setUniversalFilletResult(null);
+        setFilletErrorHint(null);
+        setTrimMarkedKeys([]);
+        setTrimHoverPiece(null);
+        setTrimFenceTrail([]);
+        setPolarRefOriginAnchor(null);
+        setPolarRefLivePreview(null);
+        setPolarRefHoveredOrigin(null);
+        setPolarRefLockedDist(null);
+        setPolarRefLockedAngle(null);
         setChamferPreview(null);
         setScaleDialogOpen(false);
         setCenterDialogOpen(false);
@@ -13021,10 +13617,74 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 );
               })()}
 
-              {/* SMART TRIM SVG PREVIEW */}
-              {tool === "smart_trim" && (
+              {/* REF. POLAR — OVERLAY NÃO-VETORIAL (LINHA VERMELHA PONTILHADA + ALVO MAGNÉTICO ⊕) */}
+              {(polarRefs.length > 0 || polarRefLivePreview || polarRefHoveredOrigin) && (
+                <ChamferPolarReferenceSvgOverlay
+                  polarRefs={polarRefs}
+                  livePreview={polarRefLivePreview}
+                  hoveredOriginAnchor={polarRefHoveredOrigin}
+                  isPolarRefToolActive={tool === "polar_ref"}
+                  viewK={view.k}
+                  datumOrigin={temporaryOrigin?.p ?? null}
+                />
+              )}
+
+              {/* MARCADOR DE CENTRO FIXO (C) PARA LINHA / POLILINHA NO MODO CENTRO-RAIO */}
+              {(() => {
+                const centerMarker: Vec2 | null =
+                  (tool === "line" && lineMode === "center_radius" && pending.length === 1
+                    ? pending[0]!
+                    : tool === "polyline" &&
+                        polylineCreationMode === "center_radius" &&
+                        pending.length === 1
+                      ? pending[0]!
+                      : pendingDraftShape?.lineMode === "center_radius" &&
+                          pendingDraftShape.centerPoint
+                        ? pendingDraftShape.centerPoint
+                        : null);
+                if (!centerMarker) return null;
+                const safeK = Math.max(0.05, view.k);
+                return (
+                  <g pointerEvents="none" aria-label="Centro Fixo da Linha Simétrica">
+                    <circle
+                      cx={centerMarker.x}
+                      cy={centerMarker.y}
+                      r={6 / safeK}
+                      fill="rgba(56, 189, 248, 0.22)"
+                      stroke="#38BDF8"
+                      strokeWidth={1.6 / safeK}
+                    />
+                    <line
+                      x1={centerMarker.x - 9 / safeK}
+                      y1={centerMarker.y}
+                      x2={centerMarker.x + 9 / safeK}
+                      y2={centerMarker.y}
+                      stroke="#38BDF8"
+                      strokeWidth={1.25 / safeK}
+                    />
+                    <line
+                      x1={centerMarker.x}
+                      y1={centerMarker.y - 9 / safeK}
+                      x2={centerMarker.x}
+                      y2={centerMarker.y + 9 / safeK}
+                      stroke="#38BDF8"
+                      strokeWidth={1.25 / safeK}
+                    />
+                    <circle
+                      cx={centerMarker.x}
+                      cy={centerMarker.y}
+                      r={2.2 / safeK}
+                      fill="#38BDF8"
+                    />
+                  </g>
+                );
+              })()}
+
+              {/* TRIM UNIFICADO SVG PREVIEW (ANIMAÇÃO DE CORTE EM CURVAS REAIS + RASTRO DE FACA) */}
+              {(tool === "trim" || tool === "smart_trim") && (
                 <ChamferSmartTrimSvgOverlay
-                  preview={smartTrimPreview}
+                  preview={trimBatchPreview}
+                  fenceTrail={trimFenceTrail}
                   viewK={view.k}
                 />
               )}
@@ -13086,50 +13746,63 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })()}
 
-              {/* PRÉ-VISUALIZAÇÃO DE FILETE */}
+              {/* PRÉ-VISUALIZAÇÃO DO FILLET 2D UNIVERSAL (LINHA, ARCO, CÍRCULO, POLILINHA) */}
               {tool === "fillet" &&
-                filletPreview &&
-                filletPreview.corner?.corner &&
-                Number.isFinite(filletPreview.corner.corner.x) &&
-                Number.isFinite(filletPreview.corner.corner.y) && (() => {
+                (universalFilletResult?.activeSolution || filletFirstPick) && (() => {
                   const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                  const sol = universalFilletResult?.activeSolution ?? null;
                   return (
-                    <g pointerEvents="none" aria-label="Pré-visualização do filete">
-                      <circle
-                        cx={filletPreview.corner.corner.x}
-                        cy={filletPreview.corner.corner.y}
-                        r={7 / safeK}
-                        fill="#06b6d4"
-                        fillOpacity={0.25}
-                        stroke="#06b6d4"
-                        strokeWidth={1.8 / safeK}
-                      />
-                      {(() => {
-                        const c = filletPreview.calc;
-                        if (!c || !c.arcCenter || !Number.isFinite(c.arcCenter.x) || !Number.isFinite(c.arcCenter.y) || !Number.isFinite(c.radius)) return null;
-                        const f = (n: number) => n.toFixed(3);
-                        const p0 = {
-                          x: c.arcCenter.x + c.radius * Math.cos(c.startAngle),
-                          y: c.arcCenter.y + c.radius * Math.sin(c.startAngle),
-                        };
-                        const p1 = {
-                          x: c.arcCenter.x + c.radius * Math.cos(c.endAngle),
-                          y: c.arcCenter.y + c.radius * Math.sin(c.endAngle),
-                        };
-                        let sweep = c.endAngle - c.startAngle;
-                        while (sweep < 0) sweep += Math.PI * 2;
-                        const large = sweep > Math.PI ? 1 : 0;
-                        const d = `M ${f(p0.x)} ${f(p0.y)} A ${f(c.radius)} ${f(c.radius)} 0 ${large} 1 ${f(p1.x)} ${f(p1.y)}`;
-                        return (
+                    <g pointerEvents="none" aria-label="Pré-visualização do Fillet 2D Universal">
+                      {filletFirstPick && (
+                        <circle
+                          cx={filletFirstPick.clickPoint.x}
+                          cy={filletFirstPick.clickPoint.y}
+                          r={6 / safeK}
+                          fill="var(--chamfer-accent, #E11D48)"
+                          fillOpacity={0.28}
+                          stroke="var(--chamfer-accent, #E11D48)"
+                          strokeWidth={1.8 / safeK}
+                        />
+                      )}
+                      {sol && (
+                        <>
                           <path
-                            d={d}
+                            d={filletArcToSvgPath(
+                              sol.arcCenter,
+                              sol.radius,
+                              sol.startAngle,
+                              sol.endAngle,
+                            )}
                             fill="none"
-                            stroke="#06b6d4"
-                            strokeWidth={2.5 / safeK}
-                            strokeDasharray={`${6 / safeK},${3 / safeK}`}
+                            stroke="var(--chamfer-accent, #E11D48)"
+                            strokeWidth={3.2 / safeK}
+                            strokeLinecap="round"
                           />
-                        );
-                      })()}
+                          <circle
+                            cx={sol.tangentA.x}
+                            cy={sol.tangentA.y}
+                            r={4.2 / safeK}
+                            fill="#FFFFFF"
+                            stroke="var(--chamfer-accent, #E11D48)"
+                            strokeWidth={1.8 / safeK}
+                          />
+                          <circle
+                            cx={sol.tangentB.x}
+                            cy={sol.tangentB.y}
+                            r={4.2 / safeK}
+                            fill="#FFFFFF"
+                            stroke="var(--chamfer-accent, #E11D48)"
+                            strokeWidth={1.8 / safeK}
+                          />
+                          <circle
+                            cx={sol.arcCenter.x}
+                            cy={sol.arcCenter.y}
+                            r={2.5 / safeK}
+                            fill="var(--chamfer-accent, #E11D48)"
+                            fillOpacity={0.8}
+                          />
+                        </>
+                      )}
                     </g>
                   );
                 })()}
@@ -13741,6 +14414,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             basePoint={pending.length > 0 ? pending[pending.length - 1]! : null}
             cursorPoint={cursor}
             isDark={isDark}
+            lineMode={lineMode}
+            onChangeLineMode={setLineMode}
+            polylineCreationMode={polylineCreationMode}
+            onChangePolylineCreationMode={setPolylineCreationMode}
             polylineSegMode={polylineSegMode}
             onTogglePolylineSegMode={() =>
               setPolylineSegMode((prev) => (prev === "line" ? "tangent_arc" : "line"))
@@ -13789,11 +14466,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               const base = pending.length > 0 ? pending[pending.length - 1]! : cursor;
               const curAngRad =
                 typeof angleDeg === "number" && Number.isFinite(angleDeg)
-                  ? (angleDeg * Math.PI) / 180
+                  ? (-angleDeg * Math.PI) / 180
                   : Math.atan2(cursor.y - base.y, cursor.x - base.x);
               const effLen =
                 typeof lengthMm === "number" && Number.isFinite(lengthMm) && lengthMm > 0
-                  ? lengthMm
+                  ? tool === "line" && lineMode === "center_radius"
+                    ? lengthMm / 2
+                    : lengthMm
                   : typeof radiusMm === "number" && Number.isFinite(radiusMm) && radiusMm > 0
                     ? radiusMm
                     : dist(base, cursor);
@@ -13803,10 +14482,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               };
 
               if (tool === "polyline" || tool === "spline") {
-                if (pending.length > 0) {
+                if (
+                  tool === "polyline" &&
+                  polylineCreationMode === "center_radius" &&
+                  pending.length === 1
+                ) {
+                  const geom = computeCenterRadiusLineGeometry(pending[0]!, targetPt);
                   polylineSegModesRef.current.push(polylineSegMode);
+                  setPending([geom.start, geom.end]);
+                } else {
+                  if (pending.length > 0) {
+                    polylineSegModesRef.current.push(polylineSegMode);
+                  }
+                  setPending((q) => [...q, targetPt]);
                 }
-                setPending((q) => [...q, targetPt]);
               } else if (pending.length === 1) {
                 const finalDraft = buildDraft(
                   tool,
@@ -13817,6 +14506,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   drawingProjection,
                   isoPlane,
                   {
+                    lineMode,
                     rectMode,
                     circleMode,
                     polygonMode,
@@ -13872,22 +14562,115 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
           )}
 
+          {/* BARRA UNIFICADA DE CONFIRMAÇÃO DO TRIM / APARAR (CONFIRMAÇÃO OBRIGATÓRIA + INSTANTÂNEO OFF POR PADRÃO) */}
+          {(tool === "trim" || tool === "smart_trim") &&
+            activeMode === "2d" &&
+            !solidOpen &&
+            !isInPlaceSolid3DActive && (
+              <ChamferSmartTrimControlBar
+                markedCount={trimMarkedKeys.length}
+                mode={smartTrimMode}
+                instantMode={trimInstantMode}
+                onToggleMode={setSmartTrimMode}
+                onToggleInstantMode={() => {
+                  setTrimInstantMode((v) => !v);
+                  triggerHaptic("selection");
+                }}
+                onConfirmCut={handleConfirmTrimCut}
+                onUnmarkLast={() => {
+                  setTrimMarkedKeys((prev) => prev.slice(0, -1));
+                  triggerHaptic("tap");
+                }}
+                onClearMarks={() => {
+                  setTrimMarkedKeys([]);
+                  triggerHaptic("tap");
+                }}
+                onExit={() => {
+                  setTrimMarkedKeys([]);
+                  setTrimHoverPiece(null);
+                  setTool("select");
+                }}
+                uiShellMode={uiShellMode}
+              />
+            )}
+
+          {/* BARRA DE CONTROLE DA REF. POLAR (NÃO-VETORIAL, COMPATÍVEL COM GRAUS, DATUM, UNDO/REDO E LIMPAR REFS) */}
+          {activeMode === "2d" &&
+            !solidOpen &&
+            !isInPlaceSolid3DActive &&
+            (tool === "polar_ref" || polarRefs.length > 0) && (
+              <ChamferPolarReferenceControlBar
+                visible={tool === "polar_ref"}
+                livePreview={polarRefLivePreview}
+                polarRefsCount={polarRefs.length}
+                lockedDistanceMm={polarRefLockedDist}
+                lockedAngleDeg={polarRefLockedAngle}
+                polarSnapOn={polarSnapOn}
+                onChangeLockedDistance={(d) => {
+                  setPolarRefLockedDist(d);
+                  if (polarRefOriginAnchor) {
+                    const evalRes = evaluateLivePolarReference({
+                      originAnchor: polarRefOriginAnchor,
+                      rawCursor: cursorRef.current,
+                      orthoOn,
+                      polarSnapOn,
+                      lockedDistanceMm: d,
+                      lockedAngleDeg: polarRefLockedAngle,
+                    });
+                    setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...evalRes });
+                  }
+                }}
+                onChangeLockedAngle={(ang) => {
+                  setPolarRefLockedAngle(ang);
+                  if (polarRefOriginAnchor) {
+                    const evalRes = evaluateLivePolarReference({
+                      originAnchor: polarRefOriginAnchor,
+                      rawCursor: cursorRef.current,
+                      orthoOn,
+                      polarSnapOn,
+                      lockedDistanceMm: polarRefLockedDist,
+                      lockedAngleDeg: ang,
+                    });
+                    setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...evalRes });
+                  }
+                }}
+                onTogglePolarSnap={() => setPolarSnapOn((v) => !v)}
+                onCommitPolarRef={handleConfirmLivePolarRef}
+                onClearAllPolarRefs={() => {
+                  if (polarRefsRef.current.length === 0) return;
+                  commitPolarRefs([]);
+                  setPolarRefOriginAnchor(null);
+                  setPolarRefLivePreview(null);
+                  triggerHaptic("action");
+                  toast.success("Referências Polares limpas (reversível com Desfazer).");
+                }}
+                onExit={() => {
+                  setPolarRefOriginAnchor(null);
+                  setPolarRefLivePreview(null);
+                  setTool("select");
+                }}
+                uiShellMode={uiShellMode}
+              />
+            )}
+
           {/* BARRA UNIFICADA DE MEDIDAS EM TEMPO REAL E CONFIRMAÇÃO (60 FPS AO VIVO + PÓS-SOLTURA) — EXCLUSIVA DO MODO 2D PLANO PARA ZERO COLISÃO COM BARRAS 3D */}
           {!solidOpen &&
             activeMode === "2d" &&
             !isInPlaceSolid3DActive &&
             !orbitProjection2D.isTilted &&
             tool !== "loft_3d" &&
+            tool !== "trim" &&
+            tool !== "smart_trim" &&
+            tool !== "polar_ref" &&
             (() => {
             const hasSubmodeBar =
+              tool === "line" ||
               tool === "polyline" ||
               tool === "rect" ||
               tool === "circle" ||
               tool === "polygon" ||
               tool === "slot" ||
               tool === "node" ||
-              tool === "smart_trim" ||
-              tool === "trim" ||
               tool === "offset" ||
               tool === "construction_line" ||
               tool === "spline";
@@ -13905,6 +14688,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     activeLayer,
                     filletR,
                     {
+                      lineMode:
+                        tool === "line"
+                          ? lineMode
+                          : tool === "polyline" && pending.length === 1
+                            ? polylineCreationMode
+                            : "end_to_end",
+                      centerPoint:
+                        (tool === "line" && lineMode === "center_radius") ||
+                        (tool === "polyline" &&
+                          polylineCreationMode === "center_radius" &&
+                          pending.length === 1)
+                          ? pending[0]!
+                          : undefined,
                       rectMode,
                       circleMode,
                       polygonMode,
@@ -14379,8 +15175,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 ...pastReferenceSnapshotsRef.current.slice(-49),
                 ReferenceService.getSnapshot(),
               ];
+              pastPolarRefsRef.current = [
+                ...pastPolarRefsRef.current.slice(-49),
+                polarRefsRef.current,
+              ];
               future.current = [];
               futureReferenceSnapshotsRef.current = [];
+              futurePolarRefsRef.current = [];
               setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
               setEntities(() => {
                 const synced = syncAssociativeGeometricMarks(finalEntities);
@@ -16150,34 +16951,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     <span>DATUM</span>
                   </button>
 
-                  {selection.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const selectedEntities = entities.filter((e) => selection.includes(e.id));
-                        const edges = GeometricReferenceEngine.extractEdges(selectedEntities);
-                        if (edges.length > 0) {
-                          const bestEdge =
-                            GeometricReferenceEngine.findNearestEdge(cursor, edges, 500)?.edge ?? edges[0]!;
-                          setActiveEdge(bestEdge);
-                          triggerHaptic("action");
-                          toast.success(`✓ Borda selecionada: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
-                        } else {
-                          toast.info("A seleção atual não possui bordas lineares.");
-                        }
-                      }}
-                      title="Definir borda da seleção para afastamento e cotas vivas"
-                      className={cn(
-                        "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
-                        isDark
-                          ? "bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border-[#38BDF8]/40 text-[#38BDF8]"
-                          : "bg-[#0284C7]/10 hover:bg-[#0284C7]/20 border-[#0284C7]/40 text-[#0284C7]",
-                      )}
-                    >
-                      <span>📐</span>
-                      <span>Usar Borda</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    data-testid="chamfer-bottombar-polar-ref-btn"
+                    onClick={() => {
+                      setTool((prev) => (prev === "polar_ref" ? "select" : "polar_ref"));
+                      triggerHaptic("selection");
+                    }}
+                    title="Ref. Polar — Cota de referência não-vetorial (linha vermelha pontilhada + alvo magnético ⊕)"
+                    style={
+                      tool === "polar_ref"
+                        ? {
+                            backgroundColor: "var(--chamfer-accent, #E11D48)",
+                            borderColor: "var(--chamfer-accent, #E11D48)",
+                            color: "#FFFFFF",
+                          }
+                        : undefined
+                    }
+                    className={cn(
+                      "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
+                      tool === "polar_ref"
+                        ? "shadow-xs"
+                        : isDark
+                          ? "bg-[#EF4444]/15 hover:bg-[#EF4444]/25 border-[#EF4444]/40 text-[#FCA5A5]"
+                          : "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border-[#EF4444]/40 text-[#DC2626]",
+                    )}
+                  >
+                    <span>⌖</span>
+                    <span>Ref. Polar{polarRefs.length > 0 ? ` (${polarRefs.length})` : ""}</span>
+                  </button>
                 </div>
               )}
 
@@ -17134,17 +17936,56 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </Suspense>
       )}
 
-      {/* CONTROLE FLUTUANTE DE FILETE E CHANFRO (MODO PAISAGEM; EM RETRATO OCORRE NA BARRA NÍVEL 1) */}
-      {isLandscape && (tool === "fillet" || tool === "chamfer") && (
+      {/* CONTROLE FLUTUANTE DE FILETE UNIVERSAL E CHANFRO */}
+      {activeMode === "2d" && !solidOpen && (tool === "fillet" || tool === "chamfer") && (
         <ChamferFilletChamferHUD
           tool={tool}
           value={filletR}
           onChangeValue={setFilletR}
           selectionCornersCount={selectedCorners.length}
           onApplySelectionCorners={handleApplyAllSelectionCorners}
+          solutionsCount={tool === "fillet" ? (universalFilletResult?.solutions.length ?? 0) : 0}
+          activeSolutionIndex={filletSolutionIdx}
+          activeSolutionLabel={
+            tool === "fillet" ? (universalFilletResult?.activeSolution?.variantLabel ?? null) : null
+          }
+          onCycleSolution={() => {
+            if (!universalFilletResult || universalFilletResult.solutions.length < 2) return;
+            setFilletSolutionIdx((idx) => (idx + 1) % universalFilletResult.solutions.length);
+            triggerHaptic("selection");
+          }}
+          onConfirmActiveFillet={() => {
+            const sol = universalFilletResult?.activeSolution;
+            if (!sol) return;
+            commit(sol.updatedEntities);
+            triggerHaptic("success");
+            toast.success(`Filete R${filletR} mm aplicado (arco analítico exato).`);
+            setFilletFirstPick(null);
+            setFilletSecondPick(null);
+            setUniversalFilletResult(null);
+            setFilletErrorHint(null);
+            setFilletSolutionIdx(0);
+            setSelection([]);
+          }}
+          firstPickedLabel={
+            tool === "fillet" && filletFirstPick
+              ? filletFirstPick.entity.type === "circle"
+                ? "Círculo"
+                : filletFirstPick.entity.type === "arc"
+                  ? "Arco"
+                  : filletFirstPick.entity.type === "polyline"
+                    ? "Polilinha"
+                    : "Linha"
+              : null
+          }
+          errorHint={tool === "fillet" ? filletErrorHint : null}
           onClose={() => {
             setTool("select");
             setFilletPreview(null);
+            setFilletFirstPick(null);
+            setFilletSecondPick(null);
+            setUniversalFilletResult(null);
+            setFilletErrorHint(null);
             setChamferPreview(null);
           }}
           isDark={isDark}
@@ -18705,6 +19546,7 @@ function buildDraft(
   drawingProjection: DrawingProjectionMode = "orthographic",
   isoPlane: IsoPlane = "top",
   opts?: {
+    lineMode?: LineCreationMode;
     rectMode?: RectCreationMode;
     circleMode?: CircleCreationMode;
     polygonMode?: PolygonCreationMode;
@@ -18725,6 +19567,18 @@ function buildDraft(
   }
   switch (tool) {
     case "line":
+      if (opts?.lineMode === "center_radius") {
+        const geom = computeCenterRadiusLineGeometry(a, b);
+        return {
+          id: uid(),
+          layer,
+          type: "line",
+          x1: geom.start.x,
+          y1: geom.start.y,
+          x2: geom.end.x,
+          y2: geom.end.y,
+        };
+      }
       return { id: uid(), layer, type: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y };
     case "construction_line":
       return buildConstructionAxisLine(a, b, "REF");

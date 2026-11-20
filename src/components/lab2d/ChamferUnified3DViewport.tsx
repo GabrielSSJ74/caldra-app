@@ -13,10 +13,19 @@
  * `azimuthDeg`, `elevationDeg` e `pivot2D`).
  */
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Entity, Vec2 } from "@/lib/lab2d/core";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
+import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import { ThreeBRepRenderer } from "@/lib/cad/renderer/ThreeBRepRenderer";
+import {
+  CHAMFER_SHEET_METAL_3D_EVENT,
+  type ChamferSheetMetal3DEventDetail,
+} from "./chamferParametricEvents";
+import {
+  CHAMFER_SECTION_PLANE_EVENT,
+  type ChamferSectionPlaneEventDetail,
+} from "./ChamferParametricOrchestrator";
 import {
   buildDirectTopology3DScene,
   type DirectTopology3DScene,
@@ -87,6 +96,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
 
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
+  const [sheetMetal3DShape, setSheetMetal3DShape] = useState<CadTessellatedShape | null>(null);
 
   const computedScene = useMemo(
     () => topologyScene ?? buildDirectTopology3DScene(entities, effectiveThickness),
@@ -126,7 +136,23 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     renderer.setTheme(isDark ? "dark" : "light");
     rendererRef.current = renderer;
 
+    const handleSheetMetal3D = (rawEv: Event) => {
+      const ev = rawEv as CustomEvent<ChamferSheetMetal3DEventDetail>;
+      if (!ev.detail) return;
+      setSheetMetal3DShape(ev.detail.active && ev.detail.shape ? ev.detail.shape : null);
+    };
+    const handleSectionPlane = (rawEv: Event) => {
+      const ev = rawEv as CustomEvent<ChamferSectionPlaneEventDetail>;
+      if (!ev.detail) return;
+      rendererRef.current?.setSectionPlane(ev.detail);
+      rendererRef.current?.renderImmediate();
+    };
+    window.addEventListener(CHAMFER_SHEET_METAL_3D_EVENT, handleSheetMetal3D);
+    window.addEventListener(CHAMFER_SECTION_PLANE_EVENT, handleSectionPlane);
+
     return () => {
+      window.removeEventListener(CHAMFER_SHEET_METAL_3D_EVENT, handleSheetMetal3D);
+      window.removeEventListener(CHAMFER_SECTION_PLANE_EVENT, handleSectionPlane);
       renderer.dispose();
       rendererRef.current = null;
     };
@@ -141,10 +167,16 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     renderer.setTheme(isDark ? "dark" : "light");
   }, [isDark, active]);
 
-  // 3. Reconstrói e carrega a malha B-Rep 3D sempre que a topologia 3D mudar
+  // 3. Reconstrói e carrega a malha B-Rep 3D sempre que a topologia 3D ou a BendTree de Chapa mudar
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
+
+    if (sheetMetal3DShape) {
+      renderer.setShape(sheetMetal3DShape, false);
+      renderer.renderImmediate();
+      return;
+    }
 
     if (
       computedScene.bodies.length > 0 ||
@@ -154,7 +186,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     } else {
       renderer.setShape(null, false);
     }
-  }, [computedScene]);
+  }, [computedScene, sheetMetal3DShape]);
 
   // 3.2. Sincroniza a decomposição B-Rep de 5 camadas para o modo ARAME Técnico
   useEffect(() => {
@@ -275,6 +307,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     pivot2D?.y,
     effectiveThickness,
     computedScene,
+    sheetMetal3DShape,
     renderStyle3D,
     brepWireframeData,
     brepWireframeLayers,

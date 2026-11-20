@@ -1,279 +1,317 @@
 /**
- * CALDRA CHAMFER — OVERLAY E PRÉ-VISUALIZAÇÃO DE APARAR ATÉ ENCONTRO (SMART TRIM)
+ * CALDRA CHAMFER — OVERLAY E BARRA DE CONFIRMAÇÃO DO TRIM / APARAR UNIFICADO
  *
- * Renderiza a pré-visualização contínua da operação de corte:
- *  - Linha limite (cutter boundary) destacada em ciano/azul técnico;
- *  - Segmento a ser aparado/removido destacado em linha tracejada vermelha;
- *  - Segmento mantido destacado em verde esmeralda sólido;
- *  - Ponto de encontro/interseção destacado com marcador preciso;
- *  - Barra de controle flutuante com alternância entre Encontro Real vs Projetado.
+ * - Animação real sobre a curva/linha exata (`trimPrimitiveToSvgPath`):
+ *     • ZERO cordas retas falsas sobre círculos e arcos!
+ *     • Trechos marcados para apagar em Vermelho Vivo (#EF4444) tracejado com animação contínua
+ *       (`strokeDashoffset` fluindo suavemente) + marcadores `✕` nas interseções exatas;
+ *     • Trechos remanescentes da mesma entidade destacados em Verde Esmeralda (#10B981, 0.90);
+ *     • Rastro translúcido da "Faca / Fence Swipe" durante o arraste com o dedo.
+ * - Barra de confirmação obrigatória (modo Instantâneo DESLIGADO por padrão):
+ *     • [ ✓ Confirmar Corte (N) ]  [ ↩ Desmarcar Último ]  [ Limpar ]  [ ⚡ Instantâneo ]  [ ✕ ]
+ * - 100% sincronizado com `--chamfer-*` (Tema Claro/Escuro/AMOLED + Cor de Destaque).
  */
 
 import React from "react";
-import type { SmartTrimPreview, TrimBoundaryMode } from "@/lib/lab2d/cadSmartTrim";
-import { Scissors, Check, X, Sparkles } from "lucide-react";
+import type { Vec2 } from "@/lib/geometry/types";
+import {
+  trimPrimitiveToSvgPath,
+  type TrimBatchPreview,
+  type TrimBoundaryMode,
+} from "@/chamfer/tools/trimEngine2D";
+import { Scissors, Check, X, RotateCcw, Trash2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 
-interface ChamferSmartTrimOverlayProps {
-  preview: SmartTrimPreview | null;
-  mode: TrimBoundaryMode;
-  onToggleMode: (m: TrimBoundaryMode) => void;
-  onExit: () => void;
+export interface ChamferUnifiedTrimSvgOverlayProps {
+  preview: TrimBatchPreview | null;
+  fenceTrail?: Vec2[];
   viewK: number;
-  isDark?: boolean;
 }
 
 export function ChamferSmartTrimSvgOverlay({
   preview,
+  fenceTrail = [],
   viewK,
-}: {
-  preview: SmartTrimPreview | null;
-  viewK: number;
-}) {
-  const candidate = preview?.activeCandidate;
-  if (!candidate) return null;
+}: ChamferUnifiedTrimSvgOverlayProps) {
+  const safeK = Number.isFinite(viewK) && viewK > 0 ? viewK : 1;
+  const hasPreview =
+    preview && (preview.markedCutPieces.length > 0 || preview.keptPieces.length > 0);
+  const hasFence = fenceTrail.length >= 2;
+
+  if (!hasPreview && !hasFence) return null;
+
+  const dashLen = 6 / safeK;
+  const gapLen = 4 / safeK;
+  const dashCycle = (dashLen + gapLen) * 2;
 
   return (
-    <g className="pointer-events-none select-none">
-      {/* Linha limite (cutter boundary) destacada em ciano brilhante */}
-      {candidate.boundaryEntity && (
-        <g opacity={0.65}>
-          {/* Se a entidade limite for linha simples */}
-          {candidate.boundaryEntity.type === "line" && (
-            <line
-              x1={candidate.boundaryEntity.x1}
-              y1={candidate.boundaryEntity.y1}
-              x2={candidate.boundaryEntity.x2}
-              y2={candidate.boundaryEntity.y2}
-              stroke="#06b6d4"
-              strokeWidth={2.5 / viewK}
-              strokeDasharray={`${6 / viewK},${3 / viewK}`}
-            />
-          )}
-        </g>
-      )}
+    <g
+      className="pointer-events-none select-none"
+      data-testid="chamfer-unified-trim-svg-overlay"
+      aria-label="Pré-visualização do Trim Unificado"
+    >
+      <style>{`
+        @keyframes chamferTrimFlow {
+          from { stroke-dashoffset: 0; }
+          to { stroke-dashoffset: -${dashCycle.toFixed(3)}; }
+        }
+      `}</style>
 
-      {/* Segmento mantido (verde brilhante) */}
-      <line
-        x1={candidate.keptSegment[0].x}
-        y1={candidate.keptSegment[0].y}
-        x2={candidate.keptSegment[1].x}
-        y2={candidate.keptSegment[1].y}
-        stroke="#10b981"
-        strokeWidth={3 / viewK}
-        strokeLinecap="round"
-      />
-      {candidate.extraKeptSegments?.map((seg, idx) => (
-        <line
-          key={`extra-kept-${idx}`}
-          x1={seg[0].x}
-          y1={seg[0].y}
-          x2={seg[1].x}
-          y2={seg[1].y}
-          stroke="#10b981"
-          strokeWidth={3 / viewK}
+      {/* 1. Trechos da mesma entidade que VÃO PERMANECER (Verde Esmeralda Limpo, exato sobre a curva/linha) */}
+      {preview?.keptPieces.map((sp) => (
+        <path
+          key={`trim-kept-${sp.key}`}
+          data-testid={`trim-kept-${sp.primitive.kind}`}
+          d={trimPrimitiveToSvgPath(sp.primitive)}
+          fill="none"
+          stroke="#10B981"
+          strokeWidth={3.1 / safeK}
+          strokeOpacity={0.9}
           strokeLinecap="round"
         />
       ))}
 
-      {/* Segmento a ser aparado (vermelho tracejado com destaque) */}
-      <line
-        x1={candidate.cutSegment[0].x}
-        y1={candidate.cutSegment[0].y}
-        x2={candidate.cutSegment[1].x}
-        y2={candidate.cutSegment[1].y}
-        stroke="#ef4444"
-        strokeWidth={2.5 / viewK}
-        strokeDasharray={`${4 / viewK},${3 / viewK}`}
-        strokeLinecap="round"
-        strokeOpacity={0.85}
-      />
-
-      {/* Marcador no Ponto de Encontro Principal */}
-      <circle
-        cx={candidate.intersectionPoint.x}
-        cy={candidate.intersectionPoint.y}
-        r={5 / viewK}
-        fill="#ef4444"
-        fillOpacity={0.3}
-        stroke="#ef4444"
-        strokeWidth={1.5 / viewK}
-      />
-      <line
-        x1={candidate.intersectionPoint.x - 4 / viewK}
-        y1={candidate.intersectionPoint.y - 4 / viewK}
-        x2={candidate.intersectionPoint.x + 4 / viewK}
-        y2={candidate.intersectionPoint.y + 4 / viewK}
-        stroke="#ffffff"
-        strokeWidth={1.2 / viewK}
-      />
-      <line
-        x1={candidate.intersectionPoint.x + 4 / viewK}
-        y1={candidate.intersectionPoint.y - 4 / viewK}
-        x2={candidate.intersectionPoint.x - 4 / viewK}
-        y2={candidate.intersectionPoint.y + 4 / viewK}
-        stroke="#ffffff"
-        strokeWidth={1.2 / viewK}
-      />
-
-      {/* Segundo Marcador de Interseção (quando aparando entre dois encontros) */}
-      {candidate.secondIntersectionPoint && (
-        <g>
-          <circle
-            cx={candidate.secondIntersectionPoint.x}
-            cy={candidate.secondIntersectionPoint.y}
-            r={5 / viewK}
-            fill="#ef4444"
-            fillOpacity={0.3}
-            stroke="#ef4444"
-            strokeWidth={1.5 / viewK}
+      {/* 2. Trechos MARCADOS PARA APAGAR (Vermelho Vivo tracejado animado exatamente sobre a curva/linha) */}
+      {preview?.markedCutPieces.map((sp) => (
+        <g key={`trim-cut-${sp.key}`} data-testid={`trim-cut-${sp.primitive.kind}`}>
+          {/* Halo suave vermelho para contraste em qualquer tema */}
+          <path
+            d={trimPrimitiveToSvgPath(sp.primitive)}
+            fill="none"
+            stroke="#EF4444"
+            strokeWidth={5.2 / safeK}
+            strokeOpacity={0.22}
+            strokeLinecap="round"
           />
-          <line
-            x1={candidate.secondIntersectionPoint.x - 4 / viewK}
-            y1={candidate.secondIntersectionPoint.y - 4 / viewK}
-            x2={candidate.secondIntersectionPoint.x + 4 / viewK}
-            y2={candidate.secondIntersectionPoint.y + 4 / viewK}
-            stroke="#ffffff"
-            strokeWidth={1.2 / viewK}
-          />
-          <line
-            x1={candidate.secondIntersectionPoint.x + 4 / viewK}
-            y1={candidate.secondIntersectionPoint.y - 4 / viewK}
-            x2={candidate.secondIntersectionPoint.x - 4 / viewK}
-            y2={candidate.secondIntersectionPoint.y + 4 / viewK}
-            stroke="#ffffff"
-            strokeWidth={1.2 / viewK}
+          {/* Traço animado sobre a primitiva real (arco ou linha) */}
+          <path
+            d={trimPrimitiveToSvgPath(sp.primitive)}
+            fill="none"
+            stroke="#EF4444"
+            strokeWidth={2.7 / safeK}
+            strokeDasharray={`${dashLen} ${gapLen}`}
+            strokeLinecap="round"
+            style={{ animation: "chamferTrimFlow 0.75s linear infinite" }}
           />
         </g>
-      )}
+      ))}
 
-      {/* Ponto clicado */}
-      <circle
-        cx={preview.clickPoint.x}
-        cy={preview.clickPoint.y}
-        r={2.5 / viewK}
-        fill="#f59e0b"
-      />
+      {/* 3. Micro-marcadores ✕ brilhando exatamente nas interseções de corte */}
+      {preview?.intersectionMarkers.map((pt, idx) => (
+        <g key={`trim-x-${idx}`} data-testid="trim-intersection-marker">
+          <circle
+            cx={pt.x}
+            cy={pt.y}
+            r={4.8 / safeK}
+            fill="rgba(239, 68, 68, 0.28)"
+            stroke="#EF4444"
+            strokeWidth={1.35 / safeK}
+          />
+          <line
+            x1={pt.x - 3.3 / safeK}
+            y1={pt.y - 3.3 / safeK}
+            x2={pt.x + 3.3 / safeK}
+            y2={pt.y + 3.3 / safeK}
+            stroke="#FFFFFF"
+            strokeWidth={1.25 / safeK}
+            strokeLinecap="round"
+          />
+          <line
+            x1={pt.x + 3.3 / safeK}
+            y1={pt.y - 3.3 / safeK}
+            x2={pt.x - 3.3 / safeK}
+            y2={pt.y + 3.3 / safeK}
+            stroke="#FFFFFF"
+            strokeWidth={1.25 / safeK}
+            strokeLinecap="round"
+          />
+        </g>
+      ))}
+
+      {/* 4. Rastro fino translúcido da Lâmina ("Faca / Fence Swipe") */}
+      {hasFence && (
+        <polyline
+          data-testid="trim-fence-blade-trail"
+          points={fenceTrail.map((p) => `${p.x},${p.y}`).join(" ")}
+          fill="none"
+          stroke="#EF4444"
+          strokeWidth={2.2 / safeK}
+          strokeOpacity={0.62}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
     </g>
   );
 }
 
-export function ChamferSmartTrimControlBar({
-  preview,
-  mode,
-  onToggleMode,
-  onExit,
-  isDark = true,
-}: {
-  preview: SmartTrimPreview | null;
+export interface ChamferUnifiedTrimControlBarProps {
+  markedCount: number;
   mode: TrimBoundaryMode;
+  instantMode: boolean;
   onToggleMode: (m: TrimBoundaryMode) => void;
+  onToggleInstantMode: () => void;
+  onConfirmCut: () => void;
+  onUnmarkLast: () => void;
+  onClearMarks: () => void;
   onExit: () => void;
-  isDark?: boolean;
-}) {
-  const candidate = preview?.activeCandidate;
+  uiShellMode?: "compact" | "prumo";
+}
 
+export function ChamferSmartTrimControlBar({
+  markedCount,
+  mode,
+  instantMode,
+  onToggleMode,
+  onToggleInstantMode,
+  onConfirmCut,
+  onUnmarkLast,
+  onClearMarks,
+  onExit,
+  uiShellMode = "compact",
+}: ChamferUnifiedTrimControlBarProps) {
   return (
     <div
-      role="region"
-      aria-label="Controle de Aparar até Encontro"
-      className={cn(
-        "pointer-events-auto fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 rounded-2xl border px-3.5 py-2 shadow-2xl backdrop-blur-xl transition-all select-none",
-        isDark
-          ? "border-red-900/60 bg-slate-950/95 text-slate-100 shadow-black/80"
-          : "border-slate-300 bg-white/95 text-slate-800 shadow-slate-400/50",
-      )}
+      role="toolbar"
+      data-testid="chamfer-unified-trim-bar"
+      aria-label="Barra de Controle do Aparar (Trim)"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        top: uiShellMode === "prumo" ? 52 : 22,
+        backgroundColor: "var(--chamfer-popover-bg, rgba(10, 15, 26, 0.92))",
+        borderColor: "var(--chamfer-border-strong, rgba(255, 255, 255, 0.16))",
+        color: "var(--chamfer-text-primary, #f1f5f9)",
+      }}
+      className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-40 flex flex-nowrap items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-semibold shadow-xl backdrop-blur-xl select-none max-w-[96vw] overflow-x-auto scrollbar-none whitespace-nowrap"
     >
-      <div className="flex items-center gap-2 pr-2 border-r border-slate-700/60">
-        <div className="flex size-7 items-center justify-center rounded-lg bg-red-600/20 text-red-500">
-          <Scissors className="size-3.5 stroke-[2.5]" />
-        </div>
-        <div>
-          <div className="font-mono text-[11px] font-bold text-red-500 uppercase tracking-wide">
-            Aparar até Encontro
-          </div>
-          <div className="text-[9px] text-muted-foreground truncate max-w-[200px]">
-            {candidate
-              ? `Encontro detectado (${candidate.isProjected ? "Projetado" : "Real"})`
-              : "Passe o cursor sobre a linha para pré-visualizar"}
-          </div>
-        </div>
-      </div>
+      <span
+        style={{ color: "var(--chamfer-accent, #E11D48)" }}
+        className="flex items-center gap-1 font-extrabold pr-1 shrink-0"
+      >
+        <Scissors className="size-3.5" />
+        <span>APARAR</span>
+      </span>
 
-      {/* Alternador de Modo: Real vs Projetado */}
-      <div className="flex items-center gap-1 font-mono text-[10px]">
+      {/* Botão principal: ✓ Confirmar Corte (N) */}
+      {!instantMode && (
         <button
           type="button"
+          data-testid="trim-confirm-cut-btn"
+          disabled={markedCount === 0}
           onClick={() => {
-            triggerHaptic("selection");
-            onToggleMode("real");
+            triggerHaptic("success");
+            onConfirmCut();
           }}
+          style={
+            markedCount > 0
+              ? {
+                  backgroundColor: "var(--chamfer-accent, #E11D48)",
+                  color: "#FFFFFF",
+                }
+              : undefined
+          }
           className={cn(
-            "px-2 py-1 rounded-lg border font-semibold transition-colors cursor-pointer",
-            mode === "real"
-              ? "border-red-500 bg-red-600/20 text-red-400"
-              : isDark
-                ? "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
-                : "border-slate-200 bg-slate-100 text-slate-600 hover:text-black",
+            "flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10.5px] font-extrabold transition-all shrink-0",
+            markedCount > 0
+              ? "shadow-sm cursor-pointer active:scale-95"
+              : "opacity-45 cursor-not-allowed border border-current/20",
           )}
-          title="Apara apenas em cruzamentos físicos existentes"
+          title="Aplicar todos os cortes marcados em 1 único passo de Undo/Redo"
         >
-          Encontro Real
+          <Check className="size-3 stroke-[2.8]" />
+          <span>Confirmar Corte ({markedCount})</span>
         </button>
+      )}
+
+      {/* Desmarcar Último */}
+      {!instantMode && markedCount > 0 && (
         <button
           type="button"
+          data-testid="trim-unmark-last-btn"
           onClick={() => {
-            triggerHaptic("selection");
-            onToggleMode("projected");
+            triggerHaptic("tap");
+            onUnmarkLast();
           }}
-          className={cn(
-            "px-2 py-1 rounded-lg border font-semibold transition-colors cursor-pointer",
-            mode === "projected"
-              ? "border-red-500 bg-red-600/20 text-red-400"
-              : isDark
-                ? "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
-                : "border-slate-200 bg-slate-100 text-slate-600 hover:text-black",
-          )}
-          title="Apara no prolongamento matemático das entidades"
+          className="flex items-center gap-1 rounded-full border border-current/20 px-2 py-0.5 text-[10px] font-bold opacity-85 hover:opacity-100 cursor-pointer shrink-0"
+          title="Desmarcar o último trecho selecionado"
         >
-          <Sparkles className="size-3 inline mr-1 text-red-400" />
-          Projetado
+          <RotateCcw className="size-3" />
+          <span>Desmarcar</span>
         </button>
-      </div>
+      )}
 
+      {/* Limpar fila */}
+      {!instantMode && markedCount > 0 && (
+        <button
+          type="button"
+          data-testid="trim-clear-marks-btn"
+          onClick={() => {
+            triggerHaptic("tap");
+            onClearMarks();
+          }}
+          className="flex items-center gap-1 rounded-full border border-red-500/35 bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0"
+          title="Limpar todos os trechos marcados"
+        >
+          <Trash2 className="size-3" />
+          <span>Limpar</span>
+        </button>
+      )}
+
+      {/* Toggle Real / Projetado */}
       <button
         type="button"
+        data-testid="trim-boundary-mode-btn"
+        onClick={() => {
+          triggerHaptic("selection");
+          onToggleMode(mode === "real" ? "projected" : "real");
+        }}
+        className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] font-bold opacity-85 hover:opacity-100 cursor-pointer shrink-0"
+        title="Alternar entre interseções físicas reais e encontros projetados"
+      >
+        {mode === "real" ? "Real" : "Projetado"}
+      </button>
+
+      {/* Toggle discreto ⚡ Instantâneo (DESLIGADO por padrão) */}
+      <button
+        type="button"
+        data-testid="trim-instant-toggle-btn"
+        onClick={() => {
+          triggerHaptic("selection");
+          onToggleInstantMode();
+        }}
+        style={
+          instantMode
+            ? {
+                borderColor: "var(--chamfer-accent, #E11D48)",
+                color: "var(--chamfer-accent, #E11D48)",
+              }
+            : undefined
+        }
+        className={cn(
+          "flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0 transition-colors",
+          instantMode ? "bg-current/10" : "border-current/20 opacity-75 hover:opacity-100",
+        )}
+        title="Quando desligado (padrão), exige clicar em Confirmar Corte antes de apagar"
+      >
+        <Zap className="size-3" />
+        <span>Instantâneo</span>
+      </button>
+
+      {/* Sair */}
+      <button
+        type="button"
+        data-testid="trim-exit-btn"
         onClick={() => {
           triggerHaptic("tap");
           onExit();
         }}
-        className={cn(
-          "flex items-center gap-1 px-2.5 py-1 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ml-1",
-          isDark
-            ? "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
-            : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-black",
-        )}
-        title="Concluir ferramenta (Esc)"
+        className="flex size-5 items-center justify-center rounded-full hover:bg-red-500/20 opacity-80 hover:opacity-100 cursor-pointer shrink-0"
+        title="Sair do Aparar (Esc)"
       >
-        <Check className="size-3.5 text-emerald-400" />
-        Concluir
+        <X className="size-3" />
       </button>
     </div>
-  );
-}
-
-export function ChamferSmartTrimOverlay(props: ChamferSmartTrimOverlayProps) {
-  return (
-    <>
-      <ChamferSmartTrimSvgOverlay preview={props.preview} viewK={props.viewK} />
-      <ChamferSmartTrimControlBar
-        preview={props.preview}
-        mode={props.mode}
-        onToggleMode={props.onToggleMode}
-        onExit={props.onExit}
-        isDark={props.isDark}
-      />
-    </>
   );
 }

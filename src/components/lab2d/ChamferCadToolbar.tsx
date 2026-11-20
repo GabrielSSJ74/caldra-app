@@ -1641,17 +1641,9 @@ export function ChamferCadToolbar({
                       label="Trim / Aparar"
                       keyLabel="TR"
                       icon={Scissors}
-                      active={tool === "trim"}
+                      active={tool === "trim" || tool === "smart_trim"}
                       onClick={() => handleSelectTool("trim", "modificar")}
-                      desc="Cortar linha em interseção com outra"
-                    />
-                    <FlyoutItem
-                      label="Aparar até Encontro"
-                      keyLabel="ATE"
-                      icon={Scissors}
-                      active={tool === "smart_trim"}
-                      onClick={() => handleSelectTool("smart_trim", "modificar")}
-                      desc="Aparar direto até a primeira interseção limite"
+                      desc="Toque ou deslize tipo faca sobre trechos para cortar com confirmação"
                     />
                     <FlyoutItem
                       label="Centralizar Formas"

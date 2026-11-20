@@ -22,6 +22,22 @@ import {
 } from "./commandEngine";
 import { ParameterStore, type ParameterUnit } from "./parameterStore";
 import { computeAssociativeOffset, signedPolygonArea, type Vec2 } from "../sketch/planarFaceExtractor";
+import {
+  DEFAULT_SHEET_METAL_RULES,
+  addEdgeFlangeToBody,
+  addHoleOrCutoutToBody,
+  computeBodyFlatPattern,
+  createContourFlangeBody,
+  createSheetMetalBodyFromBase,
+  foldSheetMetalBody,
+  refoldSheetMetalBody,
+  unfoldSheetMetalBody,
+  type BendDirection,
+  type BendPositionMode,
+  type SheetMetalBody,
+  type SheetMetalRule,
+} from "../sheetMetal/bendTree";
+import { validateBendInputs } from "../sheetMetal/bendMath";
 
 export interface Vec3 {
   x: number;
@@ -171,7 +187,14 @@ export type TimelineFeatureType =
   | "constructPlane"
   | "constructAxis"
   | "constructPoint"
-  | "sheetFlange";
+  | "sheetFlange"
+  | "sheetBase"
+  | "sheetFold"
+  | "sheetEdgeFlange"
+  | "sheetContourFlange"
+  | "sheetUnfold"
+  | "sheetRefold"
+  | "sheetHole";
 
 export interface TimelineFeatureNode {
   id: string;
@@ -200,6 +223,7 @@ export interface EvaluatedFeatureSnapshot {
   planes: ConstructionPlane3D[];
   axes: ConstructionAxis3D[];
   points: ConstructionPoint3D[];
+  sheetMetalBody: SheetMetalBody | null;
   warnings: Record<string, string>;
 }
 
@@ -214,6 +238,7 @@ export interface ParametricDocumentState {
   planes: ConstructionPlane3D[];
   axes: ConstructionAxis3D[];
   points: ConstructionPoint3D[];
+  sheetMetalBody: SheetMetalBody | null;
   definitions: ComponentDefinition[];
   occurrences: ComponentOccurrence[];
   joints: AssemblyJoint[];
@@ -628,6 +653,7 @@ export class ParametricTimelineEvaluator {
     let planes: ConstructionPlane3D[] = [];
     let axes: ConstructionAxis3D[] = [];
     let points: ConstructionPoint3D[] = [];
+    const sheetHolder: { current: SheetMetalBody | null } = { current: null };
     let warnings: Record<string, string> = {};
     let prevHash = `density:${state.densityKgM3}`;
 
@@ -644,6 +670,7 @@ export class ParametricTimelineEvaluator {
         planes = structuredClone(cached.planes);
         axes = structuredClone(cached.axes);
         points = structuredClone(cached.points);
+        sheetHolder.current = cached.sheetMetalBody ? structuredClone(cached.sheetMetalBody) : null;
         warnings = { ...cached.warnings };
         prevHash = nodeHash;
         this.lastCacheHitNodeIds.push(node.id);
@@ -653,7 +680,17 @@ export class ParametricTimelineEvaluator {
       this.lastRebuiltNodeIds.push(node.id);
 
       if (!node.suppressed) {
-        this.applyFeature(node, paramValues, state.densityKgM3, bodies, planes, axes, points, warnings);
+        this.applyFeature(
+          node,
+          paramValues,
+          state.densityKgM3,
+          bodies,
+          planes,
+          axes,
+          points,
+          sheetHolder,
+          warnings,
+        );
       }
 
       this.cache.set(node.id, {
@@ -663,6 +700,7 @@ export class ParametricTimelineEvaluator {
         planes: structuredClone(planes),
         axes: structuredClone(axes),
         points: structuredClone(points),
+        sheetMetalBody: sheetHolder.current ? structuredClone(sheetHolder.current) : null,
         warnings: { ...warnings },
       });
       prevHash = nodeHash;
@@ -673,6 +711,30 @@ export class ParametricTimelineEvaluator {
       missingReferenceWarning: warnings[f.id],
     }));
 
+    let totalMassProps = aggregateMassProperties(bodies, state.densityKgM3);
+    if (bodies.length === 0 && sheetHolder.current) {
+      const flat = computeBodyFlatPattern(sheetHolder.current);
+      const t = sheetHolder.current.rule.thicknessMm;
+      const rootW = sheetHolder.current.flanges[sheetHolder.current.rootFlangeId]?.widthMm ?? 60;
+      const volMm3 = Math.max(0, flat.developedLengthMm * rootW * t);
+      const volCm3 = volMm3 / 1000;
+      const massKg = (volMm3 * 1e-9) * state.densityKgM3;
+      totalMassProps = {
+        volumeMm3: volMm3,
+        volumeCm3: volCm3,
+        surfaceAreaMm2: 2 * flat.developedLengthMm * rootW + 2 * (flat.developedLengthMm + rootW) * t,
+        lateralAreaMm2: 2 * (flat.developedLengthMm + rootW) * t,
+        massGrams: massKg * 1000,
+        massKg,
+        densityKgM3: state.densityKgM3,
+        centerOfMass: { x: flat.developedLengthMm / 2, y: rootW / 2, z: t / 2 },
+        bounds: {
+          min: { x: 0, y: 0, z: 0 },
+          max: { x: flat.developedLengthMm, y: rootW, z: t },
+        },
+      };
+    }
+
     return {
       ...state,
       features: updatedFeatures,
@@ -680,8 +742,9 @@ export class ParametricTimelineEvaluator {
       planes,
       axes,
       points,
+      sheetMetalBody: sheetHolder.current,
       warnings,
-      totalMassProps: aggregateMassProperties(bodies, state.densityKgM3),
+      totalMassProps,
     };
   }
 
@@ -711,6 +774,7 @@ export class ParametricTimelineEvaluator {
     planes: ConstructionPlane3D[],
     axes: ConstructionAxis3D[],
     points: ConstructionPoint3D[],
+    sheetHolder: { current: SheetMetalBody | null },
     warnings: Record<string, string>,
   ): void {
     const p = node.params;
@@ -1125,6 +1189,154 @@ export class ParametricTimelineEvaluator {
         });
         break;
       }
+
+      case "sheetBase": {
+        const rule = (p.rule as SheetMetalRule) ?? {
+          ...(DEFAULT_SHEET_METAL_RULES[4]!),
+          thicknessMm: resolveNumericParam(p.thicknessMm, paramValues, 3),
+          innerRadiusMm: resolveNumericParam(p.innerRadiusMm, paramValues, 3),
+          kFactor: resolveNumericParam(p.kFactor, paramValues, 0.33),
+        };
+        const lengthMm = resolveNumericParam(p.lengthMm, paramValues, 100);
+        const widthMm = resolveNumericParam(p.widthMm, paramValues, 60);
+        sheetHolder.current = createSheetMetalBodyFromBase({
+          bodyId: (p.bodyId as string) ?? node.id,
+          name: node.name,
+          lengthXMm: lengthMm,
+          widthYMm: widthMm,
+          rule,
+        });
+        break;
+      }
+
+      case "sheetContourFlange": {
+        const rule = (p.rule as SheetMetalRule) ?? {
+          ...(DEFAULT_SHEET_METAL_RULES[4]!),
+          thicknessMm: resolveNumericParam(p.thicknessMm, paramValues, 3),
+          innerRadiusMm: resolveNumericParam(p.innerRadiusMm, paramValues, 3),
+          kFactor: resolveNumericParam(p.kFactor, paramValues, 0.33),
+        };
+        const legs = Array.isArray(p.externalLegsMm)
+          ? (p.externalLegsMm as unknown[]).map((v) => resolveNumericParam(v, paramValues, 40))
+          : [40, 30];
+        const rawAngles = Array.isArray(p.bendAnglesDeg)
+          ? (p.bendAnglesDeg as unknown[]).map((v) => resolveNumericParam(v, paramValues, 90))
+          : [90];
+        const dirs = Array.isArray(p.bendDirections)
+          ? (p.bendDirections as BendDirection[])
+          : undefined;
+        const signedAngles = rawAngles.map((a, idx) =>
+          dirs && dirs[idx] === "DOWN" ? -Math.abs(a) : a,
+        );
+        const widthMm = resolveNumericParam(p.extrudeWidthMm, paramValues, 80);
+        sheetHolder.current = createContourFlangeBody({
+          name: node.name,
+          extrudeWidthMm: widthMm,
+          externalLegsMm: legs,
+          bendAnglesDeg: signedAngles,
+          rule,
+        });
+        break;
+      }
+
+      case "sheetFold": {
+        if (!sheetHolder.current) {
+          sheetHolder.current = createSheetMetalBodyFromBase({
+            name: "Chapa Base",
+            lengthXMm: resolveNumericParam(p.initialLengthMm, paramValues, 100),
+            widthYMm: resolveNumericParam(p.initialWidthMm, paramValues, 60),
+            rule: (p.rule as SheetMetalRule) ?? DEFAULT_SHEET_METAL_RULES[4]!,
+          });
+        }
+        const angleExpr = typeof p.angleExpression === "string" ? p.angleExpression.trim() : undefined;
+        const resolvedAngle = angleExpr
+          ? resolveNumericParam(angleExpr, paramValues, resolveNumericParam(p.targetAngleDeg, paramValues, 90))
+          : resolveNumericParam(p.targetAngleDeg, paramValues, 90);
+        const res = foldSheetMetalBody(sheetHolder.current, {
+          bendId: (p.bendId as string) ?? node.id,
+          targetFlangeId: p.flangeId as string | undefined,
+          distanceFromEdgeMm: resolveNumericParam(p.distanceFromEdgeMm, paramValues, 40),
+          childExternalLegMm:
+            p.childExternalLegMm !== undefined
+              ? resolveNumericParam(p.childExternalLegMm, paramValues, 30)
+              : undefined,
+          targetAngleDeg: resolvedAngle,
+          angleExpression: angleExpr,
+          direction: (p.direction as BendDirection) ?? "UP",
+          innerRadiusMm:
+            p.innerRadiusMm !== undefined
+              ? resolveNumericParam(p.innerRadiusMm, paramValues, sheetHolder.current.rule.innerRadiusMm)
+              : undefined,
+          kFactor:
+            p.kFactor !== undefined
+              ? resolveNumericParam(p.kFactor, paramValues, sheetHolder.current.rule.kFactor)
+              : undefined,
+          bendPosition: (p.bendPosition as BendPositionMode) ?? "MATERIAL_INSIDE",
+          invertFixedSide: Boolean(p.invertFixedSide),
+        });
+        if (res.ok) sheetHolder.current = res.body;
+        break;
+      }
+
+      case "sheetEdgeFlange": {
+        if (!sheetHolder.current) {
+          sheetHolder.current = createSheetMetalBodyFromBase({
+            name: "Chapa Base",
+            lengthXMm: 100,
+            widthYMm: 60,
+            rule: (p.rule as SheetMetalRule) ?? DEFAULT_SHEET_METAL_RULES[4]!,
+          });
+        }
+        const angleExpr = typeof p.angleExpression === "string" ? p.angleExpression.trim() : undefined;
+        const resolvedAngle = angleExpr
+          ? resolveNumericParam(angleExpr, paramValues, resolveNumericParam(p.targetAngleDeg, paramValues, 90))
+          : resolveNumericParam(p.targetAngleDeg, paramValues, 90);
+        const res = addEdgeFlangeToBody(sheetHolder.current, {
+          parentFlangeId: p.parentFlangeId as string | undefined,
+          externalLengthMm: resolveNumericParam(p.externalLengthMm, paramValues, 30),
+          targetAngleDeg: resolvedAngle,
+          angleExpression: angleExpr,
+          direction: (p.direction as BendDirection) ?? "UP",
+          innerRadiusMm:
+            p.innerRadiusMm !== undefined
+              ? resolveNumericParam(p.innerRadiusMm, paramValues, sheetHolder.current.rule.innerRadiusMm)
+              : undefined,
+          kFactor:
+            p.kFactor !== undefined
+              ? resolveNumericParam(p.kFactor, paramValues, sheetHolder.current.rule.kFactor)
+              : undefined,
+        });
+        if (res.ok) sheetHolder.current = res.body;
+        break;
+      }
+
+      case "sheetUnfold": {
+        if (!sheetHolder.current) break;
+        const bendIds = Array.isArray(p.bendIds) ? (p.bendIds as string[]) : undefined;
+        sheetHolder.current = unfoldSheetMetalBody(sheetHolder.current, bendIds);
+        break;
+      }
+
+      case "sheetRefold": {
+        if (!sheetHolder.current) break;
+        const bendIds = Array.isArray(p.bendIds) ? (p.bendIds as string[]) : undefined;
+        sheetHolder.current = refoldSheetMetalBody(sheetHolder.current, bendIds);
+        break;
+      }
+
+      case "sheetHole": {
+        if (!sheetHolder.current) break;
+        const res = addHoleOrCutoutToBody(sheetHolder.current, {
+          cutoutId: (p.holeId as string) ?? node.id,
+          flangeId: p.flangeId as string | undefined,
+          cx: resolveNumericParam(p.x, paramValues, 20),
+          cy: resolveNumericParam(p.y, paramValues, 30),
+          diameterMm: resolveNumericParam(p.diameterMm, paramValues, 10),
+          acrossBend: Boolean(p.acrossBend || p.bendId),
+        });
+        if (res.ok) sheetHolder.current = res.body;
+        break;
+      }
     }
   }
 }
@@ -1142,6 +1354,7 @@ export function createEmptyParametricDocument(
     planes: [],
     axes: [],
     points: [],
+    sheetMetalBody: null,
     definitions: [],
     occurrences: [],
     joints: [],
@@ -1377,6 +1590,226 @@ export function createChamferParametricEngine(
       },
     },
     {
+      id: "sheet.base",
+      label: "Chapa Base",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "name", type: "string", defaultValue: "Chapa Base" },
+        { name: "lengthMm", type: "number", positiveOnly: true, required: true },
+        { name: "widthMm", type: "number", positiveOnly: true, required: true },
+        { name: "thicknessMm", type: "number", positiveOnly: true },
+        { name: "innerRadiusMm", type: "number", min: 0 },
+        { name: "kFactor", type: "number", positiveOnly: true },
+      ],
+      enabled: () => true,
+      execute: (state, params) => {
+        const t = Number(params.thicknessMm ?? (params.rule as SheetMetalRule | undefined)?.thicknessMm ?? 3);
+        const r = Number(params.innerRadiusMm ?? (params.rule as SheetMetalRule | undefined)?.innerRadiusMm ?? t);
+        const k = Number(params.kFactor ?? (params.rule as SheetMetalRule | undefined)?.kFactor ?? 0.33);
+        const check = validateBendInputs({
+          angleDeg: 90,
+          thicknessMm: t,
+          innerRadiusMm: r,
+          kFactor: k,
+        });
+        if (!check.ok) throw new Error(check.error);
+        const id = (params.id as string) || `sheet_base_${state.features.length + 1}`;
+        const node: TimelineFeatureNode = {
+          id,
+          name: (params.name as string) || `Chapa Base ${params.lengthMm}×${params.widthMm}`,
+          type: "sheetBase",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
+      id: "sheet.contourFlange",
+      label: "Contour Flange (L / U / Z)",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "name", type: "string", defaultValue: "Contour Flange" },
+        { name: "extrudeWidthMm", type: "number", positiveOnly: true, required: true },
+        { name: "externalLegsMm", type: "array", required: true },
+        { name: "bendAnglesDeg", type: "array", required: true },
+      ],
+      enabled: () => true,
+      execute: (state, params) => {
+        const rule = (params.rule as SheetMetalRule | undefined) ?? DEFAULT_SHEET_METAL_RULES[4]!;
+        const angles = (params.bendAnglesDeg as number[]) ?? [];
+        for (const a of angles) {
+          const check = validateBendInputs({
+            angleDeg: Math.abs(Number(a)),
+            thicknessMm: rule.thicknessMm,
+            innerRadiusMm: rule.innerRadiusMm,
+            kFactor: rule.kFactor,
+          });
+          if (!check.ok) throw new Error(check.error);
+        }
+        const id = (params.id as string) || `sheet_cf_${state.features.length + 1}`;
+        const node: TimelineFeatureNode = {
+          id,
+          name: (params.name as string) || `Contour Flange ${state.features.length + 1}`,
+          type: "sheetContourFlange",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
+      id: "sheet.fold",
+      label: "Dobrar Chapa (Fold)",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "bendId", type: "string" },
+        { name: "targetAngleDeg", type: "number", required: true },
+        { name: "distanceFromEdgeMm", type: "number", positiveOnly: true },
+        { name: "childExternalLegMm", type: "number", positiveOnly: true },
+        { name: "direction", type: "enum", options: ["UP", "DOWN"], defaultValue: "UP" },
+        { name: "innerRadiusMm", type: "number", min: 0 },
+        { name: "kFactor", type: "number", positiveOnly: true },
+      ],
+      enabled: () => true,
+      execute: (state, params) => {
+        const rule = state.sheetMetalBody?.rule ?? (params.rule as SheetMetalRule | undefined) ?? DEFAULT_SHEET_METAL_RULES[4]!;
+        const check = validateBendInputs({
+          angleDeg: Number(params.targetAngleDeg),
+          thicknessMm: rule.thicknessMm,
+          innerRadiusMm: Number(params.innerRadiusMm ?? rule.innerRadiusMm),
+          kFactor: Number(params.kFactor ?? rule.kFactor),
+        });
+        if (!check.ok) throw new Error(check.error);
+        const id = (params.id as string) || `sheet_fold_${state.features.length + 1}`;
+        const dir = (params.direction as BendDirection) ?? "UP";
+        const node: TimelineFeatureNode = {
+          id,
+          name: (params.name as string) || `Dobrar ${Number(params.targetAngleDeg).toFixed(1)}° ${dir === "UP" ? "CIMA" : "BAIXO"}`,
+          type: "sheetFold",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params, bendId: (params.bendId as string) || id },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
+      id: "sheet.edgeFlange",
+      label: "Edge Flange (Aba de Borda)",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "externalLengthMm", type: "number", positiveOnly: true, required: true },
+        { name: "targetAngleDeg", type: "number", required: true },
+        { name: "direction", type: "enum", options: ["UP", "DOWN"], defaultValue: "UP" },
+      ],
+      enabled: () => true,
+      execute: (state, params) => {
+        const rule = state.sheetMetalBody?.rule ?? DEFAULT_SHEET_METAL_RULES[4]!;
+        const check = validateBendInputs({
+          angleDeg: Number(params.targetAngleDeg),
+          thicknessMm: rule.thicknessMm,
+          innerRadiusMm: Number(params.innerRadiusMm ?? rule.innerRadiusMm),
+          kFactor: Number(params.kFactor ?? rule.kFactor),
+        });
+        if (!check.ok) throw new Error(check.error);
+        const id = (params.id as string) || `sheet_ef_${state.features.length + 1}`;
+        const node: TimelineFeatureNode = {
+          id,
+          name: (params.name as string) || `Aba ${params.externalLengthMm}mm (${params.targetAngleDeg}°)`,
+          type: "sheetEdgeFlange",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params, bendId: (params.bendId as string) || id },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
+      id: "sheet.unfold",
+      label: "Desdobrar Chapa (Unfold)",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "bendIds", type: "array" },
+      ],
+      enabled: (s) => Boolean(s.sheetMetalBody && Object.keys(s.sheetMetalBody.bends).length > 0),
+      execute: (state, params) => {
+        const id = (params.id as string) || `sheet_unfold_${state.features.length + 1}`;
+        const bendIds = Array.isArray(params.bendIds) ? (params.bendIds as string[]) : undefined;
+        const node: TimelineFeatureNode = {
+          id,
+          name:
+            (params.name as string) ||
+            (bendIds && bendIds.length > 0 ? `Desdobrar (${bendIds.length})` : "Desdobrar Todas"),
+          type: "sheetUnfold",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
+      id: "sheet.refold",
+      label: "Redobrar Chapa (Refold)",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "bendIds", type: "array" },
+      ],
+      enabled: (s) =>
+        Boolean(
+          s.sheetMetalBody &&
+            Object.values(s.sheetMetalBody.bends).some((b) => b.state === "UNFOLDED"),
+        ),
+      execute: (state, params) => {
+        const id = (params.id as string) || `sheet_refold_${state.features.length + 1}`;
+        const bendIds = Array.isArray(params.bendIds) ? (params.bendIds as string[]) : undefined;
+        const node: TimelineFeatureNode = {
+          id,
+          name:
+            (params.name as string) ||
+            (bendIds && bendIds.length > 0 ? `Redobrar (${bendIds.length})` : "Redobrar Todas"),
+          type: "sheetRefold",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
+      id: "sheet.hole",
+      label: "Furo na Chapa",
+      group: "sheet",
+      schema: [
+        { name: "id", type: "string" },
+        { name: "diameterMm", type: "number", positiveOnly: true, required: true },
+        { name: "x", type: "number" },
+        { name: "y", type: "number" },
+      ],
+      enabled: (s) => Boolean(s.sheetMetalBody),
+      execute: (state, params) => {
+        const id = (params.id as string) || `sheet_hole_${state.features.length + 1}`;
+        const node: TimelineFeatureNode = {
+          id,
+          name: (params.name as string) || `Furo Chapa Ø${params.diameterMm}mm`,
+          type: "sheetHole",
+          suppressed: false,
+          dependsOn: [],
+          params: { ...params },
+        };
+        return rebuild({ ...state, features: [...state.features, node] });
+      },
+    },
+    {
       id: "timeline.edit",
       label: "Editar Etapa da Timeline",
       group: "timeline",
@@ -1388,23 +1821,71 @@ export function createChamferParametricEngine(
         { name: "depthMm", type: "number", positiveOnly: true },
         { name: "radiusMm", type: "number", positiveOnly: true },
         { name: "diameterMm", type: "number", positiveOnly: true },
+        { name: "targetAngleDeg", type: "number" },
+        { name: "innerRadiusMm", type: "number", min: 0 },
+        { name: "kFactor", type: "number", positiveOnly: true },
+        { name: "distanceFromEdgeMm", type: "number", positiveOnly: true },
+        { name: "childExternalLegMm", type: "number", positiveOnly: true },
+        { name: "externalLengthMm", type: "number", positiveOnly: true },
       ],
       enabled: (s) => s.features.length > 0,
       execute: (state, params) => {
         const nodeId = String(params.nodeId);
         const found = state.features.some((f) => f.id === nodeId);
         if (!found) throw new Error(`Etapa ${nodeId} não encontrada na timeline`);
+        const rule = state.sheetMetalBody?.rule ?? DEFAULT_SHEET_METAL_RULES[4]!;
+        if (
+          params.targetAngleDeg !== undefined ||
+          params.innerRadiusMm !== undefined ||
+          params.kFactor !== undefined
+        ) {
+          const check = validateBendInputs({
+            angleDeg: Number(params.targetAngleDeg ?? 90),
+            thicknessMm: rule.thicknessMm,
+            innerRadiusMm: Number(params.innerRadiusMm ?? rule.innerRadiusMm),
+            kFactor: Number(params.kFactor ?? rule.kFactor),
+          });
+          if (!check.ok) throw new Error(check.error);
+        }
         const nextFeatures = state.features.map((f) => {
           if (f.id !== nodeId) return f;
           const nextParams = { ...f.params };
-          for (const key of ["heightMm", "widthMm", "depthMm", "radiusMm", "diameterMm"]) {
+          for (const key of [
+            "heightMm",
+            "widthMm",
+            "depthMm",
+            "radiusMm",
+            "diameterMm",
+            "distanceFromEdgeMm",
+            "childExternalLegMm",
+            "externalLengthMm",
+          ]) {
             if (params[key] !== undefined) {
               const check = sanitizeNumericInput(params[key], { positiveOnly: true, label: key });
               if (!check.ok) throw new Error(check.error);
               nextParams[key] = check.value;
             }
           }
-          return { ...f, params: nextParams };
+          if (params.targetAngleDeg !== undefined) {
+            nextParams.targetAngleDeg = Number(params.targetAngleDeg);
+          }
+          if (params.innerRadiusMm !== undefined) {
+            nextParams.innerRadiusMm = Number(params.innerRadiusMm);
+          }
+          if (params.kFactor !== undefined) {
+            nextParams.kFactor = Number(params.kFactor);
+          }
+          if (params.direction === "UP" || params.direction === "DOWN") {
+            nextParams.direction = params.direction;
+          }
+          if (typeof params.angleExpression === "string") {
+            nextParams.angleExpression = params.angleExpression;
+          }
+          const nextName =
+            (f.type === "sheetFold" || f.type === "sheetEdgeFlange") && params.targetAngleDeg !== undefined
+              ? `${f.type === "sheetFold" ? "Dobrar" : "Aba"} ${Number(params.targetAngleDeg).toFixed(1)}° ${((nextParams.direction as string) ?? "UP") === "UP" ? "CIMA" : "BAIXO"}`
+              : f.name;
+          return { ...f, name: nextName, params: nextParams };
         });
         return rebuild({ ...state, features: nextFeatures });
       },

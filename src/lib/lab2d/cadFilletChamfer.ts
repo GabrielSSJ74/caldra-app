@@ -450,34 +450,68 @@ export function applyFilletToCorner(
 
   if (corner.kind === "polyline") {
     const { entity, vertexIndex } = corner;
-    const pts = [...entity.pts];
+    const pts = entity.pts;
     const n = pts.length;
+    if (n < 3) return { updatedEntities: allEntities, success: false };
 
-    // Discretiza o arco suavemente para manter a polilinha íntegra e fechada
-    const numArcPts = 8;
-    const arcPoints: Vec2[] = [];
-    let sweep = calc.endAngle - calc.startAngle;
-    while (sweep < 0) sweep += Math.PI * 2;
+    const isClosed = entity.closed !== false;
+    const prevIdx = (vertexIndex - 1 + n) % n;
+    const nextIdx = (vertexIndex + 1) % n;
+    const prevPt = pts[prevIdx]!;
+    const nextPt = pts[nextIdx]!;
 
-    for (let step = 0; step <= numArcPts; step++) {
-      const t = calc.startAngle + (step / numArcPts) * sweep;
-      arcPoints.push({
-        x: calc.arcCenter.x + calc.radius * Math.cos(t),
-        y: calc.arcCenter.y + calc.radius * Math.sin(t),
-      });
+    // Associa cutPointA/cutPointB ao lado anterior e próximo
+    const cutPrev = dist(calc.cutPointA, prevPt) <= dist(calc.cutPointB, prevPt) ? calc.cutPointA : calc.cutPointB;
+    const cutNext = cutPrev === calc.cutPointA ? calc.cutPointB : calc.cutPointA;
+
+    const arcId = uid();
+    const arcEntity: Entity = {
+      id: arcId,
+      layer: entity.layer,
+      group: entity.group,
+      type: "arc",
+      cx: calc.arcCenter.x,
+      cy: calc.arcCenter.y,
+      r: calc.radius,
+      a0: calc.startAngle,
+      a1: calc.endAngle,
+    };
+
+    // Reconstrói segmentos limpos sem facetar o arco em vértices de polilinha
+    const replacementLines: Entity[] = [];
+    const segCount = isClosed ? n : n - 1;
+    for (let i = 0; i < segCount; i++) {
+      const iNext = (i + 1) % n;
+      let p1 = pts[i]!;
+      let p2 = pts[iNext]!;
+      if (i === prevIdx && iNext === vertexIndex) {
+        p2 = cutPrev;
+      } else if (i === vertexIndex && iNext === nextIdx) {
+        p1 = cutNext;
+      }
+      if (dist(p1, p2) > 1e-4) {
+        replacementLines.push({
+          id: replacementLines.length === 0 ? entity.id : uid(),
+          layer: entity.layer,
+          group: entity.group,
+          type: "line",
+          x1: p1.x,
+          y1: p1.y,
+          x2: p2.x,
+          y2: p2.y,
+        });
+      }
     }
 
-    // Garante orientação contínua com a ordem dos vértices da polilinha
-    const prevPt = pts[(vertexIndex - 1 + n) % n]!;
-    if (dist(arcPoints[0]!, prevPt) > dist(arcPoints[numArcPts]!, prevPt)) {
-      arcPoints.reverse();
+    const updated: Entity[] = [];
+    for (const e of allEntities) {
+      if (e.id === entity.id) {
+        updated.push(...replacementLines, arcEntity);
+      } else {
+        updated.push(e);
+      }
     }
-
-    pts.splice(vertexIndex, 1, ...arcPoints);
-    const newPoly: Entity = { ...entity, pts };
-
-    const updated = allEntities.map((e) => (e.id === entity.id ? newPoly : e));
-    return { updatedEntities: updated, success: true };
+    return { updatedEntities: updated, createdArcId: arcId, success: true };
   }
 
   return { updatedEntities: allEntities, success: false };

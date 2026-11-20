@@ -378,18 +378,11 @@ export function ChamferLandscapeToolbar({
 
             {/* APARAR / ESTENDER */}
             <RibbonBtn
-              active={tool === "trim"}
+              active={tool === "trim" || tool === "smart_trim"}
               onClick={() => onPickTool("trim")}
               icon={Scissors}
               label="Aparar"
               shortcut="TR"
-            />
-            <RibbonBtn
-              active={tool === "smart_trim"}
-              onClick={() => onPickTool("smart_trim")}
-              icon={Scissors}
-              label="Aparar Encontro"
-              title="Apara automaticamente no primeiro limite ou encontro geométrico"
             />
             <RibbonBtn
               active={tool === "extend"}

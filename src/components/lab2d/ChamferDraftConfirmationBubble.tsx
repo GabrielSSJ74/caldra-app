@@ -14,11 +14,13 @@ import {
   buildParametricRectangle,
   buildPolygonParametric,
   buildMechanicalSlotAdvanced,
+  type LineCreationMode,
   type RectCreationMode,
   type CircleCreationMode,
   type PolygonCreationMode,
   type SlotCreationMode,
 } from "@/lib/lab2d/cadcraftEngine";
+import { buildCenterRadiusLineFromParams } from "@/chamfer/tools/polarReferenceEngine";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { triggerHaptic } from "@/lib/ui/haptics";
 
@@ -58,6 +60,8 @@ export interface PendingDraftShapeState {
   polygonMode: PolygonCreationMode;
   polygonAcrossFlatsMm: number;
   rectMode: RectCreationMode;
+  lineMode?: LineCreationMode;
+  centerPoint?: Vec2;
   circleMode?: CircleCreationMode;
   slotMode: SlotCreationMode;
   slotWidthMm: number;
@@ -76,6 +80,8 @@ export interface CreatePendingDraftShapeOptions {
   layer?: string;
   filletR?: number;
   rectMode?: RectCreationMode;
+  lineMode?: LineCreationMode;
+  centerPoint?: Vec2;
   circleMode?: CircleCreationMode;
   polygonSides?: number;
   polygonMode?: PolygonCreationMode;
@@ -107,12 +113,14 @@ function normalizeDraftOptions(
     | "slotWidthMm"
     | "isLiveDraft"
   >
-> & { arcMidPoint?: Vec2 } {
+> & { arcMidPoint?: Vec2; lineMode?: LineCreationMode; centerPoint?: Vec2 } {
   if (typeof layerOrOpts === "string") {
     return {
       layer: layerOrOpts,
       filletR: typeof filletROrUndefined === "number" ? filletROrUndefined : 0,
       rectMode: extraOpts?.rectMode ?? "corners",
+      lineMode: extraOpts?.lineMode ?? "end_to_end",
+      centerPoint: extraOpts?.centerPoint,
       circleMode: extraOpts?.circleMode ?? "center_radius",
       polygonSides: extraOpts?.polygonSides ?? 6,
       polygonMode: extraOpts?.polygonMode ?? "across_flats",
@@ -127,6 +135,8 @@ function normalizeDraftOptions(
     layer: layerOrOpts.layer ?? "0",
     filletR: layerOrOpts.filletR ?? 0,
     rectMode: layerOrOpts.rectMode ?? "corners",
+    lineMode: layerOrOpts.lineMode ?? "end_to_end",
+    centerPoint: layerOrOpts.centerPoint,
     circleMode: layerOrOpts.circleMode ?? "center_radius",
     polygonSides: layerOrOpts.polygonSides ?? 6,
     polygonMode: layerOrOpts.polygonMode ?? "across_flats",
@@ -186,6 +196,14 @@ export function createPendingDraftShapeState(
       Math.hypot(dx, dy) < 1e-6
         ? 0
         : Number(((((Math.atan2(-dy, dx) * 180) / Math.PI) + 360) % 360).toFixed(2));
+    const resolvedLineMode: LineCreationMode = opts.lineMode ?? "end_to_end";
+    const resolvedCenter: Vec2 | undefined =
+      resolvedLineMode === "center_radius"
+        ? opts.centerPoint ?? {
+            x: (entity.x1 + entity.x2) / 2,
+            y: (entity.y1 + entity.y2) / 2,
+          }
+        : undefined;
     return {
       kind,
       tool: kind,
@@ -197,7 +215,7 @@ export function createPendingDraftShapeState(
       heightMm: Math.abs(dy),
       filletRadiusMm: 0,
       cornerRadiusMm: 0,
-      radiusMm: len / 2,
+      radiusMm: Number((len / 2).toFixed(2)),
       lengthMm: len,
       chordMm: len,
       angleDeg: ang,
@@ -206,6 +224,8 @@ export function createPendingDraftShapeState(
       polygonMode: opts.polygonMode,
       polygonAcrossFlatsMm: opts.polygonAcrossFlatsMm,
       rectMode: opts.rectMode,
+      lineMode: resolvedLineMode,
+      centerPoint: resolvedCenter,
       circleMode: opts.circleMode,
       slotMode: opts.slotMode,
       slotWidthMm: opts.slotWidthMm,
@@ -821,6 +841,39 @@ export function rebuildPendingDraftShape(state: PendingDraftShapeState): Pending
     kind === "polyline" ||
     kind === "spline"
   ) {
+    if (state.lineMode === "center_radius") {
+      const center = state.centerPoint ?? {
+        x: (state.p0.x + state.p1.x) / 2,
+        y: (state.p0.y + state.p1.y) / 2,
+      };
+      const halfLen = Math.max(0.25, state.radiusMm);
+      const geom = buildCenterRadiusLineFromParams(center, halfLen, state.angleDeg);
+      const x1 = Number(geom.start.x.toFixed(4));
+      const y1 = Number(geom.start.y.toFixed(4));
+      const x2 = Number(geom.end.x.toFixed(4));
+      const y2 = Number(geom.end.y.toFixed(4));
+      return {
+        ...state,
+        centerPoint: center,
+        p0: { x: x1, y: y1 },
+        p1: { x: x2, y: y2 },
+        radiusMm: Number(geom.halfLengthMm.toFixed(2)),
+        lengthMm: Number(geom.totalLengthMm.toFixed(2)),
+        chordMm: Number(geom.totalLengthMm.toFixed(2)),
+        widthMm: Math.abs(x2 - x1),
+        heightMm: Math.abs(y2 - y1),
+        entity: {
+          id: state.entity.id || uid(),
+          layer,
+          type: "line",
+          x1,
+          y1,
+          x2,
+          y2,
+        },
+      };
+    }
+
     const len = Math.max(0.5, state.lengthMm);
     const rad = (state.angleDeg * Math.PI) / 180;
     const x2 = Number((state.p0.x + Math.cos(rad) * len).toFixed(4));
@@ -828,6 +881,7 @@ export function rebuildPendingDraftShape(state: PendingDraftShapeState): Pending
     return {
       ...state,
       p1: { x: x2, y: y2 },
+      radiusMm: Number((len / 2).toFixed(2)),
       chordMm: len,
       widthMm: Math.abs(x2 - state.p0.x),
       heightMm: Math.abs(y2 - state.p0.y),
@@ -1193,7 +1247,8 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
   const effectiveHasSubmodeBar =
     typeof hasSubmodeBar === "boolean"
       ? hasSubmodeBar
-      : kind === "rect" ||
+      : kind === "line" ||
+        kind === "rect" ||
         kind === "circle" ||
         kind === "polygon" ||
         kind === "slot" ||
@@ -1234,8 +1289,24 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
       next.kind = r > 0 ? "rrect" : "rect";
     }
     if (field === "diameter") next.radiusMm = Math.max(0.25, newVal / 2);
-    if (field === "radius") next.radiusMm = Math.max(0.25, newVal);
-    if (field === "length") next.lengthMm = Math.max(0.5, newVal);
+    if (field === "radius") {
+      next.radiusMm = Math.max(0.25, newVal);
+      if (
+        (next.kind === "line" || next.kind === "polyline") &&
+        next.lineMode === "center_radius"
+      ) {
+        next.lengthMm = Number((next.radiusMm * 2).toFixed(2));
+      }
+    }
+    if (field === "length") {
+      next.lengthMm = Math.max(0.5, newVal);
+      if (
+        (next.kind === "line" || next.kind === "polyline") &&
+        next.lineMode === "center_radius"
+      ) {
+        next.radiusMm = Number((next.lengthMm / 2).toFixed(2));
+      }
+    }
     if (field === "chord") {
       const nextChord = Math.max(0.5, newVal);
       next.chordMm = nextChord;
@@ -1377,15 +1448,38 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
           </>
         )}
 
-        {/* LINHA / POLILINHA / LINHA DE CONSTRUÇÃO / SPLINE: [ L = {comprimento} mm ✎ ] [ ∠ {ângulo}° ✎ ] */}
+        {/* LINHA / POLILINHA / LINHA DE CONSTRUÇÃO / SPLINE */}
         {(kind === "line" ||
           kind === "construction_line" ||
           kind === "polyline" ||
           kind === "spline") && (
           <>
+            {(kind === "line" || kind === "polyline") &&
+              pendingShape.lineMode === "center_radius" && (
+                <button
+                  type="button"
+                  data-testid="chamfer-draft-radius-btn"
+                  onClick={(ev) =>
+                    openFieldKeypad(
+                      "radius",
+                      "Meia-Distância R (do Centro à Ponta)",
+                      pendingShape.radiusMm,
+                      "mm",
+                      ev,
+                    )
+                  }
+                  style={amberPillStyle}
+                  className="flex items-center gap-1 transition-all hover:brightness-110 active:scale-95 cursor-pointer shrink-0"
+                >
+                  <span style={{ color: amberLabelColor }}>R =</span>
+                  <span>{pendingShape.radiusMm.toFixed(1)} mm</span>
+                  <span style={{ color: amberLabelColor, fontSize: "10px" }}>✎</span>
+                </button>
+              )}
             <button
               type="button"
-              onClick={(ev) => openFieldKeypad("length", "Comprimento L", pendingShape.lengthMm, "mm", ev)}
+              data-testid="chamfer-draft-length-btn"
+              onClick={(ev) => openFieldKeypad("length", "Comprimento Total L", pendingShape.lengthMm, "mm", ev)}
               style={cyanPillStyle}
               className="flex items-center gap-1 transition-all hover:brightness-110 active:scale-95 cursor-pointer shrink-0"
             >
@@ -1395,6 +1489,7 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
             </button>
             <button
               type="button"
+              data-testid="chamfer-draft-angle-btn"
               onClick={(ev) => openFieldKeypad("angle", "Ângulo Polar ∠", pendingShape.angleDeg, "°", ev)}
               style={emeraldPillStyle}
               className="flex items-center gap-1 transition-all hover:brightness-110 active:scale-95 cursor-pointer shrink-0"

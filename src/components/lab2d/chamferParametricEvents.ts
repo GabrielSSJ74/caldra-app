@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
+import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 
 export type ChamferParametricPanelId =
   | "none"
@@ -30,8 +31,24 @@ export interface ChamferParametricStatusSnapshot {
   sectionEnabled: boolean;
 }
 
+export interface ChamferSheetMetal3DEventDetail {
+  active: boolean;
+  shape: CadTessellatedShape | null;
+  label?: string;
+}
+
 export const CHAMFER_PARAMETRIC_ACTION_EVENT = "caldra:chamfer-parametric-action";
 export const CHAMFER_PARAMETRIC_STATUS_EVENT = "caldra:chamfer-parametric-status";
+export const CHAMFER_SHEET_METAL_3D_EVENT = "caldra:chamfer-sheet-metal-3d";
+
+export function broadcastChamferSheetMetal3D(detail: ChamferSheetMetal3DEventDetail): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<ChamferSheetMetal3DEventDetail>(CHAMFER_SHEET_METAL_3D_EVENT, {
+      detail,
+    }),
+  );
+}
 
 let latestStatus: ChamferParametricStatusSnapshot = {
   activePanel: "none",

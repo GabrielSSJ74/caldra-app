@@ -328,6 +328,7 @@ const TOOL_SHORT_CODES: Record<string, string> = {
   divide: "DIV",
   measure: "MED",
   dim: "COT",
+  polar_ref: "POL",
   loft_3d: "LFT",
 };
 
@@ -1063,6 +1064,15 @@ export function ChamferPrumoSpatialUI({
         icon: Pin,
         isActive: Boolean(temporaryOrigin),
         action: () => runAction("datum_set", onSetDatumAtCursor),
+      },
+      {
+        id: "polar_ref",
+        code3: "POL",
+        label: "Ref. Polar (Linha de Referência Não-Vetorial)",
+        groupId: "precisao",
+        icon: Crosshair,
+        isActive: tool === "polar_ref",
+        action: () => activate2DTool("polar_ref", "polar_ref"),
       },
       {
         id: "anchor_ref",
@@ -2982,6 +2992,27 @@ export function ChamferPrumoSpatialUI({
           >
             <Search className="size-3.5" />
             <span>Lupa ({loupeMode})</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="prumo-prec-polar-ref-btn"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_select");
+              onPickTool("polar_ref");
+              recordToolUsage("polar_ref", "polar_ref");
+              setPrecisionGridOpen(false);
+            }}
+            className={cn(
+              "flex flex-col items-center justify-center gap-1 rounded-xl border py-2 cursor-pointer",
+              tool === "polar_ref"
+                ? "border-red-500 bg-red-500/20 text-red-400"
+                : "border-slate-500/25",
+            )}
+          >
+            <Crosshair className="size-3.5" />
+            <span>⌖ Ref. Polar</span>
           </button>
 
           <button
