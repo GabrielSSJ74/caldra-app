@@ -857,9 +857,9 @@ export function rebuildPendingDraftShape(state: PendingDraftShapeState): Pending
         centerPoint: center,
         p0: { x: x1, y: y1 },
         p1: { x: x2, y: y2 },
-        radiusMm: Number(geom.halfLengthMm.toFixed(2)),
-        lengthMm: Number(geom.totalLengthMm.toFixed(2)),
-        chordMm: Number(geom.totalLengthMm.toFixed(2)),
+        radiusMm: Number(geom.radiusMm.toFixed(2)),
+        lengthMm: Number(geom.lengthMm.toFixed(2)),
+        chordMm: Number(geom.lengthMm.toFixed(2)),
         widthMm: Math.abs(x2 - x1),
         heightMm: Math.abs(y2 - y1),
         entity: {

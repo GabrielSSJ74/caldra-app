@@ -14816,7 +14816,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         setPending([]);
                         setDraft(null);
                       } else if (tool === "spline") {
-                        finishSpline(false);
+                        finishPolyline(false);
                       } else {
                         commitPendingDraftShape({ ...activeUnifiedDraftShape, isLiveDraft: false });
                         setPending([]);
