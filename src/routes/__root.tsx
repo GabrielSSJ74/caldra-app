@@ -91,47 +91,33 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 const THEME_BOOT = `(function(){try{
 var tm=localStorage.getItem("caldra_theme_mode");
 var ac=localStorage.getItem("caldra_accent_color");
-var oa=localStorage.getItem("caldra_orbs_use_accent");
 var s=JSON.parse(localStorage.getItem("caldra.settings")||"{}");
 var t=tm||s.theme||"light";
 var a=ac||s.accent||"blue";
-if(a==="#0066FF"||a==="#0066ff"||a==="#007AFF"||a==="#00CCFF"||a==="#003471"||a==="#00A8FF"||a==="#2CA5D6")a="blue";
-if(a==="#F59E0B"||a==="#f59e0b"||a==="#D16002"||a==="#8A3300"||a==="#F7941D")a="amber";
-if(a==="#B22222"||a==="#b22222"||a==="#D61818"||a==="#E51A4C"||a==="#C11034"||a==="magenta")a="crimson";
+if(a==="#0066FF"||a==="#0066ff"||a==="#007AFF"||a==="#00CCFF")a="blue";
+if(a==="#F59E0B"||a==="#f59e0b")a="amber";
+if(a==="#B22222"||a==="#b22222"||a==="magenta")a="crimson";
 var r=document.documentElement;
 var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
 var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
-var resolved=t==="amoled"?"amoled":dark?"dark":"light";
-r.dataset.theme=resolved;
-r.style.colorScheme=dark?"dark":"light";
 r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
-r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");r.classList.toggle("accent-amber",a==="amber");
+r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");
 var isCrimson=a==="crimson";
 r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magenta",isCrimson);
-var useOrbsAccent=oa==="true"||oa==="1"||s.useAccentInOrbs===true;
-r.dataset.orbsAccent=useOrbsAccent?"true":"false";
 var co=typeof s.cardOpacity==="number"?Math.min(100,Math.max(20,s.cardOpacity)):90;
 var bo=typeof s.bubbleOpacity==="number"?Math.min(100,Math.max(20,s.bubbleOpacity)):35;
 var uiOp=(co/100).toFixed(2);
-var bFill=(0.10+((bo-20)/80)*0.28).toFixed(3);
-var bBorder=Math.min(0.62,Number(bFill)*1.35+0.12).toFixed(3);
 r.style.setProperty("--card-opacity",uiOp);
 r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
-r.style.setProperty("--bubble-tint-alpha",bFill);
-r.style.setProperty("--bubble-border-alpha",bBorder);
 r.style.setProperty("--ui-opacity",uiOp);
 r.setAttribute("data-bg-style",s.auroraStyle||"padrao");
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
-if(location.search.indexOf("autostart=1")!==-1||sessionStorage.getItem("caldra.genesis_session_done")==="1"){r.classList.add("boot-done");}
-var m=document.querySelector('meta[name="theme-color"]');
-if(m)m.setAttribute("content",resolved==="light"?"#EAEEF3":resolved==="amoled"?"#000000":"#0B0D11");
 }catch(e){}})();`;
 
 /** Splash de abertura: pinta o fundo escuro técnico (#030712) antes do JS e entrega sem flash para a animação CAD 3D. */
 const BOOT_SPLASH_STYLE = `
-@keyframes caldraBootAutoHide{to{opacity:0;pointer-events:none}}
-#caldra-boot{position:fixed;inset:0;z-index:9999;background:#030712;transition:opacity .25s ease;animation:caldraBootAutoHide .25s ease 1.5s forwards}
-#caldra-boot.done,.boot-done #caldra-boot{opacity:0;pointer-events:none;display:none}
+#caldra-boot{position:fixed;inset:0;z-index:9999;background:#030712;transition:opacity .25s ease}
+#caldra-boot.done{opacity:0;pointer-events:none}
 `;
 const BOOT_SPLASH_HTML = ``;
 

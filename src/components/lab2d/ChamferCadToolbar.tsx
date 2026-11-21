@@ -70,17 +70,13 @@ import {
   Zap,
   Hand,
   Eye,
-  Trash2,
 } from "lucide-react";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
 import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
-import type { RevEngCategoryId, RevEngWizardStep } from "@/lib/lab2d/revEngTypes";
-import type { DirectModeling3DTool } from "@/lib/lab2d/cadDirectModeling3D";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
-import { dispatchChamferParametricPanel } from "./chamferParametricEvents";
 
 /** Ícone vetorial minimalista de Nós / Vértices Interligados para o Micro-Dock */
 function ControlNodesIcon({ className }: { className?: string }) {
@@ -111,7 +107,6 @@ export type CadCategory =
   | "modificar"
   | "precisao"
   | "medir"
-  | "cor"
   | "chapa"
   | "estruturas"
   | "detalhes";
@@ -141,7 +136,6 @@ interface ChamferCadToolbarProps {
   onExplodeSelection: () => void;
   onDivideSelection?: () => void;
   onCenterSelection?: () => void;
-  onDeleteSelection?: () => void;
   onArrayLinear: () => void;
   onArrayPolar: () => void;
 
@@ -170,20 +164,6 @@ interface ChamferCadToolbarProps {
   onCycleLoupeMode?: () => void;
   nudgeHudVisible?: boolean;
   onToggleNudgeHud?: () => void;
-
-  // Divisão do Snap, Guias de Interação Exclusivas e Visualização Global (Upgrade PRE)
-  snapDivision?: number;
-  onSetSnapDivision?: (n: number) => void;
-  showAllSnaps?: boolean;
-  onToggleShowAllSnaps?: () => void;
-  interactionGuideMode?: "off" | "purple_ref" | "blue_line";
-  onSetInteractionGuideMode?: (mode: "off" | "purple_ref" | "blue_line") => void;
-  onStartSetReferencePoint?: () => void;
-  temporaryOrigin?: { p: { x: number; y: number }; label: string } | null;
-  onClearTemporaryOrigin?: () => void;
-  guideModeOn?: boolean;
-  onToggleGuideMode?: () => void;
-  guideEntitiesCount?: number;
 
   // Medição e Cotas
   dimKind: DimKind;
@@ -216,18 +196,7 @@ interface ChamferCadToolbarProps {
   onBoolean2D?: (op: "union" | "subtract" | "intersect") => void;
   onCreateHatch?: () => void;
   onSetRefZero?: () => void;
-  onOpenRevEngCategory?: (category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => void;
 
-  // Modelagem Direta 3D Exclusiva (Modo CAD 3D)
-  activeDirect3DTool?: DirectModeling3DTool;
-  selectionKind3D?: "none" | "face" | "edge" | "body";
-  onSelectDirect3DTool?: (tool: DirectModeling3DTool) => void;
-  onClearSelection3D?: () => void;
-  onReturnToSketch2D?: () => void;
-
-  activeStrokeColor?: string | null;
-  onSelectStrokeColor?: (hex: string | null, layerId?: string) => void;
-  compactMode?: boolean;
   className?: string;
   isDark?: boolean;
 }
@@ -254,7 +223,6 @@ export function ChamferCadToolbar({
   onExplodeSelection,
   onDivideSelection,
   onCenterSelection,
-  onDeleteSelection,
   onArrayLinear,
   onArrayPolar,
   onOpenQuickCommand,
@@ -279,18 +247,6 @@ export function ChamferCadToolbar({
   onCycleLoupeMode,
   nudgeHudVisible = false,
   onToggleNudgeHud,
-  snapDivision = 0,
-  onSetSnapDivision,
-  showAllSnaps = false,
-  onToggleShowAllSnaps,
-  interactionGuideMode = "blue_line",
-  onSetInteractionGuideMode,
-  onStartSetReferencePoint,
-  temporaryOrigin,
-  onClearTemporaryOrigin,
-  guideModeOn = false,
-  onToggleGuideMode,
-  guideEntitiesCount = 0,
   dimKind,
   onPickDimKind,
   thickness,
@@ -314,15 +270,6 @@ export function ChamferCadToolbar({
   onBoolean2D,
   onCreateHatch,
   onSetRefZero,
-  onOpenRevEngCategory,
-  activeDirect3DTool = "select_3d",
-  selectionKind3D = "none",
-  onSelectDirect3DTool,
-  onClearSelection3D,
-  onReturnToSketch2D,
-  activeStrokeColor = null,
-  onSelectStrokeColor,
-  compactMode = false,
   className,
   isDark = true,
 }: ChamferCadToolbarProps) {
@@ -334,7 +281,6 @@ export function ChamferCadToolbar({
     modificar: "offset",
     precisao: "snap",
     medir: "measure",
-    cor: "corte",
     chapa: "flanges",
     estruturas: "profile",
     detalhes: "hole",
@@ -377,16 +323,16 @@ export function ChamferCadToolbar({
   };
 
   const getFlyoutPosition = (cat: CadCategory): React.CSSProperties => {
-    if (cat === "estruturas" || cat === "detalhes" || cat === "chapa" || cat === "cor") {
+    if (cat === "estruturas" || cat === "detalhes" || cat === "chapa") {
       return { bottom: "4px" };
     }
     if (cat === "selecionar" || cat === "criar") {
       return { top: "4px" };
     }
-    return { top: "12%" };
+    return { top: "18%" };
   };
 
-  // Fecha flyout / Micro-Dock ao tocar fora no canvas
+  // Fecha flyout / Micro-Dock ao tocar fora no canvas (Micro-Dock 'selecionar' fecha sempre)
   useEffect(() => {
     if (openCat === "none") return;
     function handlePointerOutside(e: PointerEvent | MouseEvent) {
@@ -403,12 +349,24 @@ export function ChamferCadToolbar({
   const handleToggleCat = (cat: CadCategory) => {
     triggerHaptic("tap");
     onDeactivateOrbitTool?.();
-    if (activeMode === "3d") {
+    if (
+      activeMode === "3d" &&
+      (cat === "criar" ||
+        cat === "modificar" ||
+        cat === "precisao" ||
+        cat === "medir" ||
+        cat === "chapa" ||
+        cat === "estruturas" ||
+        cat === "detalhes")
+    ) {
+      setOpenCat("none");
+      AudioManager.play("ui_toggle_open");
       window.dispatchEvent(
         new CustomEvent("chamfer-3d-open-category", {
           detail: { category: cat === "precisao" ? "esboco" : cat },
         }),
       );
+      return;
     }
     setOpenCat((prev) => {
       const next = prev === cat ? "none" : cat;
@@ -424,8 +382,8 @@ export function ChamferCadToolbar({
     if (catId) {
       setLastUsedTool((prev) => ({ ...prev, [catId]: t }));
     }
-    // Recolhimento automático imediato ao selecionar ferramenta em SEL, CRI ou MOD (ou quando não fixado)
-    if (catId === "selecionar" || catId === "criar" || catId === "modificar" || !isPinned) {
+    // Micro-Dock de seleção recolhe SEMPRE imediatamente após o toque (200ms)
+    if (catId === "selecionar" || !isPinned) {
       setOpenCat("none");
     }
   };
@@ -447,11 +405,9 @@ export function ChamferCadToolbar({
           tool === "polygon" ||
           tool === "ellipse" ||
           tool === "spline" ||
-          tool === "freehand" ||
           tool === "slot" ||
           tool === "point" ||
-          tool === "text" ||
-          tool === "trace_part"
+          tool === "text"
         );
       case "modificar":
         return (
@@ -539,413 +495,32 @@ export function ChamferCadToolbar({
 
   const activeCategoryData = categories.find((c) => c.id === openCat);
 
-  // Fecha qualquer flyout 2D quando alternar para o modo CAD 3D
-  useEffect(() => {
-    if (activeMode === "3d") {
-      setOpenCat("none");
-    }
-  }, [activeMode]);
-
-  const selectDirect3D = (nextTool: DirectModeling3DTool) => {
-    triggerHaptic("selection");
-    AudioManager.play("ui_select");
-    onSelectDirect3DTool?.(nextTool);
-    window.dispatchEvent(
-      new CustomEvent("chamfer-select-direct-3d-tool", {
-        detail: { tool: nextTool },
-      }),
-    );
-    if (nextTool === "color_material_3d") {
-      dispatchChamferParametricPanel("section");
-    }
-  };
-
-  // BARRA VERTICAL EXCLUSIVA DE FERRAMENTAS 3D (MODO CAD 3D)
-  if (activeMode === "3d") {
-    const direct3DTools: {
-      id: DirectModeling3DTool;
-      short: string;
-      label: string;
-      desc: string;
-      icon: typeof Box;
-      matchTools?: DirectModeling3DTool[];
-      compatibleWith: ("face" | "edge" | "body" | "none")[];
-    }[] = [
-      {
-        id: "select_3d",
-        short: "SEL 3D",
-        label: "Selecionar 3D",
-        desc: "Selecionar Corpo, Face ou Aresta (toque novamente para limpar seleção)",
-        icon: MousePointer2,
-        compatibleWith: ["none", "face", "edge", "body"],
-      },
-      {
-        id: "extrude_3d",
-        short: "EXTR",
-        label: "Extrudar",
-        desc: "Puxar/empurrar faces ou perfis (União, Novo Corpo, Subtrair, Interseção)",
-        icon: Box,
-        compatibleWith: ["face", "body", "none"],
-      },
-      {
-        id: "transform_3d",
-        short: "MOVER",
-        label: "Mover / Girar (+Z)",
-        desc: "Gizmo completo +X/+Y/+Z (Ortho < +Z), arcos de rotação, Centro Geométrico ⌖ e Copy: ON/OFF",
-        icon: Move,
-        compatibleWith: ["body", "face", "edge", "none"],
-      },
-      {
-        id: "loft_3d",
-        short: "LOFT",
-        label: "Loft 3D (Transição Multisseção)",
-        desc: "Transição suave 3D entre 2 ou mais seções transversais (ex.: Retângulo ➔ Hexágono ➔ Círculo)",
-        icon: Boxes,
-        compatibleWith: ["body", "face", "edge", "none"],
-      },
-      {
-        id: "revolve_3d",
-        short: "REVOL",
-        label: "Revolve 3D (Revolução)",
-        desc: "Revolucionar perfil fechado (0°..360°) em torno do eixo X, Y ou Z",
-        icon: RotateCw,
-        compatibleWith: ["body", "face", "none"],
-      },
-      {
-        id: "sweep_3d",
-        short: "SWEEP",
-        label: "Sweep 3D (Varredura)",
-        desc: "Varrer perfil fechado ao longo de caminho reto ou curvo (tubulações e dutos)",
-        icon: ArrowRightLeft,
-        compatibleWith: ["body", "face", "edge", "none"],
-      },
-      {
-        id: "fillet_3d",
-        short: "FILLET",
-        label: "Fillet / Chamfer",
-        desc: "Arredondar (Raio R) ou chanfrar (45°) arestas e quinas 3D",
-        icon: Sparkles,
-        matchTools: ["fillet_3d", "chamfer_3d"],
-        compatibleWith: ["edge", "none"],
-      },
-      {
-        id: "shell_3d",
-        short: "SHELL",
-        label: "Shell / Casca",
-        desc: "Tubo Metalon vazado (2 faces) ou caixa oca (1 face) com parede independente",
-        icon: Layers,
-        compatibleWith: ["face", "body", "none"],
-      },
-      {
-        id: "offset_face_3d",
-        short: "FACE",
-        label: "Offset Face",
-        desc: "Puxar ou recuar qualquer face plana ou parede para alongar tubos e bases",
-        icon: CornerDownRight,
-        compatibleWith: ["face", "none"],
-      },
-      {
-        id: "rotate_axis_3d",
-        short: "45°",
-        label: "Corte 45° / Girar Face",
-        desc: "Inclinar face de extremidade em torno de uma aresta para cortes em meia-esquadria",
-        icon: Compass,
-        compatibleWith: ["face", "edge", "none"],
-      },
-      {
-        id: "hole_3d",
-        short: "FURO",
-        label: "Furo 3D (M6–M20)",
-        desc: "Inserir furação mecânica paramétrica ISO (Passante, Cego, Rebaixado, Escareado ou Roscado M6–M20)",
-        icon: CircleDot,
-        compatibleWith: ["face", "body", "none"],
-      },
-      {
-        id: "array_3d",
-        short: "ARRAY",
-        label: "Array 3D / Grade",
-        desc: "Array 3D inteligente com detecção automática de vão livre e divisão exata de tubos para grades e portões",
-        icon: Grid,
-        compatibleWith: ["body", "face", "none"],
-      },
-      {
-        id: "mirror_3d",
-        short: "ESPEL",
-        label: "Espelhar 3D",
-        desc: "Espelhar simetricamente corpos 3D nos planos X, Y, Z ou face",
-        icon: FlipHorizontal,
-        compatibleWith: ["body", "face", "none"],
-      },
-      {
-        id: "scale_3d",
-        short: "ESCAL",
-        label: "Escalar / Alinhar / Booleana",
-        desc: "Redimensionar, alinhar face-a-face ou aplicar União/Subtração/Interseção entre corpos 3D",
-        icon: Maximize2,
-        matchTools: ["scale_3d", "align_3d"],
-        compatibleWith: ["body", "none"],
-      },
-      {
-        id: "color_material_3d",
-        short: "INSPEC",
-        label: "Inspecionar / Seção / BOM",
-        desc: "Corte em Seção X/Y/Z ao vivo, Lista de Corte de Perfis, BOM, Interferência e Vista Explodida",
-        icon: Eye,
-        compatibleWith: ["body", "face", "edge", "none"],
-      },
-      {
-        id: "project_3d",
-        short: "PROJ",
-        label: "Project 3D → 2D",
-        desc: "Projetar faces, arestas ou corpos 3D no esboço 2D como linhas de referência",
-        icon: Layers,
-        compatibleWith: ["face", "edge", "body", "none"],
-      },
-      {
-        id: "create_drawing_3d",
-        short: "VISTAS",
-        label: "Create Drawing (Vistas 2D)",
-        desc: "Gerar folha de vistas ortográficas 2D (Frontal, Superior, Lateral, Corte A-A) com cotas",
-        icon: FileText,
-        compatibleWith: ["body", "face", "none"],
-      },
-    ];
-
-    const hasActive3DSelection = Boolean(hasSelection || selectionKind3D !== "none");
-
-    return (
-      <aside
-        ref={toolbarRef}
-        data-testid="chamfer-cad-3d-exclusive-toolbar"
-        aria-label="Barra exclusiva de ferramentas CAD 3D"
-        style={{
-          backgroundColor: "var(--chamfer-bar-bg)",
-          borderColor: "var(--chamfer-border)",
-          color: "var(--chamfer-text-secondary)",
-          width: compactMode ? 40 : undefined,
-        }}
-        className={cn(
-          "relative flex h-full max-h-full shrink-0 flex-col items-center border shadow-xl backdrop-blur-md select-none z-40 transition-colors",
-          compactMode ? "w-[40px] rounded-xl p-0.5" : "w-12 sm:w-13 rounded-2xl p-1",
-          className,
-        )}
-      >
-        {/* BOTÃO RÁPIDO DESELECT ALL NO TOPO QUANDO HÁ SELEÇÃO 3D ATIVA */}
-        {hasActive3DSelection && (
-          <div className="w-full pb-1 mb-0.5 border-b border-slate-800/80 flex flex-col items-center shrink-0">
-            <button
-              type="button"
-              data-testid="chamfer-3d-deselect-all-btn"
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_select");
-                onClearSelection3D?.();
-                selectDirect3D("select_3d");
-              }}
-              title="Deselect All — Limpar toda a seleção 3D ativa"
-              aria-label="Deselect All"
-              className="group relative flex min-h-[32px] w-full flex-col items-center justify-center rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-300 transition-all hover:bg-amber-500/25 active:scale-95 cursor-pointer"
-            >
-              <X className="size-3" />
-              <span className="text-[6.5px] font-mono font-extrabold tracking-tighter leading-none uppercase">
-                LIMPAR
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* FERRAMENTAS DE EDIÇÃO E MODIFICAÇÃO 3D — ROLÁVEL SUAVEMENTE */}
-        <div
-          ref={scrollContainerRef}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          className="flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none py-0.5 flex flex-col items-center gap-1"
-          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
-        >
-          {direct3DTools.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.matchTools
-              ? item.matchTools.includes(activeDirect3DTool)
-              : activeDirect3DTool === item.id;
-            const isCompatible =
-              selectionKind3D === "none" || item.compatibleWith.includes(selectionKind3D);
-            const isRecommended =
-              selectionKind3D !== "none" &&
-              item.id !== "select_3d" &&
-              item.compatibleWith.includes(selectionKind3D);
-
-            return (
-              <div key={item.id} className="relative w-full shrink-0 flex items-center justify-center">
-                <button
-                  type="button"
-                  data-testid={`chamfer-3d-tool-${item.id}`}
-                  onClick={(e) => {
-                    if (isDragging.current) {
-                      e.stopPropagation();
-                      return;
-                    }
-                    if (item.id === "select_3d" && activeDirect3DTool === "select_3d" && hasSelection) {
-                      onClearSelection3D?.();
-                    }
-                    selectDirect3D(item.id);
-                  }}
-                  title={`${item.label} — ${item.desc}`}
-                  aria-label={item.label}
-                  style={
-                    isActive
-                      ? {
-                          backgroundColor: "#00B4D8",
-                          color: "#05080F",
-                          borderColor: "#00E5FF",
-                        }
-                      : isRecommended
-                        ? {
-                            backgroundColor: "rgba(0, 180, 216, 0.14)",
-                            color: "#38BDF8",
-                            borderColor: "rgba(0, 180, 216, 0.45)",
-                          }
-                        : {
-                            borderColor: "transparent",
-                            color: "var(--chamfer-text-secondary)",
-                          }
-                  }
-                  className={cn(
-                    "group relative flex min-h-[38px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation cursor-pointer",
-                    isActive && "shadow-md scale-[1.02]",
-                    !isCompatible && !isActive && "opacity-35",
-                  )}
-                >
-                  {isRecommended && !isActive && (
-                    <span
-                      className="absolute top-1 right-1 size-1.5 rounded-full bg-[#00B4D8]"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <Icon className="size-3.5 transition-transform group-hover:scale-110" />
-                  <span className="text-[7px] font-mono font-bold tracking-tight mt-0.5 leading-none uppercase">
-                    {item.short}
-                  </span>
-                </button>
-              </div>
-            );
-          })}
-
-          {/* 10. EXCLUIR 3D (DELETE) */}
-          <div className="relative w-full shrink-0 flex items-center justify-center">
-            <button
-              type="button"
-              data-testid="chamfer-3d-tool-delete"
-              disabled={!hasSelection}
-              onClick={(e) => {
-                if (isDragging.current) {
-                  e.stopPropagation();
-                  return;
-                }
-                triggerHaptic("action");
-                AudioManager.play("ui_select");
-                onDeleteSelection?.();
-              }}
-              title="Excluir 3D (Delete) — Apagar corpo ou sub-elemento selecionado"
-              aria-label="Excluir 3D"
-              style={{
-                borderColor: "transparent",
-                color: hasSelection ? "#F87171" : "var(--chamfer-text-muted)",
-              }}
-              className={cn(
-                "group relative flex min-h-[38px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation",
-                hasSelection
-                  ? "hover:bg-rose-500/15 hover:border-rose-500/40 cursor-pointer"
-                  : "opacity-40 cursor-not-allowed",
-              )}
-            >
-              <Trash2 className="size-3.5 transition-transform group-hover:scale-110" />
-              <span className="text-[7px] font-mono font-bold tracking-tight mt-0.5 leading-none uppercase">
-                EXCLUIR
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* BOTÃO ESPECÍFICO "SKETCH 2D" NO FINAL DA BARRA ESQUERDA (RETORNO TOTAL AO 2D NORMAL) */}
-        <div
-          style={{ borderColor: "var(--chamfer-border)" }}
-          className="w-full pt-1.5 mt-0.5 border-t flex flex-col items-center shrink-0"
-        >
-          <button
-            type="button"
-            data-testid="chamfer-3d-return-sketch-2d-btn"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_select");
-              if (onReturnToSketch2D) {
-                onReturnToSketch2D();
-              } else {
-                onModeChange("2d");
-              }
-            }}
-            title="Sketch 2D — Voltar para a prancheta e ferramentas normais do CAD 2D"
-            aria-label="Sketch 2D"
-            style={{
-              backgroundColor: "var(--chamfer-accent-soft)",
-              borderColor: "var(--chamfer-accent-border)",
-              color: "var(--chamfer-accent)",
-            }}
-            className="group relative flex min-h-[42px] w-full flex-col items-center justify-center rounded-xl border px-0.5 py-1 transition-all hover:brightness-110 active:scale-95 cursor-pointer shadow-xs"
-          >
-            <PenLine className="size-3.5 transition-transform group-hover:scale-110" />
-            <span className="text-[6.5px] font-mono font-extrabold tracking-tighter mt-0.5 leading-tight uppercase text-center">
-              Sketch 2D
-            </span>
-          </button>
-        </div>
-      </aside>
-    );
-  }
-
   return (
     <aside
       ref={toolbarRef}
-      data-testid="chamfer-left-rail"
       aria-label="Barra de ferramentas CAD"
       style={{
-        backgroundColor: isDark ? "rgba(27, 36, 54, 0.92)" : "#FFFFFF",
-        backdropFilter: isDark ? "blur(14px)" : undefined,
-        WebkitBackdropFilter: isDark ? "blur(14px)" : undefined,
-        borderColor: isDark ? "#2D3B55" : "#E2E8F0",
-        color: isDark ? "#CBD5E1" : "#334155",
-        boxShadow: isDark
-          ? "0 4px 16px rgba(0, 0, 0, 0.28)"
-          : "0 2px 10px rgba(15, 23, 42, 0.04)",
-        width: compactMode ? 40 : undefined,
+        backgroundColor: isDark
+          ? "rgba(15, 23, 42, var(--ui-opacity, 0.92))"
+          : "rgba(255, 255, 255, var(--ui-opacity, 0.94))",
       }}
       className={cn(
-        "relative flex h-full max-h-full shrink-0 flex-col items-center border backdrop-blur-md select-none z-40 transition-colors",
-        compactMode
-          ? "w-[40px] p-0.5 rounded-xl shadow-lg"
-          : cn("w-11 sm:w-12 p-1", isDark ? "rounded-2xl shadow-xl" : "rounded-[28px]"),
+        "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
+        isDark
+          ? "border-slate-800/80 text-slate-300"
+          : "border-slate-200 text-slate-700 shadow-md",
         className,
       )}
     >
-      {/* BOTÕES PRINCIPAIS DE FUNÇÃO (SEL, CRI, MOD, PRE, MED, CHP, EST, DET) — SUB-CONTAINER DE SCROLL VERTICAL DEDICADO ACIMA DE COR */}
+      {/* 8 BOTÕES PRINCIPAIS DE FUNÇÃO — ROLÁVEL POR SWIPE VERTICAL / TOUCH / POINTER */}
       <div
         ref={scrollContainerRef}
-        data-testid="chamfer-left-rail-scroll-container"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className={cn(
-          "min-h-0 flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none flex flex-col items-center",
-          compactMode ? "py-1 gap-1" : "py-1 gap-1",
-        )}
-        style={{
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-          WebkitOverflowScrolling: "touch",
-          touchAction: "pan-y",
-        }}
+        className="flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none py-1 flex flex-col items-center gap-1.5"
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
       >
         {categories.map((cat) => {
           const Icon = cat.icon;
@@ -956,7 +531,6 @@ export function ChamferCadToolbar({
             <div key={cat.id} className="relative w-full shrink-0 flex items-center justify-center">
               <button
                 type="button"
-                data-testid={`chamfer-rail-cat-${cat.short.toLowerCase()}`}
                 onPointerDown={(e) => {
                   if (e.pointerType === "mouse" && e.button !== 0) return;
                 }}
@@ -971,69 +545,27 @@ export function ChamferCadToolbar({
                 }}
                 title={`${cat.label} — ${cat.desc}`}
                 aria-label={cat.label}
-                style={
+                className={cn(
+                  "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl transition-all touch-manipulation cursor-pointer",
                   isOpen
-                    ? isDark
-                      ? {
-                          backgroundColor: "rgba(14, 165, 233, 0.22)",
-                          color: "#F8FAFC",
-                          borderColor: "#38BDF8",
-                          borderWidth: "1.5px",
-                        }
-                      : {
-                          backgroundColor: "#FFE4E6",
-                          color: "#E11D48",
-                          borderColor: "#FDA4AF",
-                          borderWidth: "1.5px",
-                        }
+                    ? "bg-red-600 text-white shadow-md shadow-red-600/30 scale-[1.02]"
                     : active
                       ? isDark
-                        ? {
-                            backgroundColor: "rgba(14, 165, 233, 0.22)",
-                            borderColor: "#38BDF8",
-                            color: "#7DD3FC",
-                            borderWidth: "1.5px",
-                          }
-                        : {
-                            backgroundColor: "#FFE4E6",
-                            borderColor: "#FDA4AF",
-                            color: "#E11D48",
-                            borderWidth: "1.5px",
-                          }
-                      : {
-                          borderColor: "transparent",
-                          color: isDark ? "#CBD5E1" : "#334155",
-                        }
-                }
-                className={cn(
-                  "group relative flex flex-col items-center justify-center border transition-all touch-manipulation cursor-pointer shrink-0",
-                  compactMode
-                    ? "min-h-[34px] w-[34px] h-[34px] rounded-full"
-                    : "min-h-[36px] size-9 w-full rounded-xl",
-                  isOpen && (isDark ? "shadow-md scale-[1.02]" : "shadow-xs scale-[1.02]"),
+                        ? "border border-red-500/40 bg-red-950/50 text-red-400 shadow-xs"
+                        : "border border-red-300 bg-red-50 text-red-600 font-bold shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:border-slate-700/60 hover:bg-slate-900/80 hover:text-slate-100"
+                        : "text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
-                <Icon className={cn(compactMode ? "size-3.5" : "size-4", "transition-transform group-hover:scale-110")} />
-                <span
-                  style={
-                    !isOpen && !active
-                      ? { color: isDark ? "#94A3B8" : "#475569" }
-                      : undefined
-                  }
-                  className={cn(
-                    "font-mono font-bold tracking-wider mt-0.5 leading-none uppercase",
-                    compactMode ? "text-[6.5px]" : "text-[7px]",
-                  )}
-                >
+                <Icon className="size-4 transition-transform group-hover:scale-110" />
+                <span className="text-[7.5px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase">
                   {cat.short}
                 </span>
 
                 {/* Indicador de ferramenta ativa no grupo */}
                 {active && !isOpen && (
-                  <span
-                    style={{ backgroundColor: isDark ? "#38BDF8" : "#E11D48" }}
-                    className="absolute top-1 right-1 size-1.5 rounded-full shadow-xs animate-pulse"
-                  />
+                  <span className="absolute top-1 right-1 size-1.5 rounded-full bg-red-500 shadow-xs animate-pulse" />
                 )}
               </button>
             </div>
@@ -1041,85 +573,65 @@ export function ChamferCadToolbar({
         })}
       </div>
 
-      {/* SELETOR RÁPIDO DE CAMADA & COR TÉCNICA ATIVA (COR — FIXO NO RODAPÉ DA CÁPSULA ESQUERDA) */}
+      {/* SELETOR RÁPIDO DE CAMADA ATIVA (CORTE, DOBRA, RECORTE, MARCAÇÃO) */}
       {setActiveLayer && (
-        <div
-          style={{ borderColor: isDark ? "#2D3B55" : "var(--chamfer-border)" }}
-          className="w-full pt-1 border-t flex flex-col items-center shrink-0"
-        >
+        <div className="w-full pt-1 border-t border-slate-800/80 flex flex-col items-center shrink-0">
           <button
             type="button"
-            data-testid="chamfer-rail-cat-cor"
             onClick={() => {
               triggerHaptic("selection");
-              handleToggleCat("cor");
+              const order = ["corte", "dobra", "recorte", "marcacao"];
+              const curIdx = order.indexOf(activeLayer ?? "corte");
+              const next = order[(curIdx + 1) % order.length] ?? "corte";
+              setActiveLayer(next);
             }}
-            title={`Cor & Camada ativa: ${activeLayer}. Toque para abrir paleta de cores e camadas.`}
-            aria-label={`Cor e Camada: ${activeLayer}`}
-            style={{
-              backgroundColor:
-                openCat === "cor"
-                  ? isDark
-                    ? "rgba(14, 165, 233, 0.22)"
-                    : "var(--chamfer-accent-soft)"
-                  : isDark
-                    ? "#232E45"
-                    : "var(--chamfer-surface-elevated)",
-              borderColor:
-                openCat === "cor"
-                  ? isDark
-                    ? "#38BDF8"
-                    : "var(--chamfer-accent)"
-                  : isDark
-                    ? "#334361"
-                    : "var(--chamfer-border)",
-              color:
-                openCat === "cor" && isDark
-                  ? "#7DD3FC"
-                  : isDark
-                    ? "#CBD5E1"
-                    : "var(--chamfer-text-secondary)",
-            }}
+            title={`Camada ativa: ${activeLayer}. Toque para alternar (Corte, Dobra, Recorte, Marcação).`}
+            aria-label={`Camada ativa: ${activeLayer}`}
             className={cn(
-              "group relative flex flex-col items-center justify-center transition-all border cursor-pointer shrink-0",
-              compactMode ? "min-h-[34px] w-[34px] h-[34px] rounded-full" : "size-9 w-full rounded-xl",
+              "group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all border",
+              isDark
+                ? "border-slate-800 bg-slate-900/90 hover:border-slate-700 hover:bg-slate-800"
+                : "border-slate-200 bg-slate-100 hover:border-slate-300 hover:bg-slate-200",
             )}
           >
             <span
               className="size-3 rounded-full border border-slate-500/50 shadow-2xs transition-transform group-hover:scale-110"
               style={{
                 backgroundColor:
-                  activeStrokeColor ||
-                  (activeLayer === "dobra"
+                  activeLayer === "dobra"
                     ? "#EC4899"
                     : activeLayer === "recorte"
-                      ? "#F59E0B"
-                      : activeLayer === "marcacao"
-                        ? "#3B82F6"
-                        : isDark
-                          ? "#F3F4F6"
-                          : "#111827"),
+                    ? "#F59E0B"
+                    : activeLayer === "marcacao"
+                    ? "#3B82F6"
+                    : "#FFFFFF",
               }}
             />
-            <span className="text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase">
-              COR
+            <span className="text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase text-slate-400 group-hover:text-white">
+              {activeLayer === "dobra"
+                ? "DOB"
+                : activeLayer === "recorte"
+                ? "REC"
+                : activeLayer === "marcacao"
+                ? "MAR"
+                : "COR"}
             </span>
           </button>
         </div>
       )}
 
-      {/* 1. POPOVER LATERAL COMPACTO ACOPLADO AO BOTÃO 'SEL' (SELEÇÃO 2D + FILTROS 3D) */}
+      {/* 1. MICRO-DOCK RETRÁTIL ACOPLADO AO BOTÃO 'SEL' (LARGURA ZERO QUANDO FECHADO, 200ms) */}
       <div
         role="toolbar"
-        aria-label="Modos de seleção e filtros 3D"
+        aria-label="Modos de seleção e navegação"
         aria-hidden={openCat !== "selecionar"}
         style={{
           top: "6px",
           left: "calc(100% + 6px)",
-          borderRadius: "16px",
-          padding: openCat === "selecionar" ? "6px 8px" : "0px",
-          width: openCat === "selecionar" ? "216px" : "0px",
-          maxHeight: openCat === "selecionar" ? "320px" : "0px",
+          height: "38px",
+          borderRadius: "9999px",
+          padding: openCat === "selecionar" ? "2px 6px" : "2px 0px",
+          maxWidth: openCat === "selecionar" ? "116px" : "0px",
           opacity: openCat === "selecionar" ? 1 : 0,
           transform:
             openCat === "selecionar"
@@ -1129,164 +641,101 @@ export function ChamferCadToolbar({
           transition: "all 200ms cubic-bezier(0.22, 1, 0.36, 1)",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-          backgroundColor: "var(--chamfer-popover-bg)",
-          borderColor: "var(--chamfer-border)",
-          color: "var(--chamfer-text-primary)",
         }}
         className={cn(
-          "absolute z-50 flex flex-col gap-1.5 overflow-hidden shadow-lg select-none",
+          "absolute z-50 flex items-center gap-1 overflow-hidden shadow-lg select-none",
           openCat === "selecionar" ? "border" : "border-0",
+          isDark
+            ? "border-slate-700/80 bg-slate-900/94 text-slate-200 shadow-black/50"
+            : "border-slate-200/90 bg-white/94 text-slate-700 shadow-slate-900/12",
         )}
       >
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1">
-            {/* 1. Ponteiro (Seleção Geral + Fusão Gestual de Vértices) */}
-            <button
-              type="button"
-              tabIndex={openCat === "selecionar" ? 0 : -1}
-              aria-label="Ponteiro (Seleção Geral)"
-              title="Ponteiro (Seleção Geral e Vértices Diretos)"
-              onClick={() => handleSelectTool("select", "selecionar")}
-              style={
-                tool === "select"
-                  ? {
-                      backgroundColor: "var(--chamfer-accent)",
-                      color: "var(--chamfer-accent-contrast)",
-                    }
-                  : { color: "var(--chamfer-text-secondary)" }
-              }
-              className="flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation"
-            >
-              <MousePointer2 className="size-3.5" />
-            </button>
-
-            {/* 2. Nós (Vértices Isolados) */}
-            <button
-              type="button"
-              tabIndex={openCat === "selecionar" ? 0 : -1}
-              aria-label="Nós (Vértices Isolados)"
-              title="Nós (Vértices Isolados)"
-              onClick={() => handleSelectTool("node", "selecionar")}
-              style={
-                tool === "node"
-                  ? {
-                      backgroundColor: "var(--chamfer-accent)",
-                      color: "var(--chamfer-accent-contrast)",
-                    }
-                  : { color: "var(--chamfer-text-secondary)" }
-              }
-              className="flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation"
-            >
-              <ControlNodesIcon className="size-3.5" />
-            </button>
-
-            {/* 3. Pan (Mover Prancheta 1 Dedo) */}
-            <button
-              type="button"
-              tabIndex={openCat === "selecionar" ? 0 : -1}
-              aria-label="Pan (Mover Prancheta)"
-              title="Pan (Mover Prancheta com 1 Dedo)"
-              onClick={() => handleSelectTool("pan", "selecionar")}
-              style={
-                tool === "pan"
-                  ? {
-                      backgroundColor: "var(--chamfer-accent)",
-                      color: "var(--chamfer-accent-contrast)",
-                    }
-                  : { color: "var(--chamfer-text-secondary)" }
-              }
-              className="flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation"
-            >
-              <Hand className="size-3.5" />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            tabIndex={openCat === "selecionar" ? 0 : -1}
-            onClick={() => setOpenCat("none")}
-            style={{ color: "var(--chamfer-text-secondary)" }}
-            className="size-5 rounded-md grid place-items-center transition-colors cursor-pointer"
-            title="Fechar seleção"
-          >
-            <X className="size-3" />
-          </button>
-        </div>
-
-        {/* Filtros de Seleção de Sub-Elementos 3D */}
-        <div
-          style={{ borderColor: "var(--chamfer-border-subtle)" }}
-          className="border-t pt-1.5 flex flex-col gap-1"
+        {/* 1. Ponteiro (Seleção Geral + Fusão Gestual de Vértices) */}
+        <button
+          type="button"
+          tabIndex={openCat === "selecionar" ? 0 : -1}
+          aria-label="Ponteiro (Seleção Geral)"
+          title="Ponteiro (Seleção Geral e Vértices Diretos)"
+          onClick={() => handleSelectTool("select", "selecionar")}
+          className={cn(
+            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+            tool === "select"
+              ? "bg-red-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          )}
         >
-          <span
-            style={{ color: "var(--chamfer-text-secondary)" }}
-            className="font-mono text-[9px] font-bold uppercase tracking-wider px-0.5"
-          >
-            Filtro de Seleção 3D
-          </span>
-          <div className="grid grid-cols-2 gap-1 font-mono text-[9.5px] font-bold">
-            {(
-              [
-                { id: "body", label: "Corpo Inteiro" },
-                { id: "all_faces", label: "Faces" },
-                { id: "all_edges", label: "Arestas" },
-                { id: "top_face", label: "Face Topo" },
-                { id: "both_faces", label: "2 Faces (Topo+Base)" },
-                { id: "vertical_edges", label: "4 Arestas Verticais" },
-              ] as const
-            ).map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                tabIndex={openCat === "selecionar" ? 0 : -1}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onModeChange("3d");
-                  window.dispatchEvent(
-                    new CustomEvent("chamfer-3d-subselection-preset", {
-                      detail: { preset: preset.id },
-                    }),
-                  );
-                  setOpenCat("none");
-                }}
-                style={{
-                  borderColor: "var(--chamfer-border)",
-                  color: "var(--chamfer-text-primary)",
-                }}
-                className="truncate rounded-lg border px-1.5 py-1 text-left transition-colors hover:border-cyan-500/60 hover:text-cyan-400 cursor-pointer"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </div>
+          <MousePointer2 className="size-3.5" />
+        </button>
+
+        {/* 2. Nós (Vértices Isolados) */}
+        <button
+          type="button"
+          tabIndex={openCat === "selecionar" ? 0 : -1}
+          aria-label="Nós (Vértices Isolados)"
+          title="Nós (Vértices Isolados)"
+          onClick={() => handleSelectTool("node", "selecionar")}
+          className={cn(
+            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+            tool === "node"
+              ? "bg-red-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          )}
+        >
+          <ControlNodesIcon className="size-3.5" />
+        </button>
+
+        {/* 3. Pan (Mover Prancheta 1 Dedo) */}
+        <button
+          type="button"
+          tabIndex={openCat === "selecionar" ? 0 : -1}
+          aria-label="Pan (Mover Prancheta)"
+          title="Pan (Mover Prancheta com 1 Dedo)"
+          onClick={() => handleSelectTool("pan", "selecionar")}
+          className={cn(
+            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+            tool === "pan"
+              ? "bg-red-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          )}
+        >
+          <Hand className="size-3.5" />
+        </button>
       </div>
 
       {/* FLYOUT CONTEXTUAL FLUTUANTE PARA AS DEMAIS CATEGORIAS (EXCETO 'selecionar') */}
       {openCat !== "none" && openCat !== "selecionar" && activeCategoryData && (
         <div
-          className="absolute left-full ml-1.5 sm:ml-2 z-50 w-64 max-w-[calc(100vw-60px)] sm:max-w-[92vw] rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto"
+          className={cn(
+            "absolute left-full ml-1.5 sm:ml-2 z-50 w-64 max-w-[calc(100vw-60px)] sm:max-w-[92vw] rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto",
+            isDark
+              ? "border-slate-800 bg-slate-950/95 text-slate-200"
+              : "border-slate-200 bg-white/95 text-slate-800 shadow-2xl",
+          )}
           style={{
             ...getFlyoutPosition(openCat),
             maxHeight: "calc(100% - 8px)",
-            backgroundColor: "var(--chamfer-popover-bg)",
-            borderColor: "var(--chamfer-border)",
-            color: "var(--chamfer-text-primary)",
           }}
         >
           {/* CABEÇALHO DO FLYOUT */}
           <div
-            style={{ borderColor: "var(--chamfer-border-subtle)" }}
-            className="flex items-center justify-between border-b pb-1.5 mb-1.5"
+            className={cn(
+              "flex items-center justify-between border-b pb-1.5 mb-1.5",
+              isDark ? "border-slate-800/80" : "border-slate-200",
+            )}
           >
             <div className="flex items-center gap-1.5">
-              <activeCategoryData.icon
-                style={{ color: "var(--chamfer-accent)" }}
-                className="size-3.5"
-              />
+              <activeCategoryData.icon className="size-3.5 text-red-500" />
               <span
-                style={{ color: "var(--chamfer-text-primary)" }}
-                className="font-mono text-xs font-bold uppercase tracking-wide"
+                className={cn(
+                  "font-mono text-xs font-bold uppercase tracking-wide",
+                  isDark ? "text-slate-100" : "text-slate-800",
+                )}
               >
                 {activeCategoryData.label}
               </span>
@@ -1298,15 +747,14 @@ export function ChamferCadToolbar({
                   triggerHaptic("tap");
                   setIsPinned((p) => !p);
                 }}
-                style={
+                className={cn(
+                  "size-5 rounded-md grid place-items-center transition-colors",
                   isPinned
-                    ? {
-                         backgroundColor: "var(--chamfer-accent)",
-                         color: "var(--chamfer-accent-contrast)",
-                      }
-                    : { color: "var(--chamfer-text-secondary)" }
-                }
-                className="size-5 rounded-md grid place-items-center transition-colors cursor-pointer"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : isDark
+                      ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+                )}
                 title={
                   isPinned
                     ? "Menu fixado (clique para recolher automaticamente)"
@@ -1318,8 +766,12 @@ export function ChamferCadToolbar({
               <button
                 type="button"
                 onClick={() => setOpenCat("none")}
-                style={{ color: "var(--chamfer-text-secondary)" }}
-                className="size-5 rounded-md grid place-items-center transition-colors cursor-pointer"
+                className={cn(
+                  "size-5 rounded-md grid place-items-center transition-colors",
+                  isDark
+                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+                )}
                 title="Fechar menu"
               >
                 <X className="size-3.5" />
@@ -1327,15 +779,9 @@ export function ChamferCadToolbar({
             </div>
           </div>
 
-                {/* 2. GRUPO: CRIAR (ESBOÇO 2D + SÓLIDOS 3D) */}
+                {/* 2. GRUPO: CRIAR */}
                 {openCat === "criar" && (
                   <div className="flex flex-col gap-0.5 font-mono text-xs">
-                    <p
-                      style={{ color: "var(--chamfer-text-secondary)" }}
-                      className="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5"
-                    >
-                      Esboço 2D
-                    </p>
                     <FlyoutItem
                       label="Linha"
                       keyLabel="L"
@@ -1361,7 +807,7 @@ export function ChamferCadToolbar({
                       desc="Contorno contínuo alternando retas e arcos tangentes"
                     />
                     <FlyoutItem
-                      label="Círculo / Furo (Centro / 2P / 3P / TTR)"
+                      label="Círculo (Centro / 2P / 3P / TTR)"
                       keyLabel="C"
                       icon={CircleIcon}
                       active={tool === "circle"}
@@ -1415,14 +861,6 @@ export function ChamferCadToolbar({
                       desc="Curva interpolada suave com ≥128 segmentos"
                     />
                     <FlyoutItem
-                      label="Desenho Livre (Vetorial)"
-                      keyLabel="LIV"
-                      icon={PenLine}
-                      active={tool === "freehand"}
-                      onClick={() => handleSelectTool("freehand", "criar")}
-                      desc="Traço contínuo suavizado em tempo real (Fiel, Suave ou Poligonal)"
-                    />
-                    <FlyoutItem
                       label="Ponto de Apoio"
                       icon={Dot}
                       active={tool === "point"}
@@ -1430,21 +868,12 @@ export function ChamferCadToolbar({
                       desc="Referência de coordenadas CAD"
                     />
                     <FlyoutItem
-                      label="Texto / Nota Técnica"
+                      label="Texto Técnico"
                       keyLabel="X"
                       icon={Type}
                       active={tool === "text"}
                       onClick={() => handleSelectTool("text", "criar")}
-                      desc="Anotação rica justificada, fórmulas nativas ou gravação"
-                    />
-                    <FlyoutItem
-                      label="Traçar Peça (Passar a Limpo)"
-                      keyLabel="TRÇ"
-                      badge={guideEntitiesCount > 0 ? `${guideEntitiesCount} ref` : "NOVO"}
-                      icon={PenLine}
-                      active={tool === "trace_part"}
-                      onClick={() => handleSelectTool("trace_part", "criar")}
-                      desc="TRIM Inverso: selecione trechos entre interseções do gabarito para gerar vetores reais"
+                      desc="Gravação a laser ou marcação técnica"
                     />
                     {onOpenPresets && (
                       <FlyoutItem
@@ -1479,63 +908,19 @@ export function ChamferCadToolbar({
                         desc="Transforma a seleção ativa do documento para perspectiva isométrica analítica 2D/2.5D"
                       />
                     )}
-                    {onOpenRevEngCategory && (
-                      <FlyoutItem
-                        label="Reconstruir Peça (Eng. Reversa)"
-                        keyLabel="REV"
-                        badge="1:1"
-                        icon={Compass}
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          onOpenRevEngCategory("referencias", "A");
-                          setOpenCat("none");
-                        }}
-                        desc="Assistente guiado (A→F), captura de contorno e ajuste ortogonal"
-                      />
-                    )}
 
-                    <div
-                      style={{ backgroundColor: "var(--chamfer-border)" }}
-                      className="my-1 h-px"
-                    />
-                    <p
-                      style={{ color: "var(--chamfer-accent)" }}
-                      className="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5"
-                    >
-                      Sólidos 3D
-                    </p>
+                    <div className="my-1 h-px bg-slate-800" />
 
                     <FlyoutItem
-                      label="Extrusão 3D (Sólido / União / Subtração)"
+                      label="Extrude 3D"
                       icon={Box}
                       onClick={() => {
                         triggerHaptic("selection");
                         onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "extrude_3d" },
-                          }),
-                        );
                         setOpenCat("none");
                       }}
                       badge="3D"
-                      desc="Gerar sólido 3D por extrusão (Union, New Body, Subtract, Intersect)"
-                    />
-                    <FlyoutItem
-                      label="Sketch on Face (Esboçar na Face)"
-                      icon={PenLine}
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "sketch_on_face_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      badge="3D"
-                      desc="Alinha o plano 2D sobre qualquer face 3D para desenhar furos ou recortes"
+                      desc="Gerar sólido tridimensional por extrusão"
                     />
                     <FlyoutItem
                       label="Revolve 3D"
@@ -1543,37 +928,17 @@ export function ChamferCadToolbar({
                       onClick={() => {
                         triggerHaptic("selection");
                         onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "revolve_3d" },
-                          }),
-                        );
                         setOpenCat("none");
                       }}
                       badge="3D"
                       desc="Revolução de perfil em torno de um eixo"
                     />
-                    <FlyoutItem
-                      label="Loft 3D (Transição Multisseção)"
-                      keyLabel="LOFT"
-                      icon={Layers}
-                      active={tool === "loft_3d"}
-                      onClick={() => handleSelectTool("loft_3d", "criar")}
-                      badge="3D"
-                      desc="Transição sólida suave entre 2+ perfis em diferentes elevações Z"
-                    />
                   </div>
                 )}
 
-                {/* 3. GRUPO: MODIFICAR (EDIÇÃO 2D + MODELAGEM DIRETA 3D) */}
+                {/* 3. GRUPO: MODIFICAR */}
                 {openCat === "modificar" && (
                   <div className="flex flex-col gap-0.5 font-mono text-xs">
-                    <p
-                      style={{ color: "var(--chamfer-text-secondary)" }}
-                      className="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5"
-                    >
-                      Edição 2D
-                    </p>
                     <FlyoutItem
                       label="Área de Transferência"
                       keyLabel="CLIP"
@@ -1618,7 +983,7 @@ export function ChamferCadToolbar({
                       desc="Rotacionar em torno do centro geométrico"
                     />
                     <FlyoutItem
-                      label="Mirror 2D (Espelhar)"
+                      label="Espelhar"
                       keyLabel="MI"
                       icon={FlipHorizontal}
                       disabled={!hasSelection}
@@ -1640,13 +1005,10 @@ export function ChamferCadToolbar({
                       desc="Ampliar ou reduzir proporcionalmente"
                     />
 
-                    <div
-                      style={{ backgroundColor: "var(--chamfer-border)" }}
-                      className="my-1 h-px"
-                    />
+                    <div className="my-1 h-px bg-slate-800" />
 
                     <FlyoutItem
-                      label="Offset 2D (Deslocamento)"
+                      label="Offset (Deslocamento)"
                       keyLabel="O"
                       icon={CornerDownRight}
                       active={tool === "offset"}
@@ -1654,12 +1016,20 @@ export function ChamferCadToolbar({
                       desc={`Distância: ${offsetDist} mm`}
                     />
                     <FlyoutItem
-                      label="Trim / Aparar"
+                      label="Aparar (Trim)"
                       keyLabel="TR"
                       icon={Scissors}
-                      active={tool === "trim" || tool === "smart_trim"}
+                      active={tool === "trim"}
                       onClick={() => handleSelectTool("trim", "modificar")}
-                      desc="Toque ou deslize tipo faca sobre trechos para cortar com confirmação"
+                      desc="Cortar linha em interseção com outra"
+                    />
+                    <FlyoutItem
+                      label="Aparar até Encontro"
+                      keyLabel="ATE"
+                      icon={Scissors}
+                      active={tool === "smart_trim"}
+                      onClick={() => handleSelectTool("smart_trim", "modificar")}
+                      desc="Aparar direto até a primeira interseção limite"
                     />
                     <FlyoutItem
                       label="Centralizar Formas"
@@ -1678,7 +1048,7 @@ export function ChamferCadToolbar({
                       desc="Centralizar seleção por centro geométrico ou limites"
                     />
                     <FlyoutItem
-                      label="Extend (Estender)"
+                      label="Estender (Extend)"
                       keyLabel="EX"
                       icon={Maximize}
                       active={tool === "extend"}
@@ -1686,7 +1056,7 @@ export function ChamferCadToolbar({
                       desc="Prolongar linha até o próximo limite"
                     />
                     <FlyoutItem
-                      label="Fillet 2D (Arredondamento)"
+                      label="Filete (Arredondamento)"
                       keyLabel="F"
                       icon={Sparkles}
                       active={tool === "fillet"}
@@ -1694,32 +1064,12 @@ export function ChamferCadToolbar({
                       desc={`Raio: R${filletR} mm`}
                     />
                     <FlyoutItem
-                      label="Chamfer 2D (Chanfro Angular)"
+                      label="Chanfro Angular"
                       keyLabel="CHA"
                       icon={Sparkles}
                       active={tool === "chamfer"}
                       onClick={() => handleSelectTool("chamfer", "modificar")}
                       desc="Corte chanfrado em quinas vivas"
-                    />
-                    <FlyoutItem
-                      label="Pattern / Array Linear"
-                      icon={Grid}
-                      disabled={!hasSelection}
-                      onClick={() => {
-                        onArrayLinear();
-                        setOpenCat("none");
-                      }}
-                      desc="Repetição em linhas e colunas"
-                    />
-                    <FlyoutItem
-                      label="Pattern / Array Circular"
-                      icon={Disc}
-                      disabled={!hasSelection}
-                      onClick={() => {
-                        onArrayPolar();
-                        setOpenCat("none");
-                      }}
-                      desc="Repetição radial em torno de centro"
                     />
                     <FlyoutItem
                       label="Dividir em Partes"
@@ -1737,10 +1087,7 @@ export function ChamferCadToolbar({
                       desc="Dividir peça ou contorno em N partes iguais"
                     />
 
-                    <div
-                      style={{ backgroundColor: "var(--chamfer-border)" }}
-                      className="my-1 h-px"
-                    />
+                    <div className="my-1 h-px bg-slate-800" />
 
                     <FlyoutItem
                       label="Unir (Join)"
@@ -1787,14 +1134,8 @@ export function ChamferCadToolbar({
 
                     {onBoolean2D && (
                       <>
-                        <div
-                          style={{ backgroundColor: "var(--chamfer-border)" }}
-                          className="my-1 h-px"
-                        />
-                        <p
-                          style={{ color: "var(--chamfer-text-secondary)" }}
-                          className="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5"
-                        >
+                        <div className="my-1 h-px bg-slate-800" />
+                        <p className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider px-2 py-0.5">
                           Booleanas de Região 2D
                         </p>
                         <FlyoutItem
@@ -1847,157 +1188,7 @@ export function ChamferCadToolbar({
                       />
                     )}
 
-                    {/* SEÇÃO DE MODELAGEM DIRETA 3D INTEGRADA AO MENU 'MOD' */}
-                    <div
-                      style={{ backgroundColor: "var(--chamfer-border)" }}
-                      className="my-1 h-px"
-                    />
-                    <p
-                      style={{ color: "var(--chamfer-accent)" }}
-                      className="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5"
-                    >
-                      Modelagem Direta 3D
-                    </p>
-
-                    <FlyoutItem
-                      label="Fillet / Chamfer 3D (Arestas)"
-                      icon={Sparkles}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "fillet_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Arredondamento ou chanfro 45° nas arestas 3D selecionadas"
-                    />
-                    <FlyoutItem
-                      label="Shell / Casca (Tubo Metalon / Chapa)"
-                      icon={Layers}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "shell_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Transforma sólido em tubo vazado (2 faces) ou caixa oca"
-                    />
-                    <FlyoutItem
-                      label="Offset Face (Esticar Face)"
-                      icon={CornerDownRight}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "offset_face_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Empurra ou puxa faces do sólido (+Z, -Z ou laterais)"
-                    />
-                    <FlyoutItem
-                      label="Corte 45° (Meia-Esquadria)"
-                      icon={Compass}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "rotate_axis_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Inclina a face da extremidade em torno de uma aresta (ex.: ±45°)"
-                    />
-                    <FlyoutItem
-                      label="Move / Rotate 3D (Pivô + Copy)"
-                      icon={Move}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "transform_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Translada ou gira sólidos 3D com pivô móvel e cópia rápida"
-                    />
-                    <FlyoutItem
-                      label="Mirror 3D"
-                      icon={FlipHorizontal}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "mirror_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Espelhar corpos sólidos nos planos X, Y ou Z"
-                    />
-                    <FlyoutItem
-                      label="Material / Cor"
-                      icon={Eye}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "color_material_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Aço Carbono, Inox 304, Alumínio, Galvanizado ou Corten"
-                    />
-                    <FlyoutItem
-                      label="Loft 3D (Transição entre Seções)"
-                      keyLabel="LOFT"
-                      icon={Boxes}
-                      active={tool === "loft_3d"}
-                      onClick={() => handleSelectTool("loft_3d", "modificar")}
-                      badge="3D"
-                      desc="Seleciona 2+ perfis sequencialmente ([1]→[2]→[3]) com prévia 3D translúcida"
-                    />
-                    {onDeleteSelection && (
-                      <FlyoutItem
-                        label="Excluir"
-                        keyLabel="DEL"
-                        icon={Trash2}
-                        disabled={!hasSelection}
-                        onClick={() => {
-                          onDeleteSelection();
-                          setOpenCat("none");
-                        }}
-                        desc="Remover entidades ou corpos 3D selecionados"
-                      />
-                    )}
-
-                    <div
-                      style={{ backgroundColor: "var(--chamfer-border)" }}
-                      className="my-1 h-px"
-                    />
+                    <div className="my-1 h-px bg-slate-800" />
 
                     {onOpenTopologyHealth && (
                       <FlyoutItem
@@ -2033,98 +1224,12 @@ export function ChamferCadToolbar({
                         desc="Busca instantânea de comandos e operações"
                       />
                     )}
-                    {onOpenRevEngCategory && (
-                      <FlyoutItem
-                        label="Ajustar Contorno Medido (LSQ)"
-                        keyLabel="FIT"
-                        icon={Compass}
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          onOpenRevEngCategory("contorno_ajuste", "C");
-                          setOpenCat("none");
-                        }}
-                        desc="Ajuste ortogonal de reta, círculo, arco curto e polilinha RDP"
-                      />
-                    )}
                   </div>
                 )}
 
                 {/* 4. GRUPO: PRECISÃO / RESTRIÇÕES */}
                 {openCat === "precisao" && (
                   <div className="flex flex-col gap-1 font-mono text-xs">
-                    <div className="grid grid-cols-2 gap-1 pb-0.5">
-                      <button
-                        type="button"
-                        data-testid="chamfer-pre-constraints-btn"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          dispatchChamferParametricPanel("constraints");
-                          setOpenCat("none");
-                        }}
-                        style={{
-                          backgroundColor: "var(--chamfer-accent-soft)",
-                          borderColor: "var(--chamfer-accent-border)",
-                          color: "var(--chamfer-accent)",
-                        }}
-                        className="flex items-center justify-center gap-1 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition hover:brightness-110 cursor-pointer"
-                        title="Abrir Gaveta de Restrições 2D, Graus de Liberdade (DOF) e Autorrestringir"
-                      >
-                        <Sparkles className="size-3 shrink-0" />
-                        <span>Restrições 2D</span>
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="chamfer-pre-params-btn"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          dispatchChamferParametricPanel("parameters");
-                          setOpenCat("none");
-                        }}
-                        style={{
-                          backgroundColor: "var(--chamfer-surface-elevated)",
-                          borderColor: "var(--chamfer-border)",
-                          color: "var(--chamfer-text-primary)",
-                        }}
-                        className="flex items-center justify-center gap-1 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition hover:brightness-110 cursor-pointer"
-                        title="Abrir Gaveta de Parâmetros (fx), Sweep e Configurações"
-                      >
-                        <span style={{ color: "var(--chamfer-accent)" }}>fx</span>
-                        <span>Parâmetros</span>
-                      </button>
-                    </div>
-                    {onToggleGuideMode && (
-                      <button
-                        type="button"
-                        data-testid="chamfer-pre-guide-mode-btn"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          onToggleGuideMode();
-                        }}
-                        style={
-                          guideModeOn
-                            ? {
-                                backgroundColor: "rgba(239, 68, 68, 0.16)",
-                                borderColor: "rgba(239, 68, 68, 0.65)",
-                                color: "#EF4444",
-                              }
-                            : {
-                                backgroundColor: "var(--chamfer-surface-elevated)",
-                                borderColor: "var(--chamfer-border)",
-                                color: "var(--chamfer-text-primary)",
-                              }
-                        }
-                        className="flex items-center justify-between rounded-xl border px-2.5 py-1.5 transition-colors cursor-pointer"
-                        title="Desenhar entidades auxiliares em vermelho pontilhado (não-vetorial; ignoradas no 3D/DXF/BOM)"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Compass className="size-4" />
-                          <span>Modo Gabarito (Ref.)</span>
-                        </div>
-                        <span className="font-bold">
-                          {guideModeOn ? "ATIVO" : guideEntitiesCount > 0 ? `${guideEntitiesCount}` : "OFF"}
-                        </span>
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -2142,166 +1247,6 @@ export function ChamferCadToolbar({
                       </div>
                       <span className="font-bold">{snapOn ? "LIGADO" : "DESLIGADO"}</span>
                     </button>
-
-                    {/* DIVISÃO VIRTUAL DE FORMAS NO SNAP (NÃO-DESTRUTIVA) */}
-                    <div className="flex flex-col gap-1 p-2 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <Divide className="size-3 text-cyan-400" />
-                          Divisão do Snap (Virtual)
-                        </span>
-                        <span className="font-mono font-bold text-cyan-400">
-                          {snapDivision && snapDivision >= 2 ? `${snapDivision} partes` : "OFF"}
-                        </span>
-                      </div>
-                      <p className="text-[9px] text-slate-400 leading-tight">
-                        Gera pontos magnéticos virtuais em N partes iguais (linhas, arcos, círculos e polígonos) sem cortar a peça.
-                      </p>
-                      <div className="grid grid-cols-4 gap-1 mt-1">
-                        {[0, 2, 3, 4, 6, 8, 12, 16].map((n) => (
-                          <button
-                            key={`snap-div-${n}`}
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic("selection");
-                              onSetSnapDivision?.(n);
-                            }}
-                            className={cn(
-                              "py-1 rounded-lg font-mono text-[10px] font-bold transition-all text-center",
-                              (snapDivision === n || (n === 0 && (!snapDivision || snapDivision < 2)))
-                                ? "bg-cyan-600 text-white shadow-xs"
-                                : "bg-slate-800 text-slate-400 hover:text-slate-200",
-                            )}
-                          >
-                            {n === 0 ? "OFF" : `${n}p`}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* MOSTRAR TODOS OS SNAPS DA PEÇA */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onToggleShowAllSnaps?.();
-                      }}
-                      className={cn(
-                        "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
-                        showAllSnaps
-                          ? "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300"
-                          : "bg-slate-900 text-slate-400 hover:text-slate-200",
-                      )}
-                      title="Exibir simultaneamente todos os pontos de snap de todas as formas existentes no canvas"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Eye className="size-4" />
-                        <span>Mostrar Todos os Snaps</span>
-                      </div>
-                      <span className="font-bold">{showAllSnaps ? "ON" : "OFF"}</span>
-                    </button>
-
-                    {/* SELETOR EXCLUSIVO: GUIAS DE INTERAÇÃO */}
-                    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-slate-900/95 border border-slate-800">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-slate-200 font-bold uppercase tracking-wider">
-                          MARCO GEOMÉTRICO & DATUM
-                        </span>
-                        <span className="font-mono text-[9px] text-slate-400">Associativo</span>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {(
-                          [
-                            {
-                              id: "off" as const,
-                              label: "Desativadas",
-                              activeClass: "bg-slate-700 text-white border-slate-500",
-                            },
-                            {
-                              id: "purple_ref" as const,
-                              label: "Marco Geométrico / Âncora (A–E)",
-                              activeClass: "bg-cyan-950/80 text-cyan-300 border-cyan-500/60",
-                            },
-                            {
-                              id: "blue_line" as const,
-                              label: "Vetor Datum Persistente (ΔX / ΔY / ∠)",
-                              activeClass: "bg-sky-950/80 text-sky-300 border-sky-500/60",
-                            },
-                          ]
-                        ).map((opt) => {
-                          const isSelected = interactionGuideMode === opt.id;
-                          return (
-                            <button
-                              key={opt.id}
-                              type="button"
-                              data-testid={`guide-mode-${opt.id}`}
-                              onClick={() => {
-                                triggerHaptic("selection");
-                                onSetInteractionGuideMode?.(opt.id);
-                              }}
-                              className={cn(
-                                "flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[10.5px] font-bold transition-all border text-left cursor-pointer",
-                                isSelected
-                                  ? opt.activeClass
-                                  : "bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200",
-                              )}
-                            >
-                              <span>{opt.label}</span>
-                              <span
-                                className={cn(
-                                  "size-2.5 rounded-full border",
-                                  isSelected
-                                    ? opt.id === "purple_ref"
-                                      ? "bg-purple-400 border-purple-200"
-                                      : opt.id === "blue_line"
-                                        ? "bg-sky-400 border-sky-200"
-                                        : "bg-slate-200 border-white"
-                                    : "border-slate-600 bg-transparent",
-                                )}
-                              />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* VETOR DATUM PERSISTENTE (ΔX / ΔY / ∠) */}
-                    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-sky-950/35 border border-sky-500/40">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-sky-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <Crosshair className="size-3 text-rose-500" />
-                          Vetor Datum Persistente
-                        </span>
-                        {temporaryOrigin && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic("selection");
-                              onClearTemporaryOrigin?.();
-                            }}
-                            className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase px-1.5 py-0.5 rounded bg-red-950/60 transition-colors cursor-pointer"
-                          >
-                            Limpar Datum
-                          </button>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        data-testid="toolbar-define-datum-btn"
-                        onClick={() => {
-                          triggerHaptic("action");
-                          if (!interactionGuideMode || interactionGuideMode === "off") {
-                            onSetInteractionGuideMode?.("blue_line");
-                          }
-                          onStartSetReferencePoint?.();
-                          setOpenCat("none");
-                        }}
-                        className="mt-0.5 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-mono text-[10.5px] font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
-                      >
-                        <Crosshair className="size-3.5" />
-                        <span>{temporaryOrigin ? "Redefinir Vetor Datum" : "Definir Vetor Datum"}</span>
-                      </button>
-                    </div>
 
                     <button
                       type="button"
@@ -2604,23 +1549,6 @@ export function ChamferCadToolbar({
                       }}
                       desc="Ângulo entre duas retas"
                     />
-                    {onOpenRevEngCategory && (
-                      <>
-                        <div className="my-1 h-px bg-slate-800" />
-                        <FlyoutItem
-                          label="Caderno de Medições & Calibração 1:1"
-                          keyLabel="REV"
-                          badge="ENG"
-                          icon={Ruler}
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            onOpenRevEngCategory("caderno", "B");
-                            setOpenCat("none");
-                          }}
-                          desc="Paquímetro, trena, micrômetro, incerteza ±mm e calibração multi-ref"
-                        />
-                      </>
-                    )}
                   </div>
                 )}
 
@@ -2642,26 +1570,6 @@ export function ChamferCadToolbar({
                         <span className="text-slate-400 text-[10px]">mm</span>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      data-testid="chamfer-chp-parametric-sheet-btn"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        dispatchChamferParametricPanel("sheet");
-                        setOpenCat("none");
-                      }}
-                      style={{
-                        backgroundColor: "var(--chamfer-accent)",
-                        borderColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
-                      }}
-                      className="flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[10.5px] font-bold transition hover:brightness-110 cursor-pointer"
-                      title="Abrir Gaveta de Chapa Metálica (BA/OSSB/BD, Abas A/B, Tabela de Dobras e DXF Inside-Out)"
-                    >
-                      <Layers className="size-3.5 shrink-0" />
-                      <span>Chapa & DXF Inside-Out</span>
-                    </button>
 
                     <FlyoutItem
                       label="Modelar Flanges (Abas)"
@@ -2717,100 +1625,29 @@ export function ChamferCadToolbar({
                       }}
                       desc="Recolher peça em 3D"
                     />
-                    <FlyoutItem
-                      label="Loft 3D (Transição Redonda/Quadrada)"
-                      keyLabel="LOFT"
-                      icon={Boxes}
-                      active={tool === "loft_3d"}
-                      onClick={() => handleSelectTool("loft_3d", "chapa")}
-                      badge="3D"
-                      desc="Cria transição cônica ou multisseção 3D entre perfis em diferentes Z"
-                    />
                   </div>
                 )}
 
-                {/* 7. GRUPO: ESTRUTURAS / TUBOS / MODELAGEM DIRETA 3D */}
+                {/* 7. GRUPO: ESTRUTURAS / TUBOS */}
                 {openCat === "estruturas" && (
                   <div className="flex flex-col gap-0.5 font-mono text-xs">
                     <FlyoutItem
-                      label="Shell / Tubo Metalon Oco (3D)"
+                      label="Perfil Estrutural (Viga / Tubo)"
                       icon={Boxes}
-                      badge="3D"
                       onClick={() => {
                         triggerHaptic("tap");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "shell_3d" },
-                          }),
-                        );
                         setOpenCat("none");
                       }}
-                      desc="Remove faces das pontas e cria tubo estrutural Metalon com parede exata"
+                      desc="Tubos redondos, quadrados, vigas I/U"
                     />
                     <FlyoutItem
-                      label="Corte em Meia-Esquadria 45° (Rotate Axis)"
+                      label="Corte em Ângulo (45° / Esquadria)"
                       icon={Scissors}
-                      badge="3D"
                       onClick={() => {
                         triggerHaptic("tap");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "rotate_axis_3d" },
-                          }),
-                        );
                         setOpenCat("none");
                       }}
-                      desc="Inclina face da extremidade a 45° ou -45° para encaixe e mão-francesa"
-                    />
-                    <FlyoutItem
-                      label="Fillet / Chamfer 3D em Arestas"
-                      icon={Sparkles}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("tap");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "fillet_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Arredonda as 4 quinas verticais de colunas ou chanfra bordas 3D"
-                    />
-                    <FlyoutItem
-                      label="Offset Face (Esticar / Expandir Face)"
-                      icon={CornerDownRight}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("tap");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "offset_face_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Empurra ou puxa faces de topo, base ou expande sapatas em +25 mm"
-                    />
-                    <FlyoutItem
-                      label="Move / Rotate 3D + Pivô & Copy: ON"
-                      icon={Move}
-                      badge="3D"
-                      onClick={() => {
-                        triggerHaptic("tap");
-                        onModeChange("3d");
-                        window.dispatchEvent(
-                          new CustomEvent("chamfer-select-direct-3d-tool", {
-                            detail: { tool: "transform_3d" },
-                          }),
-                        );
-                        setOpenCat("none");
-                      }}
-                      desc="Translada/rotaciona corpos 3D com pivô móvel magnético e cópia rápida"
+                      desc="Bisel e junta em esquadria para soldagem"
                     />
                     <FlyoutItem
                       label="Símbolo de Solda Industrial"
@@ -2832,7 +1669,7 @@ export function ChamferCadToolbar({
                       icon={CircleDot}
                       onClick={() => {
                         onAddHole();
-                        if (!isPinned) setOpenCat("none");
+                        setOpenCat("none");
                       }}
                       desc="Furo passante, cego ou escareado"
                     />
@@ -2841,7 +1678,7 @@ export function ChamferCadToolbar({
                       icon={Sliders}
                       onClick={() => {
                         triggerHaptic("tap");
-                        if (!isPinned) setOpenCat("none");
+                        setOpenCat("none");
                       }}
                       desc="Especificação de rosca métrica"
                     />
@@ -2850,7 +1687,7 @@ export function ChamferCadToolbar({
                       icon={Copy}
                       onClick={() => {
                         onArrayLinear();
-                        if (!isPinned) setOpenCat("none");
+                        setOpenCat("none");
                       }}
                       desc="Repetição de furos em linha X/Y"
                     />
@@ -2859,90 +1696,12 @@ export function ChamferCadToolbar({
                       icon={RotateCw}
                       onClick={() => {
                         onArrayPolar();
-                        if (!isPinned) setOpenCat("none");
+                        setOpenCat("none");
                       }}
                       desc="Furação distribuída em flange circular (PCD)"
                     />
-                    {onOpenRevEngCategory && (
-                      <>
-                        <div className="my-1 h-px bg-slate-800" />
-                        <FlyoutItem
-                          label="Bancada de Furos e Cadeias (Eng. Rev.)"
-                          keyLabel="PCD"
-                          icon={CircleDot}
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            onOpenRevEngCategory("furos_cadeias", "D");
-                            if (!isPinned) setOpenCat("none");
-                          }}
-                          desc="Cálculo de PCD por corda, furos por borda/parede e rasgos"
-                        />
-                      </>
-                    )}
                   </div>
                 )}
-        </div>
-      )}
-
-      {/* POPOVER FLUTUANTE DE COR TÉCNICA & CAMADA (COR) */}
-      {openCat === "cor" && setActiveLayer && (
-        <div
-          className="absolute left-full ml-1.5 sm:ml-2 bottom-2 z-50 w-56 rounded-2xl border p-2.5 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 font-mono text-xs"
-          style={{
-            backgroundColor: "var(--chamfer-popover-bg)",
-            borderColor: "var(--chamfer-border)",
-            color: "var(--chamfer-text-primary)",
-          }}
-        >
-          <div className="mb-2 flex items-center justify-between border-b border-slate-800 pb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
-              Cor & Camada (COR)
-            </span>
-            <button
-              type="button"
-              onClick={() => setOpenCat("none")}
-              className="rounded p-0.5 text-slate-400 hover:text-white cursor-pointer"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-          <div className="flex flex-col gap-1">
-            {[
-              { id: "corte", label: "Corte Principal", color: isDark ? "#F8FAFC" : "#0F172A" },
-              { id: "dobra", label: "Linha de Dobra", color: "#EC4899" },
-              { id: "recorte", label: "Recorte Interno", color: "#F59E0B" },
-              { id: "marcacao", label: "Marcação / Gravação", color: "#3B82F6" },
-            ].map((lay) => {
-              const isCurrent = activeLayer === lay.id && !activeStrokeColor;
-              return (
-                <button
-                  key={lay.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setActiveLayer(lay.id);
-                    onSelectStrokeColor?.(null, lay.id);
-                    setOpenCat("none");
-                  }}
-                  className={cn(
-                    "flex items-center justify-between rounded-xl border px-2.5 py-1.5 text-[10.5px] font-bold transition-colors cursor-pointer",
-                    isCurrent
-                      ? "border-rose-500/60 bg-rose-500/15 text-rose-300"
-                      : "border-transparent bg-slate-900/70 text-slate-300 hover:bg-slate-800",
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="size-3 rounded-full border border-white/25"
-                      style={{ backgroundColor: lay.color }}
-                    />
-                    <span>{lay.label}</span>
-                  </div>
-                  {isCurrent && <Check className="size-3.5 text-rose-400" />}
-                </button>
-              );
-            })}
-          </div>
         </div>
       )}
     </aside>
@@ -2958,6 +1717,7 @@ function FlyoutItem({
   badge,
   onClick,
   desc,
+  isDark: propIsDark,
 }: {
   label: string;
   keyLabel?: string;
@@ -2969,60 +1729,61 @@ function FlyoutItem({
   desc?: string;
   isDark?: boolean;
 }) {
+  const isDark =
+    propIsDark ??
+    (typeof document !== "undefined" ? document.documentElement.classList.contains("dark") : true);
+
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      style={
-        disabled
-          ? { color: "var(--chamfer-text-muted)" }
-          : active
-            ? {
-                backgroundColor: "var(--chamfer-accent-soft)",
-                borderColor: "var(--chamfer-accent-border)",
-                color: "var(--chamfer-accent)",
-              }
-            : {
-                borderColor: "transparent",
-                color: "var(--chamfer-text-primary)",
-              }
-      }
       className={cn(
-        "group flex w-full flex-col rounded-xl border px-2.5 py-1.5 text-left transition-colors cursor-pointer",
-        disabled && "opacity-35 cursor-not-allowed",
+        "group flex w-full flex-col rounded-xl px-2.5 py-1.5 text-left transition-colors",
+        disabled
+          ? "opacity-35 cursor-not-allowed text-slate-400"
+          : active
+            ? isDark
+              ? "border border-red-500/40 bg-red-950/70 text-red-300 shadow-xs"
+              : "border border-red-300 bg-red-50 text-red-600 shadow-xs font-semibold"
+            : isDark
+              ? "text-slate-300 hover:bg-slate-900 hover:text-white"
+              : "text-slate-700 hover:bg-slate-100 hover:text-slate-900",
       )}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon
-            style={{
-              color: active ? "var(--chamfer-accent)" : "var(--chamfer-text-secondary)",
-            }}
-            className="size-3.5"
+            className={cn(
+              "size-3.5",
+              active
+                ? "text-red-500"
+                : isDark
+                  ? "text-slate-400 group-hover:text-red-400"
+                  : "text-slate-500 group-hover:text-red-600",
+            )}
           />
           <span className="font-semibold">{label}</span>
         </div>
         <div className="flex items-center gap-1.5">
           {badge && (
             <span
-              style={{
-                backgroundColor: "var(--chamfer-accent-soft)",
-                color: "var(--chamfer-accent)",
-              }}
-              className="rounded px-1 py-0.2 text-[8px] font-bold uppercase"
+              className={cn(
+                "rounded px-1 py-0.2 text-[8px] font-bold uppercase",
+                isDark ? "bg-red-600/30 text-red-400" : "bg-red-100 text-red-600",
+              )}
             >
               {badge}
             </span>
           )}
           {keyLabel && (
             <kbd
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-border)",
-                color: "var(--chamfer-text-secondary)",
-              }}
-              className="rounded border px-1.5 py-0.2 text-[9px] font-bold"
+              className={cn(
+                "rounded border px-1.5 py-0.2 text-[9px] font-bold",
+                isDark
+                  ? "border-slate-700 bg-slate-800/80 text-slate-400"
+                  : "border-slate-300 bg-slate-100 text-slate-600",
+              )}
             >
               {keyLabel}
             </kbd>
@@ -3031,8 +1792,10 @@ function FlyoutItem({
       </div>
       {desc && (
         <span
-          style={{ color: "var(--chamfer-text-secondary)" }}
-          className="mt-0.5 text-[9px] line-clamp-1"
+          className={cn(
+            "mt-0.5 text-[9px] line-clamp-1",
+            isDark ? "text-slate-400" : "text-slate-500",
+          )}
         >
           {desc}
         </span>

@@ -29,7 +29,6 @@ export const PREVIEW_LAYER_COLOR: Record<string, string> = {
   LEAD_OUT: MARK_COLOR,
   REFERENCE: REFERENCE_COLOR,
   DIMENSION: REFERENCE_COLOR,
-  ANOTACOES: REFERENCE_COLOR,
 };
 
 const PREVIEW_FALLBACK = "#111827";
@@ -55,25 +54,9 @@ function boundsOf(entities: DxfEntity[]): Box | null {
         grow(box, e.start);
         grow(box, e.end);
         break;
-      case "LWPOLYLINE": {
+      case "LWPOLYLINE":
         e.points.forEach((p) => grow(box, p));
-        const n = e.points.length;
-        const segs = e.closed ? n : Math.max(0, n - 1);
-        for (let i = 0; i < segs; i++) {
-          const p0 = e.points[i]!;
-          const p1 = e.points[(i + 1) % n]!;
-          const b = p0.bulge ?? 0;
-          if (Math.abs(b) > 1e-6) {
-            const chord = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-            const sag = Math.abs(b) * (chord / 2);
-            const mx = (p0.x + p1.x) / 2;
-            const my = (p0.y + p1.y) / 2;
-            grow(box, { x: mx - sag, y: my - sag });
-            grow(box, { x: mx + sag, y: my + sag });
-          }
-        }
         break;
-      }
       case "SPLINE":
         e.controls.forEach((p) => grow(box, p));
         break;
@@ -82,18 +65,6 @@ function boundsOf(entities: DxfEntity[]): Box | null {
         grow(box, { x: e.center.x - e.radius, y: e.center.y - e.radius });
         grow(box, { x: e.center.x + e.radius, y: e.center.y + e.radius });
         break;
-      case "ELLIPSE": {
-        const rx = Math.hypot(e.majorEnd.x, e.majorEnd.y);
-        grow(box, { x: e.center.x - rx, y: e.center.y - rx });
-        grow(box, { x: e.center.x + rx, y: e.center.y + rx });
-        break;
-      }
-      case "TEXT": {
-        const approxW = Math.max(e.height, e.text.length * e.height * 0.58);
-        grow(box, e.position);
-        grow(box, { x: e.position.x + approxW, y: e.position.y + e.height });
-        break;
-      }
     }
   }
   return any && Number.isFinite(box.minX) ? box : null;
@@ -110,28 +81,12 @@ function pathOf(e: DxfEntity): string | null {
       return `M ${f(e.start.x)} ${f(e.start.y)} L ${f(e.end.x)} ${f(e.end.y)}`;
     case "LWPOLYLINE": {
       if (!e.points.length) return null;
-      const n = e.points.length;
-      const segs = e.closed ? n : Math.max(0, n - 1);
-      let d = `M ${f(e.points[0]!.x)} ${f(e.points[0]!.y)}`;
-      for (let i = 0; i < segs; i++) {
-        const p0 = e.points[i]!;
-        const p1 = e.points[(i + 1) % n]!;
-        const b = p0.bulge ?? 0;
-        if (Math.abs(b) > 1e-6) {
-          const chord = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-          const theta = 4 * Math.atan(Math.abs(b));
-          const r = chord / (2 * Math.sin(theta / 2));
-          const largeArc = Math.abs(b) > 1 ? 1 : 0;
-          const sweepFlag = b > 0 ? 1 : 0;
-          d += ` A ${f(r)} ${f(r)} 0 ${largeArc} ${sweepFlag} ${f(p1.x)} ${f(p1.y)}`;
-        } else {
-          d += ` L ${f(p1.x)} ${f(p1.y)}`;
-        }
-      }
-      if (e.closed && Math.abs(e.points[n - 1]?.bulge ?? 0) <= 1e-6) {
-        d += " Z";
-      }
-      return d;
+      const [h, ...rest] = e.points;
+      return (
+        `M ${f(h!.x)} ${f(h!.y)}` +
+        rest.map((p) => ` L ${f(p.x)} ${f(p.y)}`).join("") +
+        (e.closed ? " Z" : "")
+      );
     }
     case "SPLINE": {
       if (e.controls.length < 4) return null;
@@ -148,24 +103,12 @@ function pathOf(e: DxfEntity): string | null {
         ` a ${f(e.radius)} ${f(e.radius)} 0 1 0 ${f(e.radius * 2)} 0` +
         ` a ${f(e.radius)} ${f(e.radius)} 0 1 0 ${f(-e.radius * 2)} 0`
       );
-    case "ELLIPSE": {
-      const rx = Math.hypot(e.majorEnd.x, e.majorEnd.y);
-      const ry = rx * e.axisRatio;
-      const deg = (Math.atan2(e.majorEnd.y, e.majorEnd.x) * 180) / Math.PI;
-      return (
-        `M ${f(e.center.x - e.majorEnd.x)} ${f(e.center.y - e.majorEnd.y)}` +
-        ` A ${f(rx)} ${f(ry)} ${f(deg)} 1 0 ${f(e.center.x + e.majorEnd.x)} ${f(e.center.y + e.majorEnd.y)}` +
-        ` A ${f(rx)} ${f(ry)} ${f(deg)} 1 0 ${f(e.center.x - e.majorEnd.x)} ${f(e.center.y - e.majorEnd.y)}`
-      );
-    }
     case "ARC": {
       const a = polar(e.center, e.radius, e.startAngle);
       const b = polar(e.center, e.radius, e.endAngle);
       const sweep = (e.endAngle - e.startAngle + 360) % 360;
       return `M ${f(a.x)} ${f(a.y)} A ${f(e.radius)} ${f(e.radius)} 0 ${sweep > 180 ? 1 : 0} 1 ${f(b.x)} ${f(b.y)}`;
     }
-    case "TEXT":
-      return null;
   }
 }
 
@@ -181,14 +124,6 @@ export function previewDxfSvg(doc: DxfDocument): DxfPreview {
 
   const body = doc.entities
     .map((e) => {
-      if (e.type === "TEXT") {
-        const fill = PREVIEW_LAYER_COLOR[e.layer] ?? PREVIEW_FALLBACK;
-        const escaped = e.text
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-        return `<text x="${f(e.position.x)}" y="${f(-e.position.y)}" fill="${fill}" font-family="monospace" font-size="${f(e.height)}" transform="scale(1,-1)">${escaped}</text>`;
-      }
       const d = pathOf(e);
       if (!d) return "";
       const stroke = PREVIEW_LAYER_COLOR[e.layer] ?? PREVIEW_FALLBACK;

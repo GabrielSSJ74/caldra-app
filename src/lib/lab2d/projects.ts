@@ -5,9 +5,8 @@
 
 import { DEFAULT_LAYERS, uid, type Entity, type Layer } from "./core";
 import type { GroupDef } from "./groups";
-import { DEFAULT_DIM_STYLE, type Dimension, type DimRef } from "./dimensions";
+import type { Dimension } from "./dimensions";
 import { techColor } from "./technical";
-import { sanitizeRevEngPlanData, type RevEngPlanData } from "./revEngTypes";
 
 const KEY = "caldra.lab2d.projects";
 const LEGACY_KEY = "chameleon.lab2d.projects";
@@ -24,8 +23,6 @@ export type Plan = {
   dims?: Dimension[];
   /** Árvore paramétrica 3D serializada associada ao plano (extrude_sketch vinculado + recursos 3D). */
   cad3dTreeJson?: string;
-  /** Dados persistentes de Engenharia Reversa e Bancada Mecânica (schema versionado). */
-  revEng?: RevEngPlanData;
 };
 
 export type Project = {
@@ -55,31 +52,6 @@ export function emptyPlan(index = 0): Plan {
   };
 }
 
-function sanitizeDimRef(raw: unknown): DimRef | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
-  if (obj.kind === "entity" || typeof obj.id === "string") {
-    if (typeof obj.id !== "string" || !obj.id) return null;
-    return {
-      kind: "entity",
-      id: obj.id,
-      ...(typeof obj.anchor === "string"
-        ? { anchor: obj.anchor as "center" | "start" | "end" | "mid" }
-        : {}),
-    };
-  }
-  const ptSource =
-    obj.p && typeof obj.p === "object"
-      ? (obj.p as { x?: unknown; y?: unknown })
-      : (obj as { x?: unknown; y?: unknown });
-  const x = Number(ptSource?.x);
-  const y = Number(ptSource?.y);
-  if (Number.isFinite(x) && Number.isFinite(y)) {
-    return { kind: "point", p: { x, y } };
-  }
-  return null;
-}
-
 export function sanitizeProject(p: Project): Project {
   const seenPlanIds = new Set<string>();
   const plans = (p.plans && p.plans.length > 0 ? p.plans : [emptyPlan(0)]).map((pl, idx) => {
@@ -99,32 +71,11 @@ export function sanitizeProject(p: Project): Project {
       return ent.id === entId ? ent : { ...ent, id: entId };
     });
 
-    const sanitizedDims = Array.isArray(pl.dims)
-      ? pl.dims
-          .map((d): Dimension | null => {
-            if (!d || typeof d !== "object" || !Array.isArray(d.refs)) return null;
-            const refs = d.refs.map(sanitizeDimRef).filter((r): r is DimRef => r !== null);
-            if (refs.length === 0) return null;
-            return {
-              ...d,
-              id: d.id || uid(),
-              kind: d.kind || "linear",
-              refs,
-              offset: typeof d.offset === "number" && Number.isFinite(d.offset) ? d.offset : 20,
-              style: { ...DEFAULT_DIM_STYLE, ...(d.style ?? {}) },
-              role: "DIMENSION",
-            };
-          })
-          .filter((d): d is Dimension => d !== null)
-      : undefined;
-
     return {
       ...pl,
       id: planId,
       name: pl.name || planLabel(idx),
       entities,
-      dims: sanitizedDims,
-      revEng: pl.revEng ? sanitizeRevEngPlanData(pl.revEng) : undefined,
     };
   });
 
@@ -224,56 +175,7 @@ function writeAll(list: Project[]) {
   }
 }
 
-const PLAYGROUND_SANDBOX_STORAGE_KEY = "caldra.lab2d.playground_sandbox";
-export const PLAYGROUND_SANDBOX_ID = "playground-flange-sandbox";
-let playgroundSandboxMemory: Project | null = null;
-
-export function isPlaygroundSandboxId(id: string | undefined | null): boolean {
-  return Boolean(id && (id === PLAYGROUND_SANDBOX_ID || id.startsWith("playground-")));
-}
-
-export function registerPlaygroundSandboxProject(project: Project): Project {
-  const clean: Project = {
-    ...project,
-    id: PLAYGROUND_SANDBOX_ID,
-    updatedAt: Date.now(),
-  };
-  playgroundSandboxMemory = clean;
-  if (typeof window !== "undefined") {
-    try {
-      window.sessionStorage.setItem(PLAYGROUND_SANDBOX_STORAGE_KEY, JSON.stringify(clean));
-    } catch {
-      /* sessionStorage indisponível */
-    }
-  }
-  return clean;
-}
-
-function readPlaygroundSandboxProject(id: string): Project | null {
-  if (playgroundSandboxMemory && playgroundSandboxMemory.id === id) {
-    return playgroundSandboxMemory;
-  }
-  if (typeof window !== "undefined") {
-    try {
-      const raw = window.sessionStorage.getItem(PLAYGROUND_SANDBOX_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Project;
-        if (parsed && parsed.id === id) {
-          playgroundSandboxMemory = parsed;
-          return parsed;
-        }
-      }
-    } catch {
-      /* ignora erro de leitura */
-    }
-  }
-  return null;
-}
-
 export function getProject(id: string): Project | null {
-  if (isPlaygroundSandboxId(id)) {
-    return readPlaygroundSandboxProject(id);
-  }
   // Procura diretamente no mapa em memória primeiro para resposta imediata em 0ms
   if (projectMap.has(id)) {
     return projectMap.get(id)!;
@@ -286,26 +188,11 @@ export function preloadProject(id: string): Project | null {
 }
 
 export function saveProject(project: Project) {
-  if (isPlaygroundSandboxId(project.id)) {
-    registerPlaygroundSandboxProject(project);
-    return;
-  }
   const list = listProjects().filter((p) => p.id !== project.id);
   writeAll([{ ...project, updatedAt: Date.now() }, ...list]);
 }
 
 export function deleteProject(id: string) {
-  if (isPlaygroundSandboxId(id)) {
-    playgroundSandboxMemory = null;
-    if (typeof window !== "undefined") {
-      try {
-        window.sessionStorage.removeItem(PLAYGROUND_SANDBOX_STORAGE_KEY);
-      } catch {
-        /* ignora */
-      }
-    }
-    return;
-  }
   writeAll(listProjects().filter((p) => p.id !== id));
 }
 

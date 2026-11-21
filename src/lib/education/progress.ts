@@ -81,12 +81,10 @@ function subscribe(l: () => void) {
 }
 
 let academyGlobalHydrated = false;
-const snapshot = (): AcademyState =>
-  !academyGlobalHydrated || typeof window === "undefined" ? empty : load();
-const getServerSnapshot = (): AcademyState => empty;
+const snapshot = (): AcademyState => (typeof window === "undefined" ? empty : load());
 
 export function useAcademy(): AcademyState {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(() => academyGlobalHydrated);
   useEffect(() => {
     if (!academyGlobalHydrated) {
       academyGlobalHydrated = true;
@@ -95,23 +93,12 @@ export function useAcademy(): AcademyState {
     }
     setMounted(true);
   }, []);
-  const s = useSyncExternalStore(subscribe, snapshot, getServerSnapshot);
+  const s = useSyncExternalStore(subscribe, snapshot, () => empty);
   return mounted ? s : empty;
 }
 
-export const DEFAULT_LESSON_STATE: LessonState = {
-  mastery: "nao-iniciado",
-  attempts: 0,
-  correct: 0,
-  lastAt: 0,
-};
-
-export function lessonStateFrom(s: AcademyState, id: string): LessonState {
-  return s.lessons[id] ?? DEFAULT_LESSON_STATE;
-}
-
 export function lessonState(id: string): LessonState {
-  return load().lessons[id] ?? DEFAULT_LESSON_STATE;
+  return load().lessons[id] ?? { mastery: "nao-iniciado", attempts: 0, correct: 0, lastAt: 0 };
 }
 
 function patchLesson(id: string, patch: Partial<LessonState>) {

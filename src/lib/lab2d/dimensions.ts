@@ -141,42 +141,24 @@ const lineEnds = (e: Entity): [Vec2, Vec2] | null => {
 };
 
 /** Ponto real de uma referência, medido na geometria canônica. */
-export function resolvePoint(ref: DimRef | undefined | null, entities: Entity[]): Vec2 | null {
-  if (!ref || typeof ref !== "object") return null;
-  if (ref.kind === "point") {
-    if (ref.p && typeof ref.p.x === "number" && typeof ref.p.y === "number") {
-      return ref.p;
-    }
-    const raw = ref as unknown as { x?: unknown; y?: unknown };
-    if (typeof raw.x === "number" && typeof raw.y === "number") {
-      return { x: raw.x, y: raw.y };
-    }
-    return null;
+export function resolvePoint(ref: DimRef, entities: Entity[]): Vec2 | null {
+  if (ref.kind === "point") return ref.p;
+  const e = findEntity(entities, ref.id);
+  if (!e) return null;
+  if (e.type === "circle" || e.type === "arc" || e.type === "ellipse") return { x: e.cx, y: e.cy };
+  const ends = lineEnds(e);
+  if (ends) {
+    if (ref.anchor === "end") return ends[1];
+    if (ref.anchor === "mid")
+      return { x: (ends[0].x + ends[1].x) / 2, y: (ends[0].y + ends[1].y) / 2 };
+    return ends[0];
   }
-  if (ref.kind === "entity" || typeof (ref as { id?: unknown }).id === "string") {
-    const e = findEntity(entities, (ref as { id: string }).id);
-    if (!e) return null;
-    if (e.type === "circle" || e.type === "arc" || e.type === "ellipse") return { x: e.cx, y: e.cy };
-    const ends = lineEnds(e);
-    if (ends) {
-      const anchor = (ref as { anchor?: DimAnchor }).anchor;
-      if (anchor === "end") return ends[1];
-      if (anchor === "mid")
-        return { x: (ends[0].x + ends[1].x) / 2, y: (ends[0].y + ends[1].y) / 2 };
-      return ends[0];
-    }
-    if (e.type === "text") return { x: e.x, y: e.y };
-    return null;
-  }
-  const fallback = ref as unknown as { x?: unknown; y?: unknown };
-  if (typeof fallback.x === "number" && typeof fallback.y === "number") {
-    return { x: fallback.x, y: fallback.y };
-  }
+  if (e.type === "text") return { x: e.x, y: e.y };
   return null;
 }
 
-const circleOf = (ref: DimRef | undefined | null, entities: Entity[]) => {
-  if (!ref || typeof ref !== "object" || ref.kind !== "entity") return null;
+const circleOf = (ref: DimRef, entities: Entity[]) => {
+  if (ref.kind !== "entity") return null;
   const e = findEntity(entities, ref.id);
   if (!e) return null;
   if (e.type === "circle") return { c: { x: e.cx, y: e.cy }, r: e.r, a0: 0, a1: Math.PI * 2, rx: e.r, ry: e.r, rot: 0, isEllipse: false };
@@ -200,8 +182,8 @@ const circleOf = (ref: DimRef | undefined | null, entities: Entity[]) => {
   return null;
 };
 
-const dirOf = (ref: DimRef | undefined | null, entities: Entity[]): { p: Vec2; d: Vec2 } | null => {
-  if (!ref || typeof ref !== "object" || ref.kind !== "entity") return null;
+const dirOf = (ref: DimRef, entities: Entity[]): { p: Vec2; d: Vec2 } | null => {
+  if (ref.kind !== "entity") return null;
   const e = findEntity(entities, ref.id);
   if (!e) return null;
   const ends = lineEnds(e);
@@ -226,7 +208,6 @@ export type DimMeasure = { value: number; unit: DimUnit; symbol: string };
 
 /** Mede a cota na geometria REAL. `null` quando a referência não existe mais. */
 export function measureDimension(dim: Dimension, entities: Entity[]): DimMeasure | null {
-  if (!dim || !Array.isArray(dim.refs)) return null;
   const pts = dim.refs.map((r) => resolvePoint(r, entities));
   const [p0, p1] = pts;
 
@@ -255,15 +236,15 @@ export function measureDimension(dim: Dimension, entities: Entity[]): DimMeasure
       return { value: total, unit: "mm", symbol: "" };
     }
     case "diameter": {
-      const c = circleOf(dim.refs[0], entities);
+      const c = circleOf(dim.refs[0]!, entities);
       return c ? { value: c.r * 2, unit: "mm", symbol: "Ø" } : null;
     }
     case "radius": {
-      const c = circleOf(dim.refs[0], entities);
+      const c = circleOf(dim.refs[0]!, entities);
       return c ? { value: c.r, unit: "mm", symbol: "R" } : null;
     }
     case "arc-length": {
-      const c = circleOf(dim.refs[0], entities);
+      const c = circleOf(dim.refs[0]!, entities);
       if (!c) return null;
       const sweep = sweepOf(c.a0, c.a1);
       return { value: c.r * sweep, unit: "mm", symbol: "L" };
@@ -276,8 +257,6 @@ export function measureDimension(dim: Dimension, entities: Entity[]): DimMeasure
       const a = angleGeometry(dim, entities);
       return a ? { value: a.deg, unit: "deg", symbol: "" } : null;
     }
-    default:
-      return null;
   }
 }
 
@@ -286,15 +265,14 @@ function angleGeometry(
   dim: Dimension,
   entities: Entity[],
 ): { vertex: Vec2; d1: Vec2; d2: Vec2; deg: number } | null {
-  if (!dim || !Array.isArray(dim.refs)) return null;
   let vertex: Vec2 | null = null;
   let d1: Vec2 | null = null;
   let d2: Vec2 | null = null;
 
   if (dim.refs.length >= 3) {
-    const a = resolvePoint(dim.refs[0], entities);
-    const v = resolvePoint(dim.refs[1], entities);
-    const b = resolvePoint(dim.refs[2], entities);
+    const a = resolvePoint(dim.refs[0]!, entities);
+    const v = resolvePoint(dim.refs[1]!, entities);
+    const b = resolvePoint(dim.refs[2]!, entities);
     if (!a || !v || !b) return null;
     vertex = v;
     const n = (p: Vec2) => {
@@ -304,8 +282,8 @@ function angleGeometry(
     d1 = n(a);
     d2 = n(b);
   } else {
-    const l1 = dirOf(dim.refs[0], entities);
-    const l2 = dirOf(dim.refs[1], entities);
+    const l1 = dirOf(dim.refs[0]!, entities);
+    const l2 = dirOf(dim.refs[1]!, entities);
     if (!l1 || !l2) return null;
     const x = lineIntersection(
       [l1.p, { x: l1.p.x + l1.d.x, y: l1.p.y + l1.d.y }],
@@ -331,7 +309,7 @@ const round = (v: number, p: number) => v.toFixed(Math.max(0, Math.min(3, Math.r
 export function formatDimension(dim: Dimension, entities: Entity[]): string | null {
   const m = measureDimension(dim, entities);
   if (!m) return null;
-  const s = { ...DEFAULT_DIM_STYLE, ...(dim.style ?? {}) };
+  const s = dim.style;
   if (m.unit === "deg") return `${s.prefix}${round(m.value, s.anglePrecision)}°${s.suffix}`;
 
   const num = round(m.value, s.precision);
@@ -456,11 +434,9 @@ function linearDraw(a: Vec2, b: Vec2, kind: DimKind, dim: Dimension, text: strin
 
 /** Geometria de apresentação da cota, derivada da geometria real conforme ABNT NBR 17068:2022. */
 export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
-  if (!dim || !Array.isArray(dim.refs)) return EMPTY;
   const text = formatDimension(dim, entities);
   if (text === null) return EMPTY;
   const pts = dim.refs.map((r) => resolvePoint(r, entities));
-  const side = dim.style?.side ?? 1;
 
   switch (dim.kind) {
     case "linear":
@@ -497,7 +473,7 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
       return out;
     }
     case "diameter": {
-      const c = circleOf(dim.refs[0], entities);
+      const c = circleOf(dim.refs[0]!, entities);
       if (!c) return EMPTY;
       // Padrão ABNT: linha de chamada a 45° saindo da borda com patamar horizontal para o texto
       const a = Math.PI / 4;
@@ -532,7 +508,7 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
       };
     }
     case "radius": {
-      const c = circleOf(dim.refs[0], entities);
+      const c = circleOf(dim.refs[0]!, entities);
       if (!c) return EMPTY;
       // Padrão ABNT: seta tocando o arco com linha de chamada inclinada e patamar horizontal
       const a = c.a1 === Math.PI * 2 ? Math.PI / 4 : c.a0 + sweepOf(c.a0, c.a1) / 2;
@@ -555,9 +531,9 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
       };
     }
     case "arc-length": {
-      const c = circleOf(dim.refs[0], entities);
+      const c = circleOf(dim.refs[0]!, entities);
       if (!c) return EMPTY;
-      const r = c.r + dim.offset * side;
+      const r = c.r + dim.offset * dim.style.side;
       const sweep = sweepOf(c.a0, c.a1);
       const mid = c.a0 + sweep / 2;
       const p1 = { x: c.c.x + r * Math.cos(c.a0), y: c.c.y + r * Math.sin(c.a0) };
@@ -587,8 +563,8 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
       if (!p) return EMPTY;
       const tip =
         dim.kind === "coord-x"
-          ? { x: p.x, y: p.y - dim.offset * side }
-          : { x: p.x + dim.offset * side, y: p.y };
+          ? { x: p.x, y: p.y - dim.offset * dim.style.side }
+          : { x: p.x + dim.offset * dim.style.side, y: p.y };
       return {
         lines: [[p, tip]],
         arcs: [],
@@ -629,8 +605,6 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
         ],
       };
     }
-    default:
-      return EMPTY;
   }
 }
 
@@ -645,10 +619,7 @@ export function dimensionEntities(dims: Dimension[], entities: Entity[]): Entity
   const out: Entity[] = [];
   const meta = { role: "DIMENSION" as const };
   for (const d of dims) {
-    if (!d) continue;
     const draw = dimensionDraw(d, entities);
-    const arrowSize = d.style?.arrowSize ?? DEFAULT_DIM_STYLE.arrowSize;
-    const textSize = d.style?.textSize ?? DEFAULT_DIM_STYLE.textSize;
     for (const [a, b] of draw.lines)
       out.push({
         id: uid(),
@@ -673,7 +644,7 @@ export function dimensionEntities(dims: Dimension[], entities: Entity[]): Entity
         a1: arc.a1,
       });
     for (const ar of draw.arrows) {
-      const s = arrowSize;
+      const s = d.style.arrowSize;
       const back = (sign: number) => ({
         x: ar.p.x + Math.cos(ar.angle + sign * 0.25) * s,
         y: ar.p.y + Math.sin(ar.angle + sign * 0.25) * s,
@@ -696,7 +667,7 @@ export function dimensionEntities(dims: Dimension[], entities: Entity[]): Entity
         x: l.p.x,
         y: l.p.y,
         text: l.text,
-        size: textSize,
+        size: d.style.textSize,
       });
   }
   return out;
@@ -704,16 +675,6 @@ export function dimensionEntities(dims: Dimension[], entities: Entity[]): Entity
 
 /** Remove cotas cujas referências deixaram de existir no desenho. */
 export const pruneDimensions = (dims: Dimension[], entities: Entity[]) =>
-  (Array.isArray(dims) ? dims : []).filter(
-    (d) =>
-      d &&
-      Array.isArray(d.refs) &&
-      d.refs.every((r) => {
-        if (!r || typeof r !== "object") return false;
-        if (r.kind === "point") {
-          const pt = resolvePoint(r, entities);
-          return Boolean(pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
-        }
-        return entities.some((e) => e.id === (r as { id?: string }).id);
-      }),
+  dims.filter((d) =>
+    d.refs.every((r) => r.kind === "point" || entities.some((e) => e.id === r.id)),
   );

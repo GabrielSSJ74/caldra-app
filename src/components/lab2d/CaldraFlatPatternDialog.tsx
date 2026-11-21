@@ -30,7 +30,7 @@ import {
 import { CaldraFlatPatternBridge, type FlatPatternResult } from "@/lib/cad/sheetmetal/CaldraFlatPatternBridge";
 import type { CadFeatureNode } from "@/lib/cad/features/CadFeatureModel";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 
 interface CaldraFlatPatternDialogProps {
   open: boolean;

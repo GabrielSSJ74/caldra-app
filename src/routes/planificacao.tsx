@@ -31,7 +31,7 @@ export const Route = createFileRoute("/planificacao")({
       },
     ],
   }),
-  component: PlanificacaoRouteComponent,
+  component: Planificacao,
 });
 
 const SHEETS = [
@@ -41,98 +41,48 @@ const SHEETS = [
   { label: "6000 × 2000", w: 6000, h: 2000 },
 ];
 
-function PlanificacaoRouteComponent() {
+function Planificacao() {
   const { projeto } = Route.useSearch();
-  return <Planificacao initialProjectId={projeto} />;
-}
-
-export function Planificacao({
-  embedded = false,
-  initialProjectId,
-  onValidateNesting,
-}: {
-  embedded?: boolean;
-  initialProjectId?: string | undefined;
-  onValidateNesting?: (summary: {
-    perSheet: number;
-    sheets: number;
-    yieldPct: number;
-    unitMassKg: number;
-    totalMassKg: number;
-  }) => void;
-} = {}) {
-  const [mode, setMode] = useState<"manual" | "projeto">(
-    initialProjectId ? "projeto" : "manual",
-  );
+  const [mode, setMode] = useState<"manual" | "projeto">(projeto ? "projeto" : "manual");
 
   return (
     <div className="space-y-4">
-      {!embedded && (
-        <header className="space-y-1">
-          <p className="font-mono text-[10px] font-bold tracking-wider uppercase text-accent">
-            ENGENHARIA DE CORTE &amp; APROVEITAMENTO DE CHAPA
-          </p>
-          <h1 className="font-display text-2xl font-bold text-foreground">
-            Nesting &amp; Aproveitamento de Chapa CNC
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Arranjo em Grade Retangular com Kerf (Guilhotina Retangular) · Cálculo de chapas, retalhos e massa.
-          </p>
-        </header>
-      )}
+      <header>
+        <h1 className="font-display text-2xl font-semibold">Planificação</h1>
+      </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1.5 rounded-xl border border-line bg-card/60 p-1">
-          {(
-            [
-              { id: "manual", label: "Peça Avulsa" },
-              { id: "projeto", label: "Do Projeto / Trabalho Ativo" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setMode(t.id)}
-              className={cn(
-                "rounded-lg px-3 py-1.5 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors",
-                mode === t.id
-                  ? "bg-accent text-background font-bold"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          Método: Arranjo em Grade Retangular com Kerf
-        </span>
+      <div className="flex gap-1.5">
+        {(
+          [
+            { id: "manual", label: "Peça avulsa" },
+            { id: "projeto", label: "Do projeto" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setMode(t.id)}
+            className={cn(
+              "rounded-full border px-3 py-1 font-mono text-[10px] tracking-wider uppercase",
+              mode === t.id
+                ? "border-accent/40 bg-accent/10 text-accent"
+                : "border-line text-muted-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {mode === "manual" ? (
-        <ManualMode onValidateNesting={onValidateNesting} />
-      ) : (
-        <ProjectMode initialId={initialProjectId} />
-      )}
+      {mode === "manual" ? <ManualMode /> : <ProjectMode initialId={projeto} />}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Modo peça avulsa (comportamento original + validação p/ BOM)       */
+/* Modo peça avulsa (comportamento original)                           */
 /* ------------------------------------------------------------------ */
 
-function ManualMode({
-  onValidateNesting,
-}: {
-  onValidateNesting?: (summary: {
-    perSheet: number;
-    sheets: number;
-    yieldPct: number;
-    unitMassKg: number;
-    totalMassKg: number;
-  }) => void;
-}) {
+function ManualMode() {
   const { precision } = useSettings();
   const [sheet, setSheet] = useState(SHEETS[2]!);
   const [pieceW, setPieceW] = useState(620);
@@ -141,7 +91,6 @@ function ManualMode({
   const [kerf, setKerf] = useState(3);
   const [thickness, setThickness] = useState(3);
   const [material, setMaterial] = useState(MATERIALS[0]!);
-  const [validated, setValidated] = useState(false);
 
   const plan = useMemo(() => {
     const w = pieceW + kerf;
@@ -153,9 +102,8 @@ function ManualMode({
     const usedArea = quantity * pieceW * pieceH;
     const totalArea = sheets * sheet.w * sheet.h;
     const yieldPct = totalArea > 0 ? (usedArea / totalArea) * 100 : 0;
-    const unitMass = (pieceW * pieceH * thickness * material.density) / 1_000_000_000;
-    const mass = unitMass * quantity;
-    return { cols, rows, perSheet, sheets, yieldPct, unitMass, mass, usedArea, totalArea };
+    const mass = (usedArea * thickness * material.density) / 1_000_000_000;
+    return { cols, rows, perSheet, sheets, yieldPct, mass, usedArea, totalArea };
   }, [sheet, pieceW, pieceH, quantity, kerf, thickness, material]);
 
   const placed = Math.min(plan.perSheet, quantity);
@@ -163,18 +111,15 @@ function ManualMode({
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
       <Panel className="space-y-3 p-4">
-        <SectionLabel>Parâmetros do Arranjo CNC</SectionLabel>
+        <SectionLabel>Parâmetros</SectionLabel>
         <label className="block">
           <span className="font-mono text-[10px] text-muted-foreground uppercase">
             Chapa comercial (mm)
           </span>
           <select
             value={sheet.label}
-            onChange={(e) => {
-              setSheet(SHEETS.find((s) => s.label === e.target.value)!);
-              setValidated(false);
-            }}
-            className="mt-1 w-full rounded-lg border border-line bg-background/50 px-3 py-2 text-sm outline-none focus:border-accent"
+            onChange={(e) => setSheet(SHEETS.find((s) => s.label === e.target.value)!)}
+            className="mt-1 w-full rounded-lg border border-line bg-background/50 px-3 py-2.5 text-sm outline-none focus:border-accent"
           >
             {SHEETS.map((s, idx) => (
               <option key={`${s.label}-${idx}`} value={s.label}>
@@ -184,106 +129,46 @@ function ManualMode({
           </select>
         </label>
         <div className="grid grid-cols-2 gap-2.5">
-          <Field
-            label="Largura da peça"
-            value={pieceW}
-            onChange={(v) => {
-              setPieceW(v);
-              setValidated(false);
-            }}
-          />
-          <Field
-            label="Altura da peça"
-            value={pieceH}
-            onChange={(v) => {
-              setPieceH(v);
-              setValidated(false);
-            }}
-          />
-          <Field
-            label="Quantidade"
-            value={quantity}
-            onChange={(v) => {
-              setQuantity(v);
-              setValidated(false);
-            }}
-            unit="un"
-          />
-          <Field
-            label="Sangria (kerf)"
-            value={kerf}
-            onChange={(v) => {
-              setKerf(v);
-              setValidated(false);
-            }}
-          />
-          <Field
-            label="Espessura"
-            value={thickness}
-            onChange={(v) => {
-              setThickness(v);
-              setValidated(false);
-            }}
-          />
+          <Field label="Largura da peça" value={pieceW} onChange={setPieceW} />
+          <Field label="Altura da peça" value={pieceH} onChange={setPieceH} />
+          <Field label="Quantidade" value={quantity} onChange={setQuantity} unit="un" />
+          <Field label="Sangria (kerf)" value={kerf} onChange={setKerf} />
+          <Field label="Espessura" value={thickness} onChange={setThickness} />
           <label className="block">
             <span className="font-mono text-[10px] text-muted-foreground uppercase">Material</span>
             <select
               value={material.name}
-              onChange={(e) => {
-                setMaterial(MATERIALS.find((m) => m.name === e.target.value)!);
-                setValidated(false);
-              }}
-              className="mt-1 w-full rounded-lg border border-line bg-background/50 px-2.5 py-2 text-sm outline-none focus:border-accent"
+              onChange={(e) => setMaterial(MATERIALS.find((m) => m.name === e.target.value)!)}
+              className="mt-1 w-full rounded-lg border border-line bg-background/50 px-2.5 py-2.5 text-sm outline-none focus:border-accent"
             >
               {MATERIALS.map((m) => (
                 <option key={m.name} value={m.name}>
-                  {m.name} ({m.density} kg/m³)
+                  {m.name}
                 </option>
               ))}
             </select>
           </label>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setValidated(true);
-            onValidateNesting?.({
-              perSheet: plan.perSheet,
-              sheets: plan.sheets,
-              yieldPct: Number(plan.yieldPct.toFixed(2)),
-              unitMassKg: Number(plan.unitMass.toFixed(3)),
-              totalMassKg: Number(plan.mass.toFixed(2)),
-            });
-          }}
-          className="mt-2 w-full rounded-xl bg-accent px-3.5 py-2.5 font-mono text-xs font-bold uppercase text-background shadow-sm hover:opacity-90 transition-opacity"
-        >
-          {validated
-            ? "✓ Nesting Validado e Sincronizado com BOM / Custos"
-            : "✓ Validar Nesting e Alimentar BOM / Custos"}
-        </button>
       </Panel>
 
       <div className="space-y-4">
         <Panel className="p-4">
-          <SectionLabel>Aproveitamento &amp; Massa Calculada</SectionLabel>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Metric label="Peças / Chapa" value={plan.perSheet} suffix="un" precision={0} />
+          <SectionLabel>Aproveitamento</SectionLabel>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Metric label="Peças por chapa" value={plan.perSheet} suffix="un" precision={0} />
             <Metric label="Chapas" value={plan.sheets} suffix="un" precision={0} />
-            <Metric label="Aproveitamento" value={plan.yieldPct} suffix="%" precision={2} />
-            <Metric label="Massa Unit." value={plan.unitMass} suffix="kg" precision={3} />
-            <Metric label="Massa Total" value={plan.mass} suffix="kg" precision={precision} />
+            <Metric label="Aproveitamento" value={plan.yieldPct} suffix="%" precision={1} />
+            <Metric label="Massa total" value={plan.mass} suffix="kg" precision={precision} />
           </div>
-          <p className="mt-2 font-mono text-[10px] tabular-nums text-muted-foreground">
-            Grade {plan.cols} × {plan.rows} ({plan.perSheet} un/chapa) · Retalho{" "}
-            {formatNumber(Math.max(0, 100 - plan.yieldPct), 2)}% · Área livre{" "}
+          <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+            Grade {plan.cols} × {plan.rows} · sobra{" "}
             {formatNumber((plan.totalArea - plan.usedArea) / 1_000_000, 3)} m²
           </p>
         </Panel>
 
         <Panel className="p-4">
           <SectionLabel action={<Layers className="size-4 text-accent" />}>
-            Prévia da chapa ({sheet.w} × {sheet.h} mm)
+            Prévia da chapa
           </SectionLabel>
           <svg
             viewBox={`0 0 ${sheet.w} ${sheet.h}`}

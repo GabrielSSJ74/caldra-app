@@ -172,7 +172,7 @@ export function resetAssemblyProgress(projectId: string) {
 let assemblyGlobalHydrated = false;
 
 export function useAssemblyProgress(projectId: string): string[] {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(() => assemblyGlobalHydrated);
   useEffect(() => {
     if (!assemblyGlobalHydrated) {
       assemblyGlobalHydrated = true;
@@ -186,7 +186,7 @@ export function useAssemblyProgress(projectId: string): string[] {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => (!assemblyGlobalHydrated || typeof window === "undefined" ? EMPTY : snapshot(projectId)),
+    () => (typeof window === "undefined" ? EMPTY : snapshot(projectId)),
     () => EMPTY,
   );
   return mounted ? list : EMPTY;

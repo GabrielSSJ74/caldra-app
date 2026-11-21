@@ -23,7 +23,6 @@ import {
   type Entity,
   type LayerId,
 } from "./core";
-import { computeInstances } from "./cadArrayEngine";
 
 const DEG = Math.PI / 180;
 
@@ -306,46 +305,14 @@ export function joinEntities(
  */
 export function explodeEntity(e: Entity): Entity[] | null {
   if (e.type === "polyline" && e.pts.length >= 2) {
-    const out: Entity[] = [];
+    const lines: Entity[] = [];
     const n = e.pts.length;
     const limit = e.closed ? n : n - 1;
 
     for (let i = 0; i < limit; i++) {
       const p1 = e.pts[i]!;
       const p2 = e.pts[(i + 1) % n]!;
-      const bulge = e.bulges?.[i] ?? 0;
-      if (Math.abs(bulge) > 1e-6) {
-        const chordDx = p2.x - p1.x;
-        const chordDy = p2.y - p1.y;
-        const chord = Math.hypot(chordDx, chordDy);
-        if (chord > 1e-6) {
-          const theta = 4 * Math.atan(Math.abs(bulge));
-          const r = chord / (2 * Math.sin(theta / 2));
-          const cotHalf = (1 - bulge * bulge) / (2 * bulge);
-          const mx = (p1.x + p2.x) / 2;
-          const my = (p1.y + p2.y) / 2;
-          const nx = -chordDy / chord;
-          const ny = chordDx / chord;
-          const cx = mx + nx * (chord / 2) * cotHalf;
-          const cy = my + ny * (chord / 2) * cotHalf;
-          const ang1 = Math.atan2(p1.y - cy, p1.x - cx);
-          const ang2 = Math.atan2(p2.y - cy, p2.x - cx);
-          out.push({
-            id: uid(),
-            layer: e.layer,
-            type: "arc",
-            cx,
-            cy,
-            r,
-            a0: bulge > 0 ? ang1 : ang2,
-            a1: bulge > 0 ? ang2 : ang1,
-            group: e.group,
-            cnc: e.cnc,
-          });
-          continue;
-        }
-      }
-      out.push({
+      lines.push({
         id: uid(),
         layer: e.layer,
         type: "line",
@@ -357,7 +324,7 @@ export function explodeEntity(e: Entity): Entity[] | null {
         cnc: e.cnc,
       });
     }
-    return out;
+    return lines;
   }
   return null;
 }
@@ -439,22 +406,26 @@ export function arrayLinear(
     dy: number;
   },
 ): Entity[] {
-  const { instances } = computeInstances(
-    {
-      id: uid(),
-      type: "linear",
-      sourceEntityIds: entities.map((e) => e.id),
-      linear: {
-        rows: Math.max(1, opts.rows),
-        cols: Math.max(1, opts.cols),
-        dx: opts.dx,
-        dy: opts.dy,
-        includeOriginal: true,
-      },
-    },
-    entities,
-  );
-  return instances;
+  const rows = Math.max(1, opts.rows);
+  const cols = Math.max(1, opts.cols);
+  const created: Entity[] = [];
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (r === 0 && c === 0) continue; // entidade base já existe
+      const shiftX = c * opts.dx;
+      const shiftY = r * opts.dy;
+
+      entities.forEach((e) => {
+        created.push({
+          ...shiftEntity(e, shiftX, shiftY),
+          id: uid(),
+        });
+      });
+    }
+  }
+
+  return created;
 }
 
 // -------------------------------------------------------------
@@ -470,23 +441,38 @@ export function arrayCircular(
     rotateItems?: boolean; // padrão true
   },
 ): Entity[] {
-  const { instances } = computeInstances(
-    {
-      id: uid(),
-      type: "polar",
-      sourceEntityIds: entities.map((e) => e.id),
-      polar: {
-        center: opts.center,
-        count: Math.max(2, opts.count),
-        totalAngleDeg: opts.totalAngleDeg ?? 360,
-        startAngleDeg: 0,
-        rotateItems: opts.rotateItems ?? true,
-        includeOriginal: true,
-      },
-    },
-    entities,
-  );
-  return instances;
+  const count = Math.max(2, opts.count);
+  const totalDeg = opts.totalAngleDeg ?? 360;
+  const isFull = Math.abs(Math.abs(totalDeg) - 360) < 1e-3;
+  const stepDeg = isFull ? totalDeg / count : totalDeg / (count - 1);
+  const rotItems = opts.rotateItems ?? true;
+
+  const created: Entity[] = [];
+  const c = opts.center;
+
+  for (let i = 1; i < count; i++) {
+    const angleRad = (i * stepDeg) * DEG;
+    const cosA = Math.cos(angleRad);
+    const sinA = Math.sin(angleRad);
+
+    entities.forEach((e) => {
+      let rotated: Entity;
+      if (rotItems) {
+        rotated = rotateEntityAroundPoint(e, c, angleRad);
+      } else {
+        // Apenas translada a posição mantendo a orientação
+        const centerE = getEntityCenter(e);
+        const newCenterX = c.x + (centerE.x - c.x) * cosA - (centerE.y - c.y) * sinA;
+        const newCenterY = c.y + (centerE.x - c.x) * sinA + (centerE.y - c.y) * cosA;
+        const dx = newCenterX - centerE.x;
+        const dy = newCenterY - centerE.y;
+        rotated = shiftEntity(e, dx, dy);
+      }
+      created.push({ ...rotated, id: uid() });
+    });
+  }
+
+  return created;
 }
 
 // -------------------------------------------------------------
@@ -530,7 +516,6 @@ export function mirrorAcrossAxis(
       return {
         ...e,
         pts: e.pts.map(reflect),
-        bulges: e.bulges ? e.bulges.map((b) => -b) : undefined,
       };
     case "circle": {
       const refC = reflect({ x: e.cx, y: e.cy });

@@ -21,18 +21,6 @@ import {
   DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   type ChamferWireframe3DStyleConfig,
 } from "@/lib/lab2d/chamferWireframe3D";
-import {
-  loadZoomSensitivityConfig,
-  saveZoomSensitivityConfig,
-  ZOOM_SENSITIVITY_PRESETS,
-  type ZoomSensitivityConfig,
-  type ZoomSensitivityPresetId,
-} from "@/lib/lab2d/chamferAdaptiveZoom";
-import {
-  loadBRepWireframeLayerConfig,
-  saveBRepWireframeLayerConfig,
-  type BRepWireframeLayerConfig,
-} from "@/lib/lab2d/chamferBRepWireframe3D";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -50,10 +38,6 @@ export interface ChamferOrbit3DPopoverProps {
   onChangeRenderStyle3D?: (mode: EdgeMode) => void;
   wireframe3DStyle?: ChamferWireframe3DStyleConfig;
   onChangeWireframe3DStyle?: (next: ChamferWireframe3DStyleConfig) => void;
-  zoomSensitivity?: ZoomSensitivityConfig;
-  onChangeZoomSensitivity?: (next: ZoomSensitivityConfig) => void;
-  brepWireframeLayers?: BRepWireframeLayerConfig;
-  onChangeBrepWireframeLayers?: (next: BRepWireframeLayerConfig) => void;
 }
 
 /** Ícone técnico vetorial de Órbita 3D com anel elíptico e tríade de eixos */
@@ -100,34 +84,8 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
   onChangeRenderStyle3D,
   wireframe3DStyle = DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   onChangeWireframe3DStyle,
-  zoomSensitivity: zoomSensitivityProp,
-  onChangeZoomSensitivity,
-  brepWireframeLayers: brepWireframeLayersProp,
-  onChangeBrepWireframeLayers,
 }: ChamferOrbit3DPopoverProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [localZoomSens, setLocalZoomSens] = useState<ZoomSensitivityConfig>(() =>
-    loadZoomSensitivityConfig(),
-  );
-  const [localBrepLayers, setLocalBrepLayers] = useState<BRepWireframeLayerConfig>(() =>
-    loadBRepWireframeLayerConfig(),
-  );
-
-  const effectiveZoomSens = zoomSensitivityProp ?? localZoomSens;
-  const effectiveBrepLayers = brepWireframeLayersProp ?? localBrepLayers;
-
-  const updateZoomSens = (next: ZoomSensitivityConfig) => {
-    const saved = saveZoomSensitivityConfig(next);
-    setLocalZoomSens(saved);
-    onChangeZoomSensitivity?.(saved);
-  };
-
-  const updateBrepLayers = (next: BRepWireframeLayerConfig) => {
-    const saved = saveBRepWireframeLayerConfig(next);
-    setLocalBrepLayers(saved);
-    onChangeBrepWireframeLayers?.(saved);
-  };
-
   const triggerWrapRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [anchorRect, setAnchorRect] = useState<{ left: number; top: number; width: number } | null>(
@@ -147,7 +105,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
     const el = triggerWrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const menuWidth = Math.min(276, window.innerWidth - 16);
+    const menuWidth = Math.min(264, window.innerWidth - 16);
     const clampedLeft = Math.max(8, Math.min(r.left, window.innerWidth - menuWidth - 8));
     setAnchorRect({
       left: clampedLeft,
@@ -220,13 +178,13 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
         className={cn(
           "flex items-center rounded-lg border p-0.5 shadow-xs transition-colors",
           isOrbitToolActive
-            ? "border-[#38BDF8] bg-[rgba(14,165,233,0.22)] ring-1 ring-[#38BDF8]/30"
+            ? "border-cyan-500/70 bg-cyan-950/60 ring-1 ring-cyan-500/30"
             : isTilted
               ? isDark
-                ? "border-[#38BDF8]/55 bg-[#232E45]"
+                ? "border-sky-500/45 bg-slate-900/95"
                 : "border-sky-400/60 bg-sky-50"
               : isDark
-                ? "border-[#334361] bg-[#232E45]"
+                ? "border-slate-800 bg-slate-900/90"
                 : "border-slate-200 bg-slate-100",
         )}
       >
@@ -241,13 +199,13 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
           className={cn(
             "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap",
             isOrbitToolActive
-              ? "bg-[rgba(14,165,233,0.22)] text-[#F8FAFC] shadow-xs"
+              ? "bg-cyan-600 text-white shadow-xs"
               : isTilted
                 ? isDark
-                  ? "bg-[rgba(14,165,233,0.18)] text-[#7DD3FC] hover:bg-[rgba(14,165,233,0.28)] hover:text-white"
+                  ? "bg-sky-950/80 text-sky-300 hover:bg-sky-900/80 hover:text-white"
                   : "bg-sky-600 text-white"
                 : isDark
-                  ? "text-[#E2E8F0] hover:bg-[#2D3B55] hover:text-white"
+                  ? "text-slate-300 hover:bg-slate-800 hover:text-white"
                   : "text-slate-700 hover:bg-slate-200 hover:text-slate-950",
           )}
         >
@@ -258,11 +216,11 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
             className={cn(
               "rounded px-1 py-0.2 font-mono text-[8.5px] font-extrabold tracking-tight",
               isOrbitToolActive
-                ? "bg-[#162A42] text-[#7DD3FC] border border-[#38BDF8]/50"
+                ? "bg-slate-950/45 text-cyan-100 border border-cyan-300/30"
                 : isTilted
                   ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/30"
                   : isDark
-                    ? "bg-[#1B2436] text-[#CBD5E1] border border-[#334361]"
+                    ? "bg-slate-800 text-slate-400"
                     : "bg-slate-200 text-slate-600",
             )}
           >
@@ -282,7 +240,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
             popoverOpen
               ? "bg-cyan-500/25 text-cyan-300"
               : isDark
-                ? "text-[#CBD5E1] hover:bg-[#2D3B55] hover:text-white"
+                ? "text-slate-400 hover:bg-slate-800 hover:text-white"
                 : "text-slate-600 hover:bg-slate-200 hover:text-slate-900",
           )}
         >
@@ -292,7 +250,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
         </button>
       </div>
 
-      {/* PAINEL FLUTUANTE DE PERSPECTIVAS, SENSIBILIDADE DE ZOOM E ARAME B-REP */}
+      {/* PAINEL FLUTUANTE DE PERSPECTIVAS (POPOVER COMPACTO) */}
       {popoverOpen &&
         anchorRect &&
         typeof document !== "undefined" &&
@@ -300,21 +258,20 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
           <div
             ref={popoverRef}
             role="dialog"
-            aria-label="PERSPECTIVA — Vistas 3D, Zoom Adaptativo e Arame B-Rep"
+            aria-label="PERSPECTIVA — Vistas 3D e Órbita"
             data-testid="chamfer-orbit3d-popover"
-            onWheel={(ev) => ev.stopPropagation()}
-            onTouchStart={(ev) => ev.stopPropagation()}
-            onPointerDown={(ev) => ev.stopPropagation()}
             style={{
               position: "fixed",
               left: `${anchorRect.left}px`,
               top: `${anchorRect.top}px`,
-              width: "276px",
+              width: "264px",
               maxWidth: "94vw",
               maxHeight: "calc(100dvh - 76px)",
               overflowY: "auto",
-              background: "rgba(15, 23, 42, 0.96)",
-              border: "1px solid rgba(148, 163, 184, 0.2)",
+              background: "rgba(15, 23, 42, 0.94)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: "1px solid rgba(148, 163, 184, 0.18)",
               borderRadius: "10px",
               zIndex: 60,
             }}
@@ -378,24 +335,6 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                 <div className="grid grid-cols-3 gap-1">
                   <button
                     type="button"
-                    data-testid="chamfer-orbit3d-style-solid"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      AudioManager.play("ui_select");
-                      onChangeRenderStyle3D("shaded");
-                    }}
-                    className={cn(
-                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
-                      renderStyle3D === "shaded"
-                        ? "bg-cyan-600 text-white shadow-xs"
-                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
-                    )}
-                    title="SOMB (Caldra-Code): Sombreado Metálico Acetinado Puro sem Arestas Sobrepostas"
-                  >
-                    SOMB
-                  </button>
-                  <button
-                    type="button"
                     data-testid="chamfer-orbit3d-style-solid-edges"
                     onClick={() => {
                       triggerHaptic("selection");
@@ -408,9 +347,27 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                         ? "bg-cyan-600 text-white shadow-xs"
                         : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
                     )}
-                    title="SOMB+AR (Caldra-Code): Sombreado Metálico Acetinado com Arestas Reais de Contorno"
+                    title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
                   >
-                    SOMB+AR
+                    SÓLIDO
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-style-solid"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_select");
+                      onChangeRenderStyle3D("shaded");
+                    }}
+                    className={cn(
+                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
+                      renderStyle3D === "shaded"
+                        ? "bg-cyan-600 text-white shadow-xs"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                    )}
+                    title="Sólido Metálico 3D Puro (Sem Arestas)"
+                  >
+                    SOMB
                   </button>
                   <button
                     type="button"
@@ -426,7 +383,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                         ? "bg-cyan-600 text-white shadow-xs"
                         : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
                     )}
-                    title="Arame Técnico B-Rep 3D Invariante em Espaço de Tela"
+                    title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
                   >
                     ARAME
                   </button>
@@ -434,88 +391,8 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
               </div>
             )}
 
-            {/* SENSIBILIDADE DO ZOOM ADAPTATIVO + ANTI-ESBARRÃO */}
-            <div
-              data-testid="chamfer-orbit3d-zoom-sensitivity-section"
-              className="mb-1.5 rounded-lg border border-slate-800/90 bg-slate-900/60 p-1.5"
-            >
-              <div className="mb-1 flex items-center justify-between">
-                <span className="font-mono text-[8.5px] font-bold tracking-wider text-slate-300 uppercase">
-                  Sensibilidade do Zoom
-                </span>
-                <span
-                  data-testid="chamfer-orbit3d-zoom-sensitivity-value"
-                  className="font-mono text-[9px] font-extrabold text-cyan-400 tabular-nums"
-                >
-                  {effectiveZoomSens.multiplier.toFixed(2)}×
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-1 mb-1.5">
-                {(["low", "medium", "high"] as Array<Exclude<ZoomSensitivityPresetId, "custom">>).map(
-                  (presetKey) => {
-                    const mult = ZOOM_SENSITIVITY_PRESETS[presetKey];
-                    const label =
-                      presetKey === "low"
-                        ? "Baixa (0.6×)"
-                        : presetKey === "medium"
-                          ? "Média (1.0×)"
-                          : "Alta (1.4×)";
-                    const active =
-                      effectiveZoomSens.preset === presetKey ||
-                      Math.abs(effectiveZoomSens.multiplier - mult) < 0.02;
-                    return (
-                      <button
-                        key={presetKey}
-                        type="button"
-                        data-testid={`chamfer-zoom-sens-${presetKey}`}
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          updateZoomSens({ preset: presetKey, multiplier: mult });
-                        }}
-                        className={cn(
-                          "rounded px-1 py-1 font-mono text-[8.5px] font-bold transition-colors cursor-pointer whitespace-nowrap text-center",
-                          active
-                            ? "bg-cyan-600 text-white shadow-xs"
-                            : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  },
-                )}
-              </div>
-              <div className="flex items-center gap-2 px-0.5">
-                <span className="font-mono text-[8px] text-slate-400 tabular-nums">0.3×</span>
-                <input
-                  type="range"
-                  min={0.3}
-                  max={2.0}
-                  step={0.05}
-                  aria-label="Multiplicador fino de sensibilidade do zoom"
-                  data-testid="chamfer-zoom-sens-slider"
-                  value={effectiveZoomSens.multiplier}
-                  onChange={(ev) => {
-                    const val = Number(ev.target.value);
-                    if (!Number.isFinite(val)) return;
-                    const matchedPreset: ZoomSensitivityPresetId =
-                      Math.abs(val - 0.6) < 0.02
-                        ? "low"
-                        : Math.abs(val - 1.0) < 0.02
-                          ? "medium"
-                          : Math.abs(val - 1.4) < 0.02
-                            ? "high"
-                            : "custom";
-                    updateZoomSens({ preset: matchedPreset, multiplier: val });
-                  }}
-                  className="h-1.5 flex-1 cursor-pointer accent-cyan-500"
-                />
-                <span className="font-mono text-[8px] text-slate-400 tabular-nums">2.0×</span>
-              </div>
-            </div>
-
             {/* Lista de Vistas Predefinidas */}
-            <div className="space-y-0.5 max-h-[210px] overflow-y-auto pr-0.5">
+            <div className="space-y-0.5 max-h-[260px] overflow-y-auto pr-0.5">
               {ORBIT_PRESETS.filter((p) => p.id !== "free").map((preset) => {
                 const isSelected =
                   activePreset === preset.id ||
@@ -550,67 +427,69 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
               })}
             </div>
 
-            {/* Camadas B-Rep do Modo ARAME Técnico */}
-            {renderStyle3D === "wireframe" && (
+            {/* Controles Discretos de Estilo 3D (Hierarquia de Arestas & Profundidade Óptica) */}
+            {onChangeWireframe3DStyle && renderStyle3D === "wireframe" && (
               <div className="mt-1.5 border-t border-slate-800/80 pt-1.5 space-y-1">
                 <div className="flex items-center justify-between px-1">
-                  <span className="font-mono text-[8.5px] font-bold tracking-wider text-slate-300 uppercase">
-                    CAMADAS ARAME B-REP
+                  <span className="font-mono text-[8.5px] font-bold tracking-wider text-slate-400 uppercase">
+                    ESTILO WIREFRAME 3D
                   </span>
-                  {onChangeWireframe3DStyle && (
-                    <button
-                      type="button"
-                      data-testid="chamfer-orbit3d-reset-style"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onChangeWireframe3DStyle({ ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE });
-                        updateBrepLayers({
-                          showContours: true,
-                          showHiddenXRay: true,
-                          showAxesCenters: true,
-                          showDimensions: true,
-                        });
-                      }}
-                      className="font-mono text-[8px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
-                    >
-                      Restaurar Padrão
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-reset-style"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onChangeWireframe3DStyle({ ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE });
+                    }}
+                    className="font-mono text-[8px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                    title="Restaurar parâmetros de estilo padrão da Imagem 2"
+                  >
+                    Restaurar Estilo Padrão
+                  </button>
                 </div>
                 <div className="grid grid-cols-2 gap-1">
-                  {(
-                    [
-                      { key: "showContours" as const, label: "Contornos" },
-                      { key: "showHiddenXRay" as const, label: "Ocultas (Raio-X)" },
-                      { key: "showAxesCenters" as const, label: "Eixos/Centros" },
-                      { key: "showDimensions" as const, label: "Cotas/Espessura" },
-                    ] as const
-                  ).map((layerOpt) => {
-                    const isOn = effectiveBrepLayers[layerOpt.key];
-                    return (
-                      <button
-                        key={layerOpt.key}
-                        type="button"
-                        data-testid={`chamfer-orbit3d-arame-${layerOpt.key}`}
-                        onClick={() => {
-                          triggerHaptic("tap");
-                          updateBrepLayers({
-                            ...effectiveBrepLayers,
-                            [layerOpt.key]: !isOn,
-                          });
-                        }}
-                        className={cn(
-                          "flex items-center justify-between rounded border px-1.5 py-1 font-mono text-[8.5px] font-bold transition-colors cursor-pointer",
-                          isOn
-                            ? "border-cyan-500/45 bg-cyan-950/60 text-cyan-200"
-                            : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200",
-                        )}
-                      >
-                        <span className="truncate">{layerOpt.label}</span>
-                        <span className="ml-1 text-[8px]">{isOn ? "ON" : "OFF"}</span>
-                      </button>
-                    );
-                  })}
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-toggle-hierarchy"
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      onChangeWireframe3DStyle({
+                        ...wireframe3DStyle,
+                        hierarchyEnabled: !wireframe3DStyle.hierarchyEnabled,
+                      });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded border px-1.5 py-1 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                      wireframe3DStyle.hierarchyEnabled
+                        ? "border-cyan-500/45 bg-cyan-950/60 text-cyan-200"
+                        : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200",
+                    )}
+                    title="Alternar Hierarquia 3D (Wireframe Técnico com Profundidade Óptica)"
+                  >
+                    <span>Hierarquia 3D</span>
+                    <span className="text-[8px]">{wireframe3DStyle.hierarchyEnabled ? "ON" : "OFF"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-toggle-hidden-edges"
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      onChangeWireframe3DStyle({
+                        ...wireframe3DStyle,
+                        showHiddenEdges: !wireframe3DStyle.showHiddenEdges,
+                      });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded border px-1.5 py-1 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                      wireframe3DStyle.showHiddenEdges
+                        ? "border-sky-500/45 bg-sky-950/60 text-sky-200"
+                        : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200",
+                    )}
+                    title="Alternar exibição de Arestas Ocultas tracejadas (#53647B)"
+                  >
+                    <span>Arestas Ocultas</span>
+                    <span className="text-[8px]">{wireframe3DStyle.showHiddenEdges ? "ON" : "OFF"}</span>
+                  </button>
                 </div>
               </div>
             )}

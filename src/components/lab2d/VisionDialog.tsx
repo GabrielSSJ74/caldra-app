@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuroraBackground } from "@/components/chameleon/Aurora";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 import {
   Check,
   Circle as CircleIcon,
@@ -98,20 +98,6 @@ import {
   snapTargets,
   type ManualState,
 } from "@/lib/vision/manualTracer";
-import {
-  CYPCUT_CHECKLIST_ITEMS,
-  INITIAL_CYPCUT_VALIDATION_STATE,
-  computeVisionDiagnostics,
-  deletePrimAtIndex,
-  getCypCutValidationStatusLabel,
-  refitFromCachedContoursS6ToS12,
-  togglePrimCircleOrPolyline,
-  updatePrimGeometry,
-  type CypCutValidationState,
-} from "@/lib/vision/visionReviewAndChecklist";
-import type { ImageKindMode, OutputDxfMode } from "@/lib/vision/visionThresholdConfig";
-import { downloadDxf } from "@/lib/dxf/dxfService";
-import { buildDxfSondaDocument } from "@/lib/dxf/dxfSondaGenerator";
 
 export type VisionImageLayer = {
   src: string;
@@ -209,22 +195,6 @@ export function VisionDialog({
   const [future, setFuture] = useState<ManualState[]>([]);
   const [snapTol, setSnapTol] = useState(10);
 
-  // FASE F (Seções 13 e 14) — Tipo de imagem, Modo de saída DXF, Teto em mm, Camadas Visuais, Revisão e CypCut
-  const [imageKind, setImageKind] = useState<ImageKindMode>("auto");
-  const [outputMode, setOutputMode] = useState<OutputDxfMode>("laser");
-  const [maxCapMm, setMaxCapMm] = useState<string>("");
-  const [colorByType, setColorByType] = useState(true);
-  const [showRawContours, setShowRawContours] = useState(false);
-  const [showExcludedUi, setShowExcludedUi] = useState(true);
-  const [selectedPrimIdx, setSelectedPrimIdx] = useState<number | null>(null);
-  const [primPast, setPrimPast] = useState<Prim[][]>([]);
-  const [ambiguousResolutions, setAmbiguousResolutions] = useState<Record<string, "traco" | "anel">>({});
-  const [confirmedLowConfidence, setConfirmedLowConfidence] = useState(false);
-  const [cypcutValidation, setCypcutValidation] = useState<CypCutValidationState>(
-    INITIAL_CYPCUT_VALIDATION_STATE,
-  );
-  const [showCypcutChecklist, setShowCypcutChecklist] = useState(false);
-
   const pushManual = useCallback(
     (next: ManualState) => {
       setPast((p) => [...p.slice(-40), manual]);
@@ -291,13 +261,6 @@ export function VisionDialog({
     setOcr([]);
     setOcrBusy(false);
     setOcrStage(null);
-    setImageKind("auto");
-    setOutputMode("laser");
-    setMaxCapMm("");
-    setSelectedPrimIdx(null);
-    setPrimPast([]);
-    setAmbiguousResolutions({});
-    setConfirmedLowConfidence(false);
   }, []);
 
   useEffect(() => {
@@ -555,7 +518,6 @@ export function VisionDialog({
           return res.analysis.prims.length > 0;
         }
 
-        const capVal = Number(maxCapMm.replace(",", "."));
         const opt = {
           tolerance,
           noise,
@@ -564,10 +526,6 @@ export function VisionDialog({
           normalize,
           regularize,
           hq: true,
-          imageKind,
-          outputMode,
-          maxCapMm: Number.isFinite(capVal) && capVal > 0 ? capVal : undefined,
-          mmPerPx: cal.method !== "padrao" ? cal.mmPerPx : undefined,
         };
         const pixels = rasterForTecnico(img.element, opt);
         const res = await runVision(
@@ -582,9 +540,6 @@ export function VisionDialog({
         }
         setLogo(null);
         setCenter(null);
-        setSelectedPrimIdx(null);
-        setPrimPast([]);
-        setConfirmedLowConfidence(false);
         setAnalysis(ok ? res.analysis : null);
         if (!ok) setError("Não foi possível reconhecer toda a geometria desta imagem.");
         setStep("resultado");
@@ -609,10 +564,6 @@ export function VisionDialog({
       adaptive,
       normalize,
       regularize,
-      imageKind,
-      outputMode,
-      maxCapMm,
-      cal,
     ],
   );
 
@@ -658,31 +609,13 @@ export function VisionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerOpt]);
 
-  // Quando muda ruído/binarização/tipo de imagem (S1–S5), reanalisa a extração completa
+  // reanalisa ao mudar tolerância/ruído/binarização já no resultado
   useEffect(() => {
     if (step !== "resultado" || !img || !analysis || mode !== "tecnico") return;
     const t = setTimeout(() => void analyze(true), 160);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noise, adaptive, normalize, imageKind]);
-
-  // Seção 13: Mudar tolerância, teto em mm, modo de saída (Laser vs CAD), alinhar a eixos ou decisão de ambiguidade
-  // reexecuta SOMENTE os estágios S6–S12 usando os contornos S1–S5 em cache!
-  useEffect(() => {
-    if (step !== "resultado" || !analysis?.cachedContours?.length || mode !== "tecnico") return;
-    const capVal = Number(maxCapMm.replace(",", "."));
-    const nextAnalysis = refitFromCachedContoursS6ToS12(analysis, {
-      tolerance,
-      outputMode,
-      alignAxes: regularize,
-      maxCapMm: Number.isFinite(capVal) && capVal > 0 ? capVal : undefined,
-      mmPerPx: cal.method !== "padrao" ? cal.mmPerPx : undefined,
-      ambiguousResolutions,
-    });
-    setAnalysis(nextAnalysis);
-    setSelectedPrimIdx(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tolerance, outputMode, regularize, maxCapMm, ambiguousResolutions]);
+  }, [tolerance, noise, adaptive, normalize, regularize]);
 
   const geoRef = logo ?? analysis;
   const calibrated = cal.method !== "padrao";
@@ -704,11 +637,9 @@ export function VisionDialog({
         ? // cada cor da paleta vira uma camada técnica distinta
           logoToEntities(logo, cal, "corte", (_sw, i) => (i === 0 ? "corte" : "marcacao"))
         : analysis
-          ? toEntities(analysis, cal, "corte", {
-              ellipseMode: outputMode === "cad" ? "cad_ellipse" : "laser_arcs",
-            })
+          ? toEntities(analysis, cal)
           : [],
-    [analysis, logo, cal, outputMode],
+    [analysis, logo, cal],
   );
 
   const normalized = useMemo(
@@ -729,52 +660,6 @@ export function VisionDialog({
     () => (analysis ? buildQuality(analysis.prims, cal.mmPerPx) : null),
     [analysis, cal],
   );
-
-  const visionDiagnostics = useMemo(
-    () =>
-      analysis
-        ? computeVisionDiagnostics(analysis, normalized.entities, ambiguousResolutions)
-        : null,
-    [analysis, normalized.entities, ambiguousResolutions],
-  );
-
-  const cypcutStatus = useMemo(
-    () => getCypCutValidationStatusLabel(cypcutValidation),
-    [cypcutValidation],
-  );
-
-  const applyPrimEdit = useCallback(
-    (nextPrims: Prim[]) => {
-      if (!analysis) return;
-      setPrimPast((prev) => [...prev.slice(-25), analysis.prims]);
-      const stats = {
-        lines: nextPrims.filter((p) => p.kind === "line").length,
-        circles: nextPrims.filter((p) => p.kind === "circle").length,
-        arcs: nextPrims.filter((p) => p.kind === "arc").length,
-        polylines: nextPrims.filter((p) => p.kind === "polyline").length,
-        contours: analysis.stats.contours,
-        holes: analysis.stats.holes,
-      };
-      setAnalysis({ ...analysis, prims: nextPrims, stats });
-    },
-    [analysis],
-  );
-
-  const undoPrimEdit = useCallback(() => {
-    if (!analysis || !primPast.length) return;
-    const prevPrims = primPast[primPast.length - 1]!;
-    setPrimPast((p) => p.slice(0, -1));
-    const stats = {
-      lines: prevPrims.filter((p) => p.kind === "line").length,
-      circles: prevPrims.filter((p) => p.kind === "circle").length,
-      arcs: prevPrims.filter((p) => p.kind === "arc").length,
-      polylines: prevPrims.filter((p) => p.kind === "polyline").length,
-      contours: analysis.stats.contours,
-      holes: analysis.stats.holes,
-    };
-    setAnalysis({ ...analysis, prims: prevPrims, stats });
-    setSelectedPrimIdx(null);
-  }, [analysis, primPast]);
 
   /* A1 — proposta paramétrica: só no modo técnico, só com escala calibrada. */
   const proposal = useMemo<ParametricProposal | null>(() => {
@@ -867,24 +752,6 @@ export function VisionDialog({
 
   const create = () => {
     if (!img || (!analysis && !logo)) return;
-    if (analysis && !logo) {
-      const unresolvedAmb = (analysis.ambiguousTwins ?? []).filter(
-        (a) => !ambiguousResolutions[a.id],
-      );
-      if (unresolvedAmb.length > 0) {
-        toast.error(
-          `Resolva primeiro ${unresolvedAmb.length} ambiguidade(s) Traço × Anel destacada(s) antes de aplicar.`,
-        );
-        return;
-      }
-      const lowConfCount = analysis.prims.filter((p) => p.confidence === "BAIXA").length;
-      if (lowConfCount > 0 && !confirmedLowConfidence) {
-        toast.error(
-          `Há ${lowConfCount} entidade(s) de confiança BAIXA. Revise ou confirme explicitamente antes de inserir.`,
-        );
-        return;
-      }
-    }
     // template aceito: a geometria vetorizada original é preservada em CONSTRUÇÃO
     const base = paramEntities.length
       ? [...paramEntities, ...normalized.entities.map((e) => ({ ...e, layer: "construcao" }))]
@@ -1458,11 +1325,6 @@ export function VisionDialog({
               snapTol={snapTol}
               targets={targets}
               calPts={calMode === "medida" ? calPts : []}
-              colorByType={colorByType}
-              showRawContours={showRawContours}
-              showExcludedUi={showExcludedUi}
-              selectedPrimIdx={selectedPrimIdx}
-              onSelectPrim={(idx) => setSelectedPrimIdx((cur) => (cur === idx ? null : idx))}
               onPick={(p) => {
                 if (manualOn) pushManual(addManualPoint(manual, snapPoint(p, targets, snapTol)));
                 else if (calMode === "medida")
@@ -1473,191 +1335,16 @@ export function VisionDialog({
               }
             />
 
-            <div className="flex flex-wrap items-center justify-between gap-1.5">
-              <div className="flex flex-wrap items-center gap-1">
-                {(["original", "vetor", "ambos", "diferenca"] as Overlay[]).map((o) => (
-                  <Toggle
-                    key={o}
-                    active={overlay === o}
-                    onClick={() => setOverlay(o)}
-                    label={o === "ambos" ? "sobrepor" : o === "diferenca" ? "mapa de erro" : o}
-                  />
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+              {(["original", "vetor", "ambos", "diferenca"] as Overlay[]).map((o) => (
                 <Toggle
-                  active={colorByType}
-                  onClick={() => setColorByType((v) => !v)}
-                  label="cores por tipo"
+                  key={o}
+                  active={overlay === o}
+                  onClick={() => setOverlay(o)}
+                  label={o === "ambos" ? "sobrepor" : o === "diferenca" ? "mapa de erro" : o}
                 />
-                <Toggle
-                  active={showRawContours}
-                  onClick={() => setShowRawContours((v) => !v)}
-                  label="contorno S4"
-                />
-                {(analysis.excludedUiElements?.length ?? 0) > 0 && (
-                  <Toggle
-                    active={showExcludedUi}
-                    onClick={() => setShowExcludedUi((v) => !v)}
-                    label={`UI excluída (${analysis.excludedUiElements?.length})`}
-                  />
-                )}
-              </div>
+              ))}
             </div>
-
-            {colorByType && (
-              <div className="flex flex-wrap items-center gap-2.5 px-1 font-mono text-[9.5px] text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block size-2 rounded-full bg-[#22c55e]" /> Reta
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block size-2 rounded-full bg-[#3b82f6]" /> Círculo (CIRCLE)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block size-2 rounded-full bg-[#06b6d4]" /> Arco (ARC)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block size-2 rounded-full bg-[#a855f7]" /> Polilinha (Bulge)
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block size-2 rounded-full bg-[#f59e0b]" /> Dúvida / Média
-                </span>
-              </div>
-            )}
-
-            {/* Seção 7 e 13: Resolução de Ambiguidades Traço × Anel (1.6 < q < 3.0) */}
-            {(analysis.ambiguousTwins?.length ?? 0) > 0 && (
-              <div className="space-y-2 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-3">
-                <p className="font-mono text-[10px] font-semibold tracking-wider text-amber-500 uppercase">
-                  Ambiguidade Traço × Anel detectada ({analysis.ambiguousTwins?.length})
-                </p>
-                {analysis.ambiguousTwins?.map((amb) => {
-                  const chosen = ambiguousResolutions[amb.id];
-                  return (
-                    <div
-                      key={amb.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-2 font-mono text-[10px]"
-                    >
-                      <span className="text-muted-foreground">
-                        {amb.promptPtBr} (q = {amb.q.toFixed(2)})
-                      </span>
-                      <div className="flex gap-1">
-                        <Toggle
-                          active={chosen === "traco"}
-                          onClick={() =>
-                            setAmbiguousResolutions((prev) => ({ ...prev, [amb.id]: "traco" }))
-                          }
-                          label="tratar como traço (1)"
-                        />
-                        <Toggle
-                          active={chosen === "anel"}
-                          onClick={() =>
-                            setAmbiguousResolutions((prev) => ({ ...prev, [amb.id]: "anel" }))
-                          }
-                          label="tratar como anel (2)"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Seção 13: Inspeção e Correção Manual da Entidade Selecionada */}
-            {selectedPrimIdx !== null && analysis.prims[selectedPrimIdx] && (
-              <div className="metal space-y-2 rounded-2xl border border-accent/40 p-3">
-                {(() => {
-                  const p = analysis.prims[selectedPrimIdx]!;
-                  const s = cal.mmPerPx;
-                  return (
-                    <>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-mono text-[10px] font-semibold tracking-wider text-accent uppercase">
-                          Entidade #{selectedPrimIdx + 1} · {p.kind.toUpperCase()}
-                          {p.patternKind ? ` (${p.patternKind})` : ""}
-                        </span>
-                        <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
-                          Confiança: {p.confidence ?? "ALTA"} · τ = {(p.tauPx ?? analysis.tolerancePx).toFixed(2)} px ·
-                          resíduo RMS {(p.rmsDev ?? p.dev ?? 0).toFixed(2)} px (
-                          {((p.rmsDev ?? p.dev ?? 0) * s).toFixed(3)} mm) · suporte{" "}
-                          {p.supportPoints ?? "-"} pts
-                        </span>
-                      </div>
-                      {(p.kind === "circle" || p.kind === "arc") && (
-                        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
-                          <label className="flex items-center gap-1 text-muted-foreground">
-                            Raio (mm):
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={Number((p.r * s).toFixed(2))}
-                              onChange={(e) => {
-                                const nextRmm = Number(e.target.value);
-                                if (Number.isFinite(nextRmm) && nextRmm > 0) {
-                                  const next = [...analysis.prims];
-                                  next[selectedPrimIdx] = updatePrimGeometry(p, {
-                                    r: nextRmm / s,
-                                  });
-                                  applyPrimEdit(next);
-                                }
-                              }}
-                              className="w-20 rounded-lg border border-border bg-background/60 px-2 py-0.5 text-right text-foreground"
-                            />
-                          </label>
-                          <span className="text-muted-foreground">
-                            Centro: ({(p.cx * s).toFixed(1)}, {(p.cy * s).toFixed(1)}) mm
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {(p.kind === "polyline" || p.kind === "circle" || p.kind === "arc") && (
-                          <Chip
-                            icon={CircleIcon}
-                            label={
-                              p.kind === "circle"
-                                ? "Converter p/ Polilinha Bulge"
-                                : "Converter p/ Círculo (CIRCLE)"
-                            }
-                            onClick={() => {
-                              const next = [...analysis.prims];
-                              next[selectedPrimIdx] = togglePrimCircleOrPolyline(p);
-                              applyPrimEdit(next);
-                            }}
-                          />
-                        )}
-                        {p.kind === "polyline" && (
-                          <Chip
-                            icon={Check}
-                            label={p.closed ? "Abrir polilinha" : "Fechar polilinha"}
-                            onClick={() => {
-                              const next = [...analysis.prims];
-                              next[selectedPrimIdx] = updatePrimGeometry(p, { closed: !p.closed });
-                              applyPrimEdit(next);
-                            }}
-                          />
-                        )}
-                        <Chip
-                          icon={Eraser}
-                          label="Excluir entidade"
-                          onClick={() => {
-                            applyPrimEdit(deletePrimAtIndex(analysis.prims, selectedPrimIdx));
-                            setSelectedPrimIdx(null);
-                          }}
-                        />
-                        {primPast.length > 0 && (
-                          <Chip icon={Undo2} label="Desfazer edição" onClick={undoPrimEdit} />
-                        )}
-                        <Chip
-                          icon={X}
-                          label="Fechar inspeção"
-                          onClick={() => setSelectedPrimIdx(null)}
-                        />
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
 
             {proposal && !paramRejected && (
               <Section title="Reconstrução paramétrica" icon={Ruler}>
@@ -1730,12 +1417,7 @@ export function VisionDialog({
               </p>
             )}
 
-            <Stats
-              analysis={analysis}
-              cal={cal}
-              entities={normalized.entities}
-              diagnostics={visionDiagnostics}
-            />
+            <Stats analysis={analysis} cal={cal} entities={normalized.entities} />
 
             {mode === "tracado" && center && (
               <>
@@ -1820,75 +1502,20 @@ export function VisionDialog({
 
             {mode === "tecnico" && (
               <>
-                <Section title="Tipo de Imagem e Modo de Saída (Seções 6, 12 e 13)" icon={Scan}>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {(
-                      [
-                        { id: "auto", label: "Auto" },
-                        { id: "silhueta", label: "Silhueta" },
-                        { id: "traco", label: "Traço" },
-                        { id: "linha", label: "Linha Fina" },
-                      ] as const
-                    ).map((k) => (
-                      <Toggle
-                        key={k.id}
-                        active={imageKind === k.id}
-                        onClick={() => setImageKind(k.id)}
-                        label={k.label}
-                      />
-                    ))}
-                    <span className="mx-1 text-muted-foreground">·</span>
-                    <Toggle
-                      active={outputMode === "laser"}
-                      onClick={() => setOutputMode("laser")}
-                      label="Saída Laser (CypCut)"
-                    />
-                    <Toggle
-                      active={outputMode === "cad"}
-                      onClick={() => setOutputMode("cad")}
-                      label="Saída CAD (Elipse)"
-                    />
-                  </div>
-                  <p className="font-mono text-[10px] text-muted-foreground">
-                    Detectado:{" "}
-                    <span className="text-accent uppercase">
-                      {analysis.detectedImageKind ?? "silhueta"}
-                    </span>{" "}
-                    · espessura típica w₀ = {(analysis.typicalStrokeWidthPx ?? 1.5).toFixed(1)} px
-                    {analysis.stageTimingsMs
-                      ? ` · S1–S5: ${analysis.stageTimingsMs.s1ToS5Ms} ms · S6–S9 (cache): ${analysis.stageTimingsMs.s6ToS9Ms} ms`
-                      : ""}
-                  </p>
-                </Section>
-
-                <Section title="Tolerância Adaptativa τ e Teto (mm)" icon={Spline}>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                <Section title="Tolerância" icon={Spline}>
+                  <div className="flex gap-1">
                     {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
                       <Toggle
                         key={t}
                         active={tolerance === t}
                         onClick={() => setTolerance(t)}
-                        label={
-                          t === "baixa"
-                            ? "Preciso (0,5%)"
-                            : t === "media"
-                              ? "Equilibrado (1,0%)"
-                              : "Tolerante (2,5%)"
-                        }
+                        label={t}
                       />
                     ))}
-                    <input
-                      value={maxCapMm}
-                      onChange={(e) => setMaxCapMm(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="Teto máx (mm)"
-                      aria-label="Teto de desvio máximo em milímetros"
-                      className="metal w-28 rounded-xl px-2.5 py-1 font-mono text-[10px] outline-none"
-                    />
                   </div>
                 </Section>
 
-                <Section title="Binarização e Eixos" icon={Scan}>
+                <Section title="Binarização" icon={Scan}>
                   <div className="flex flex-wrap items-center gap-1">
                     <Toggle
                       active={adaptive}
@@ -1903,52 +1530,36 @@ export function VisionDialog({
                     <Toggle
                       active={regularize}
                       onClick={() => setRegularize((v) => !v)}
-                      label="alinhar a eixos"
+                      label="regularizar"
                     />
                   </div>
                   <p className="font-mono text-[10px] text-muted-foreground">
-                    Toque em qualquer entidade na pré-visualização acima para inspecionar resíduo,
-                    confiança, converter Polilinha ↔ Círculo ou excluir duplicatas.
+                    Adaptativo compensa iluminação irregular. Regularizar ortogonaliza e fecha
+                    círculos apenas dentro da tolerância.
                   </p>
                 </Section>
 
                 {quality && (
-                  <Section title="Qualidade e Confiança" icon={Check}>
+                  <Section title="Qualidade" icon={Check}>
                     <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
                       <span className="text-accent">Score {quality.score}/100</span>
                       <span>desvio máx {quality.maxDevMm.toFixed(2)} mm</span>
                       <span>médio {quality.avgDevMm.toFixed(2)} mm</span>
-                      {visionDiagnostics && (
-                        <span>
-                          cobertura {visionDiagnostics.coveragePct}% · excesso{" "}
-                          {visionDiagnostics.excessPct}%
-                        </span>
-                      )}
+                      <span>
+                        {quality.counts.detectada} detectadas · {quality.counts.convertida}{" "}
+                        convertidas · {quality.counts.aproximada} aproximadas
+                      </span>
                     </div>
                     {quality.low.length > 0 && (
                       <div className="space-y-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-mono text-[10px] text-amber-500">
-                            {quality.low.length} entidade(s) em atenção / menor confiança
-                          </p>
-                          <Toggle
-                            active={confirmedLowConfidence}
-                            onClick={() => setConfirmedLowConfidence((v) => !v)}
-                            label={
-                              confirmedLowConfidence
-                                ? "itens em dúvida confirmados"
-                                : "confirmar itens em dúvida"
-                            }
-                          />
-                        </div>
+                        <p className="font-mono text-[10px] text-amber-500">
+                          {quality.low.length} entidade(s) de baixa confiança
+                        </p>
                         <div className="flex max-h-24 flex-wrap gap-1 overflow-auto">
                           {quality.low.slice(0, 24).map((it) => (
                             <button
                               key={it.index}
-                              onClick={() => {
-                                setFocusBox(it.box);
-                                setSelectedPrimIdx(it.index);
-                              }}
+                              onClick={() => setFocusBox(it.box)}
                               className="rounded-lg border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground"
                             >
                               #{it.index + 1} {it.kind} · {it.devMm.toFixed(2)} mm
@@ -1971,8 +1582,7 @@ export function VisionDialog({
                       />
                     ))}
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {duplicates + (visionDiagnostics?.duplicatesMerged ?? 0)} gêmeos/duplicadas
-                      fundidas · {normalized.report.removedTiny} minúsculas
+                      {duplicates} duplicadas · {normalized.report.removedTiny} minúsculas
                     </span>
                   </div>
                   {normalized.report.nearlyClosed.length > 0 && (
@@ -1981,93 +1591,6 @@ export function VisionDialog({
                       após inserir.
                     </p>
                   )}
-                </Section>
-
-                {/* Seção 14: Roteiro de Validação no CypCut e Rótulo Obrigatório */}
-                <Section title="Roteiro de Validação no CypCut (Seção 14)" icon={Check}>
-                  <div className="metal space-y-2 rounded-2xl p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span
-                        className={`rounded-lg border px-2 py-0.5 font-mono text-[10px] font-semibold ${
-                          cypcutStatus.verified
-                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
-                            : "border-amber-500/40 bg-amber-500/10 text-amber-500"
-                        }`}
-                      >
-                        {cypcutStatus.badgeText}
-                      </span>
-                      <div className="flex gap-1">
-                        <Chip
-                          icon={FolderOpen}
-                          label="Baixar DXF-Sonda"
-                          onClick={() =>
-                            downloadDxf(buildDxfSondaDocument(), "dxf-sonda-cypcut.dxf")
-                          }
-                        />
-                        <Toggle
-                          active={showCypcutChecklist}
-                          onClick={() => setShowCypcutChecklist((v) => !v)}
-                          label={
-                            showCypcutChecklist
-                              ? "ocultar roteiro"
-                              : `preencher roteiro (${cypcutStatus.completedCount}/${cypcutStatus.totalCount})`
-                          }
-                        />
-                      </div>
-                    </div>
-                    {showCypcutChecklist && (
-                      <div className="space-y-1.5 pt-1 font-mono text-[10px]">
-                        {CYPCUT_CHECKLIST_ITEMS.map((item) => (
-                          <label
-                            key={item.id}
-                            className="flex cursor-pointer items-start gap-2 rounded-xl border border-border/50 bg-background/40 p-2"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={cypcutValidation.checked[item.id]}
-                              onChange={(e) =>
-                                setCypcutValidation((prev) => ({
-                                  ...prev,
-                                  checked: { ...prev.checked, [item.id]: e.target.checked },
-                                }))
-                              }
-                              className="mt-0.5 accent-[var(--accent)]"
-                            />
-                            <div>
-                              <p className="font-semibold text-foreground">
-                                ({item.number}) {item.label}
-                              </p>
-                              <p className="text-[9px] text-muted-foreground">{item.detail}</p>
-                            </div>
-                          </label>
-                        ))}
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          <input
-                            value={cypcutValidation.measuredDistance1Mm}
-                            onChange={(e) =>
-                              setCypcutValidation((prev) => ({
-                                ...prev,
-                                measuredDistance1Mm: e.target.value,
-                              }))
-                            }
-                            placeholder="Medida 1 no CypCut (mm)"
-                            className="metal w-40 rounded-xl px-2.5 py-1 text-[10px] outline-none"
-                          />
-                          <input
-                            value={cypcutValidation.measuredDistance2Mm}
-                            onChange={(e) =>
-                              setCypcutValidation((prev) => ({
-                                ...prev,
-                                measuredDistance2Mm: e.target.value,
-                              }))
-                            }
-                            placeholder="Medida 2 no CypCut (mm)"
-                            className="metal w-40 rounded-xl px-2.5 py-1 text-[10px] outline-none"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </Section>
               </>
             )}
@@ -2294,11 +1817,6 @@ function PreviewCanvas({
   targets,
   calPts,
   focus,
-  colorByType = false,
-  showRawContours = false,
-  showExcludedUi = false,
-  selectedPrimIdx = null,
-  onSelectPrim,
   onPick,
   onMoveNode,
 }: {
@@ -2311,11 +1829,6 @@ function PreviewCanvas({
   targets: { x: number; y: number }[];
   calPts: { x: number; y: number }[];
   focus: { x: number; y: number; w: number; h: number } | null;
-  colorByType?: boolean;
-  showRawContours?: boolean;
-  showExcludedUi?: boolean;
-  selectedPrimIdx?: number | null;
-  onSelectPrim?: (idx: number) => void;
   onPick: (p: { x: number; y: number }) => void;
   onMoveNode: (shape: number, index: number, p: { x: number; y: number }) => void;
 }) {
@@ -2431,17 +1944,6 @@ function PreviewCanvas({
     onPick(toImage(e.clientX, e.clientY));
   };
 
-  const strokeForPrim = (p: Prim, idx: number): string => {
-    if (overlay === "diferenca") return "#f43f5e";
-    if (selectedPrimIdx === idx) return "#f97316";
-    if (p.confidence === "BAIXA" || p.confidence === "MEDIA") return "#f59e0b";
-    if (!colorByType) return CUT_COLOR;
-    if (p.kind === "circle") return "#3b82f6";
-    if (p.kind === "arc") return "#06b6d4";
-    if (p.kind === "polyline") return "#a855f7";
-    return "#22c55e";
-  };
-
   return (
     <div className="h-[42vh] max-h-[42vh] min-h-[200px] w-full shrink-0 overflow-hidden rounded-2xl border border-border bg-white">
       <svg
@@ -2466,68 +1968,14 @@ function PreviewCanvas({
             preserveAspectRatio="none"
           />
         )}
-        {/* Camada S4/S5: Contornos sub-pixel brutos extraídos (opcional) */}
-        {showRawContours && analysis.cachedContours && (
-          <g
-            fill="none"
-            stroke="#94a3b8"
-            strokeDasharray={`${view.w / 140} ${view.w / 140}`}
-            strokeWidth={Math.max(0.45, view.w / 700)}
-          >
-            {analysis.cachedContours.map((c, i) => (
-              <polyline
-                key={`raw-${i}`}
-                points={
-                  c.pts.map((q) => `${q.x},${q.y}`).join(" ") +
-                  (c.closed && c.pts[0] ? ` ${c.pts[0].x},${c.pts[0].y}` : "")
-                }
-              />
-            ))}
-          </g>
-        )}
-        {/* Camada S2: Exclusões de interface esmaecidas */}
-        {showExcludedUi && analysis.excludedUiElements && (
-          <g
-            fill="rgba(148,163,184,0.12)"
-            stroke="#64748b"
-            strokeDasharray={`${view.w / 120} ${view.w / 120}`}
-            strokeWidth={Math.max(0.5, view.w / 600)}
-          >
-            {analysis.excludedUiElements.map((ui) => (
-              <rect
-                key={ui.id}
-                x={ui.bbox.x}
-                y={ui.bbox.y}
-                width={ui.bbox.w}
-                height={ui.bbox.h}
-              />
-            ))}
-          </g>
-        )}
         {overlay !== "original" && (
           <g
             fill="none"
-            strokeWidth={Math.max(overlay === "diferenca" ? 1.2 : 0.75, view.w / 460)}
+            stroke={overlay === "diferenca" ? "#f43f5e" : CUT_COLOR}
+            strokeWidth={Math.max(overlay === "diferenca" ? 1.2 : 0.6, view.w / 500)}
           >
             {analysis.prims.map((p, i) => (
-              <g
-                key={i}
-                stroke={strokeForPrim(p, i)}
-                strokeWidth={
-                  selectedPrimIdx === i
-                    ? Math.max(1.6, view.w / 260)
-                    : Math.max(overlay === "diferenca" ? 1.2 : 0.75, view.w / 460)
-                }
-                style={{ cursor: onSelectPrim ? "pointer" : undefined }}
-                onClick={(ev) => {
-                  if (onSelectPrim && !manual) {
-                    ev.stopPropagation();
-                    onSelectPrim(i);
-                  }
-                }}
-              >
-                <PrimShape p={p} />
-              </g>
+              <PrimShape key={i} p={p} />
             ))}
           </g>
         )}
@@ -2842,27 +2290,6 @@ function PrimShape({ p }: { p: Prim }) {
     while (sweep < 0) sweep += Math.PI * 2;
     return <path d={`M ${x0} ${y0} A ${p.r} ${p.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}`} />;
   }
-  if (p.bulges && p.bulges.some((b) => Math.abs(b) > 1e-6) && p.pts.length >= 2) {
-    const n = p.pts.length;
-    const segCount = p.closed ? n : n - 1;
-    let d = `M ${p.pts[0]!.x} ${p.pts[0]!.y}`;
-    for (let i = 0; i < segCount; i++) {
-      const p0 = p.pts[i]!;
-      const p1 = p.pts[(i + 1) % n]!;
-      const b = p.bulges[i] ?? 0;
-      if (Math.abs(b) > 1e-6) {
-        const chord = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-        const theta = 4 * Math.atan(Math.abs(b));
-        const r = chord / Math.max(1e-6, 2 * Math.sin(theta / 2));
-        const largeArc = Math.abs(b) > 1 ? 1 : 0;
-        const sweepFlag = b > 0 ? 1 : 0;
-        d += ` A ${r} ${r} 0 ${largeArc} ${sweepFlag} ${p1.x} ${p1.y}`;
-      } else {
-        d += ` L ${p1.x} ${p1.y}`;
-      }
-    }
-    return <path d={d} />;
-  }
   return (
     <polyline
       points={
@@ -2910,43 +2337,23 @@ function Stats({
   analysis,
   cal,
   entities,
-  diagnostics,
 }: {
   analysis: VisionAnalysis;
   cal: Calibration;
   entities: Entity[];
-  diagnostics?: ReturnType<typeof computeVisionDiagnostics> | null;
 }) {
   const s = cal.mmPerPx;
   return (
-    <div className="metal grid grid-cols-2 gap-1 rounded-2xl p-3 font-mono text-[10px] text-muted-foreground sm:grid-cols-3">
-      <span>{diagnostics?.lines ?? analysis.stats.lines} retas (LINE)</span>
-      <span>{diagnostics?.circles ?? analysis.stats.circles} círculos (CIRCLE)</span>
-      <span>{diagnostics?.arcs ?? analysis.stats.arcs} arcos (ARC)</span>
-      <span>
-        {diagnostics?.polylines ?? analysis.stats.polylines} polilinhas (
-        {diagnostics?.polylinesWithBulge ?? 0} c/ bulge)
-      </span>
-      <span>{diagnostics?.ellipses ?? 0} elipses</span>
-      <span>
-        {diagnostics?.closedContours ?? analysis.stats.contours} fechados ·{" "}
-        {diagnostics?.openContours ?? 0} abertos
-      </span>
-      {diagnostics && (
-        <>
-          <span>{diagnostics.duplicatesMerged} gêmeos fundidos</span>
-          <span>{diagnostics.excludedUiCount} UI excluídos</span>
-          <span className={diagnostics.ambiguousCount > 0 ? "text-amber-500" : ""}>
-            {diagnostics.ambiguousCount} ambiguidades
-          </span>
-        </>
-      )}
-      <span className="col-span-2 text-foreground sm:col-span-3">
+    <div className="metal grid grid-cols-2 gap-1 rounded-2xl p-3 font-mono text-[10px] text-muted-foreground">
+      <span>{analysis.stats.lines} linhas</span>
+      <span>{analysis.stats.circles} círculos</span>
+      <span>{analysis.stats.arcs} arcos</span>
+      <span>{analysis.stats.polylines} polilinhas</span>
+      <span>{analysis.stats.contours} contornos</span>
+      <span>{analysis.stats.holes} furos</span>
+      <span className="col-span-2 text-foreground">
         {(analysis.contentPx.w * s).toFixed(1)} × {(analysis.contentPx.h * s).toFixed(1)} mm ·{" "}
-        {entities.length} entidades CAD prontas
-        {diagnostics
-          ? ` · Cobertura ${diagnostics.coveragePct}% · Excesso ${diagnostics.excessPct}%`
-          : ""}
+        {entities.length} entidades
       </span>
     </div>
   );

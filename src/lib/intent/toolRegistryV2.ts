@@ -36,12 +36,6 @@ import {
 } from "@/lib/lab2d/cadModifiers";
 import { DIM_LABEL, makeDimension, type Dimension, type DimKind } from "@/lib/lab2d/dimensions";
 import { CAD_PRESETS_CATALOG } from "@/lib/lab2d/cadPresetsCatalog";
-import {
-  applyDirectTransform3DToEntities,
-  getEntityDirect3DParams,
-  setEntityDirect3DParams,
-  type DirectBooleanMode3D,
-} from "@/lib/lab2d/cadDirectModeling3D";
 import { ChamferGeometricExecutionEngine } from "./geometricExecutionEngine";
 import { ChamferValidationEngine, type HoleCandidate } from "./validationEngine";
 import {
@@ -82,7 +76,6 @@ import {
   type DevelopPipeBranchArgs,
   type DevelopSquareToRoundArgs,
   type DslV2CornerSelection,
-  type DslV2PositionRef,
   type DslV2ToolCall,
   type DslV2ToolFamily,
   type DslV2ToolName,
@@ -385,145 +378,6 @@ function normalizeCornerSelector(
   if (corners.includes("top_left") && corners.includes("top_right")) return "top_two";
   if (corners.includes("bottom_left") && corners.includes("bottom_right")) return "bottom_two";
   return corners[0]!;
-}
-
-/**
- * Resolve uma referência de posicionamento canônica `pos` (§6 do Gemini 4 Argon):
- *   - `{ abs: [x, y] }`
- *   - `{ center: id }`
- *   - `{ edge_offset: { id, side: 'left'|'right'|'top'|'bottom', dist: mm } }`
- *   - `{ from: { id, anchor: 'center'|'start'|'end'|'mid'|'tl'|'tr'|'br'|'bl'|'top'|'bottom'|'left'|'right' }, dx, dy }`
- *   - `{ polar: { center, r, angle } }`
- */
-export function resolveCanonicalPositionRef(
-  pos: DslV2PositionRef | undefined,
-  state: Pick<ExecutionSandboxState, "entities" | "session" | "partModel">,
-  fallback: Vec2 = { x: 0, y: 0 },
-): Vec2 {
-  if (!pos) return fallback;
-
-  const extraDx = Number(pos.dx ?? pos.from?.dx ?? 0);
-  const extraDy = Number(pos.dy ?? pos.from?.dy ?? 0);
-
-  if (Array.isArray(pos.abs) && pos.abs.length >= 2) {
-    return {
-      x: Number(pos.abs[0]) + extraDx,
-      y: Number(pos.abs[1]) + extraDy,
-    };
-  }
-
-  const getReferenceBounds = (refId?: string): { minX: number; minY: number; maxX: number; maxY: number } => {
-    const activePart = state.session.activeFeature;
-    if (
-      activePart &&
-      (!refId || refId === activePart.partId || refId === "plate_1" || refId === "active_part")
-    ) {
-      return {
-        minX: activePart.origin.x,
-        minY: activePart.origin.y,
-        maxX: activePart.origin.x + activePart.width,
-        maxY: activePart.origin.y + activePart.height,
-      };
-    }
-    if (refId) {
-      const targetIds = resolveTargetEntityIds(refId, state.partModel, state.entities);
-      const matched = state.entities.filter((e) => targetIds.includes(e.id));
-      const b = bbox(matched);
-      if (b) return b;
-    }
-    const allB = bbox(state.entities.filter((e) => e.layer !== "referencia"));
-    if (allB) return allB;
-    return { minX: 0, minY: 0, maxX: 400, maxY: 250 };
-  };
-
-  if (pos.center) {
-    const b = getReferenceBounds(pos.center);
-    return {
-      x: (b.minX + b.maxX) / 2 + extraDx,
-      y: (b.minY + b.maxY) / 2 + extraDy,
-    };
-  }
-
-  if (pos.edge_offset) {
-    const b = getReferenceBounds(pos.edge_offset.id);
-    const dist = Number(pos.edge_offset.dist ?? 0);
-    const cx = (b.minX + b.maxX) / 2;
-    const cy = (b.minY + b.maxY) / 2;
-    switch (pos.edge_offset.side) {
-      case "left":
-        return { x: b.minX + dist + extraDx, y: cy + extraDy };
-      case "right":
-        return { x: b.maxX - dist + extraDx, y: cy + extraDy };
-      case "bottom":
-        return { x: cx + extraDx, y: b.minY + dist + extraDy };
-      case "top":
-        return { x: cx + extraDx, y: b.maxY - dist + extraDy };
-    }
-  }
-
-  if (pos.from) {
-    const b = getReferenceBounds(pos.from.id);
-    const cx = (b.minX + b.maxX) / 2;
-    const cy = (b.minY + b.maxY) / 2;
-    let base: Vec2 = { x: cx, y: cy };
-    switch (pos.from.anchor) {
-      case "center":
-      case "mid":
-        base = { x: cx, y: cy };
-        break;
-      case "start":
-      case "bl":
-        base = { x: b.minX, y: b.minY };
-        break;
-      case "end":
-      case "tr":
-        base = { x: b.maxX, y: b.maxY };
-        break;
-      case "tl":
-        base = { x: b.minX, y: b.maxY };
-        break;
-      case "br":
-        base = { x: b.maxX, y: b.minY };
-        break;
-      case "top":
-        base = { x: cx, y: b.maxY };
-        break;
-      case "bottom":
-        base = { x: cx, y: b.minY };
-        break;
-      case "left":
-        base = { x: b.minX, y: cy };
-        break;
-      case "right":
-        base = { x: b.maxX, y: cy };
-        break;
-    }
-    return {
-      x: Number((base.x + extraDx).toFixed(4)),
-      y: Number((base.y + extraDy).toFixed(4)),
-    };
-  }
-
-  if (pos.polar) {
-    let pole: Vec2 = { x: 0, y: 0 };
-    if (Array.isArray(pos.polar.center) && pos.polar.center.length >= 2) {
-      pole = { x: Number(pos.polar.center[0]), y: Number(pos.polar.center[1]) };
-    } else if (typeof pos.polar.center === "string") {
-      const b = getReferenceBounds(pos.polar.center);
-      pole = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
-    } else {
-      const b = getReferenceBounds();
-      pole = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
-    }
-    const rad = Number(pos.polar.angle ?? 0) * DEG2RAD;
-    const radius = Number(pos.polar.r ?? 0);
-    return {
-      x: Number((pole.x + radius * Math.cos(rad) + extraDx).toFixed(4)),
-      y: Number((pole.y + radius * Math.sin(rad) + extraDy).toFixed(4)),
-    };
-  }
-
-  return fallback;
 }
 
 /**
@@ -965,21 +819,8 @@ export function executeSingleDslV2Tool(
           errors.push("Largura e altura do retângulo devem ser maiores que zero.");
           return { ok: false, tool: name, created, changed, removed, warnings, errors };
         }
-        const resolvedPos = a.pos ? resolveCanonicalPositionRef(a.pos, state) : null;
-        const x0 = a.center
-          ? a.center[0] - w / 2
-          : resolvedPos
-            ? resolvedPos.x - w / 2
-            : a.origin
-              ? a.origin[0]
-              : 0;
-        const y0 = a.center
-          ? a.center[1] - h / 2
-          : resolvedPos
-            ? resolvedPos.y - h / 2
-            : a.origin
-              ? a.origin[1]
-              : 0;
+        const x0 = a.center ? a.center[0] - w / 2 : a.origin ? a.origin[0] : 0;
+        const y0 = a.center ? a.center[1] - h / 2 : a.origin ? a.origin[1] : 0;
         let ent = rectPolyline(
           { x: x0, y: y0 },
           { x: x0 + w, y: y0 + h },
@@ -1004,11 +845,8 @@ export function executeSingleDslV2Tool(
           errors.push("Círculo requer diâmetro (d > 0) ou raio (r > 0).");
           return { ok: false, tool: name, created, changed, removed, warnings, errors };
         }
-        const resolvedCircleCenter = a.center
-          ? { x: Number(a.center[0]), y: Number(a.center[1]) }
-          : resolveCanonicalPositionRef(a.pos, state, { x: 0, y: 0 });
-        const cx = resolvedCircleCenter.x;
-        const cy = resolvedCircleCenter.y;
+        const cx = a.center?.[0] ?? 0;
+        const cy = a.center?.[1] ?? 0;
         const layer =
           a.layer ?? (a.role === "reference" ? "referencia" : state.activeLayer);
         const ent: Entity = {
@@ -1227,15 +1065,14 @@ export function executeSingleDslV2Tool(
           mode === "total_length" ? Math.max(0, rawLength - width) : rawLength;
 
         const hostPart = state.session.activeFeature;
-        const defaultSlotCenter: Vec2 = hostPart
-          ? {
-              x: hostPart.origin.x + hostPart.width / 2,
-              y: hostPart.origin.y + hostPart.height / 2,
-            }
-          : { x: 0, y: 0 };
         const center: Vec2 = a.center
           ? { x: Number(a.center[0]), y: Number(a.center[1]) }
-          : resolveCanonicalPositionRef(a.pos, state, defaultSlotCenter);
+          : hostPart
+            ? {
+                x: hostPart.origin.x + hostPart.width / 2,
+                y: hostPart.origin.y + hostPart.height / 2,
+              }
+            : { x: 0, y: 0 };
 
         let slotEnt = createSlotPolyline(
           center,
@@ -1646,36 +1483,34 @@ export function executeSingleDslV2Tool(
         };
       }
 
-      case "add_cutout":
-      case "create_cutout": {
+      case "add_cutout": {
         const a = args as unknown as AddCutoutArgs;
         const activePart = state.session.activeFeature;
-        const fallbackCenter: Vec2 = activePart
-          ? {
-              x: activePart.origin.x + activePart.width / 2,
-              y: activePart.origin.y + activePart.height / 2,
-            }
-          : { x: 200, y: 125 };
         const center: Vec2 = a.center
           ? { x: Number(a.center[0]), y: Number(a.center[1]) }
-          : resolveCanonicalPositionRef(a.pos, state, fallbackCenter);
+          : activePart
+            ? {
+                x: activePart.origin.x + activePart.width / 2,
+                y: activePart.origin.y + activePart.height / 2,
+              }
+            : { x: 200, y: 125 };
 
         const layer = a.layer ?? "recorte";
         let cutoutEnt: Entity;
 
         if (a.shape === "circle") {
-          const r = Number(a.d ?? a.width ?? a.w ?? 40) / 2;
+          const r = Number(a.d ?? a.width ?? 40) / 2;
           cutoutEnt = { id: a.id ?? uid(), layer, type: "circle", cx: center.x, cy: center.y, r };
         } else if (a.shape === "slot") {
-          const w = Number(a.height ?? a.h ?? 20);
-          const l = Math.max(0, Number(a.width ?? a.w ?? 80) - w);
+          const w = Number(a.height ?? 20);
+          const l = Math.max(0, Number(a.width ?? 80) - w);
           cutoutEnt = createSlotPolyline(center, l, w, Number(a.angle_deg ?? 0), layer);
         } else if (a.shape === "polygon") {
-          const r = Number(a.d ?? a.width ?? a.w ?? 50) / 2;
+          const r = Number(a.d ?? a.width ?? 50) / 2;
           cutoutEnt = polygonEntity(center, r, Number(a.sides ?? 6), layer);
         } else {
-          const w = Number(a.width ?? a.w ?? 80);
-          const h = Number(a.height ?? a.h ?? 50);
+          const w = Number(a.width ?? 80);
+          const h = Number(a.height ?? 50);
           cutoutEnt = rectPolyline(
             { x: center.x - w / 2, y: center.y - h / 2 },
             { x: center.x + w / 2, y: center.y + h / 2 },
@@ -2406,274 +2241,6 @@ export function executeSingleDslV2Tool(
         return { ok: true, tool: name, created, changed, removed, warnings, errors };
       }
 
-      // ----------------------------------------------------------------------
-      // 6.9 MODELAGEM DIRETA 3D & EDIÇÃO TOPOLÓGICA
-      // ----------------------------------------------------------------------
-      case "extrude_3d": {
-        const a = args as {
-          target?: string;
-          height_mm?: number;
-          boolean_mode?: DirectBooleanMode3D;
-        };
-        const heightMm = Math.max(0.5, Number(a.height_mm ?? state.thickness ?? 100));
-        const booleanMode: DirectBooleanMode3D = a.boolean_mode ?? "new_body";
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const targetSet = new Set(targetIds);
-        state.entities = state.entities.map((e) => {
-          if (targetSet.has(e.id)) {
-            changed.push(e.id);
-            return setEntityDirect3DParams(e, {
-              extrudeHeightMm: heightMm,
-              booleanMode3D: booleanMode,
-            });
-          }
-          return e;
-        });
-        refreshSandboxPartModel(state);
-        return {
-          ok: true,
-          tool: name,
-          created,
-          changed,
-          removed,
-          warnings,
-          errors,
-          data: { heightMm, booleanMode },
-        };
-      }
-
-      case "fillet_edges_3d": {
-        const a = args as { target?: string; radius_mm?: number };
-        const radiusMm = Math.max(0, Number(a.radius_mm ?? 10));
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const targetSet = new Set(targetIds);
-        state.entities = state.entities.map((e) => {
-          if (targetSet.has(e.id)) {
-            changed.push(e.id);
-            return setEntityDirect3DParams(e, {
-              edgeFilletRadiusMm: radiusMm,
-              edgeChamferDistMm: 0,
-            });
-          }
-          return e;
-        });
-        refreshSandboxPartModel(state);
-        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { radiusMm } };
-      }
-
-      case "chamfer_edges_3d": {
-        const a = args as { target?: string; distance_mm?: number };
-        const distanceMm = Math.max(0, Number(a.distance_mm ?? 10));
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const targetSet = new Set(targetIds);
-        state.entities = state.entities.map((e) => {
-          if (targetSet.has(e.id)) {
-            changed.push(e.id);
-            return setEntityDirect3DParams(e, {
-              edgeChamferDistMm: distanceMm,
-              edgeFilletRadiusMm: 0,
-            });
-          }
-          return e;
-        });
-        refreshSandboxPartModel(state);
-        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { distanceMm } };
-      }
-
-      case "shell_body_3d": {
-        const a = args as {
-          target?: string;
-          thickness_mm?: number;
-          open_caps?: "both" | "top" | "bottom";
-        };
-        const wallMm = Math.max(0.5, Number(a.thickness_mm ?? 6));
-        const openCaps: ("top" | "bottom")[] =
-          a.open_caps === "top"
-            ? ["top"]
-            : a.open_caps === "bottom"
-              ? ["bottom"]
-              : ["top", "bottom"];
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const targetSet = new Set(targetIds);
-        state.entities = state.entities.map((e) => {
-          if (targetSet.has(e.id)) {
-            changed.push(e.id);
-            return setEntityDirect3DParams(e, {
-              shellThicknessMm: wallMm,
-              shellOpenCaps: openCaps,
-            });
-          }
-          return e;
-        });
-        refreshSandboxPartModel(state);
-        return {
-          ok: true,
-          tool: name,
-          created,
-          changed,
-          removed,
-          warnings,
-          errors,
-          data: { wallMm, openCaps },
-        };
-      }
-
-      case "offset_face_3d": {
-        const a = args as {
-          target?: string;
-          face?: "top" | "bottom" | "sides";
-          offset_mm?: number;
-        };
-        const offsetMm = Number(a.offset_mm ?? 25);
-        const faceKind = a.face ?? "top";
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const targetSet = new Set(targetIds);
-        state.entities = state.entities.map((e) => {
-          if (targetSet.has(e.id)) {
-            changed.push(e.id);
-            const cur = getEntityDirect3DParams(e, state.thickness);
-            if (faceKind === "bottom") {
-              return setEntityDirect3DParams(e, { offsetFaceBottomMm: cur.offsetFaceBottomMm + offsetMm });
-            }
-            if (faceKind === "sides") {
-              return setEntityDirect3DParams(e, { offsetFaceSidesMm: cur.offsetFaceSidesMm + offsetMm });
-            }
-            return setEntityDirect3DParams(e, { offsetFaceTopMm: cur.offsetFaceTopMm + offsetMm });
-          }
-          return e;
-        });
-        refreshSandboxPartModel(state);
-        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { faceKind, offsetMm } };
-      }
-
-      case "miter_cut_face_3d": {
-        const a = args as {
-          target?: string;
-          end?: "top" | "bottom";
-          angle_deg?: number;
-        };
-        const angleDeg = Math.max(-75, Math.min(75, Number(a.angle_deg ?? 45)));
-        const endKind = a.end ?? "top";
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const targetSet = new Set(targetIds);
-        state.entities = state.entities.map((e) => {
-          if (targetSet.has(e.id)) {
-            changed.push(e.id);
-            return setEntityDirect3DParams(
-              e,
-              endKind === "bottom"
-                ? { miterCutBottomDeg: angleDeg }
-                : { miterCutTopDeg: angleDeg },
-            );
-          }
-          return e;
-        });
-        refreshSandboxPartModel(state);
-        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { endKind, angleDeg } };
-      }
-
-      case "transform_copy_body_3d": {
-        const a = args as {
-          target?: string;
-          dx_mm?: number;
-          dy_mm?: number;
-          dz_mm?: number;
-          rotate_z_deg?: number;
-          copy?: boolean;
-        };
-        const targetIds = a.target
-          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
-          : state.entities
-              .filter(
-                (e) =>
-                  !e.isConstruction &&
-                  (e.type === "circle" ||
-                    e.type === "ellipse" ||
-                    (e.type === "polyline" && e.closed)),
-              )
-              .map((e) => e.id);
-        const prevCount = state.entities.length;
-        const res = applyDirectTransform3DToEntities(
-          state.entities,
-          targetIds,
-          {
-            dx: Number(a.dx_mm ?? 0),
-            dy: Number(a.dy_mm ?? 0),
-            dz: Number(a.dz_mm ?? 0),
-            rzDeg: Number(a.rotate_z_deg ?? 0),
-          },
-          Boolean(a.copy),
-        );
-        state.entities = res.updatedEntities;
-        if (a.copy && state.entities.length > prevCount) {
-          created.push(...res.activeIds);
-        } else {
-          changed.push(...targetIds);
-        }
-        refreshSandboxPartModel(state);
-        return { ok: true, tool: name, created, changed, removed, warnings, errors };
-      }
-
       default:
         errors.push(`Ferramenta '${String(name)}' não registrada no catálogo do CHAMFER.`);
         return { ok: false, tool: name, created, changed, removed, warnings, errors };
@@ -2778,7 +2345,7 @@ export const CHAMFER_TOOL_REGISTRY_V2: Record<DslV2ToolName, ToolRegistryV2Entry
         ].includes(name)
       ) {
         family = "composite_boilermaking";
-      } else if (["add_holes", "add_cutout", "create_cutout"].includes(name)) {
+      } else if (["add_holes", "add_cutout"].includes(name)) {
         family = "holes_cutouts";
       } else if (
         ["edit_feature", "transform", "edit_geometry", "array", "delete", "set_layer"].includes(name)

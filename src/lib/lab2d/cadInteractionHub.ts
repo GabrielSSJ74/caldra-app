@@ -59,14 +59,14 @@ export const STORAGE_KEYS = {
 } as const;
 
 /**
- * Lê o modo de deslocamento do cursor.
- * Padrão 'offset' (Mira 55px acima do dedo) para evitar oclusão do toque mobile.
+ * Lê o modo de deslocamento do cursor salvo no localStorage.
+ * Padrão: 'offset' (55px acima do dedo no touch).
  */
 export function loadCursorOffsetMode(): CursorOffsetMode {
   if (typeof window === "undefined") return "offset";
   try {
     const raw = window.localStorage.getItem(STORAGE_KEYS.CURSOR_OFFSET_MODE);
-    if (raw === "offset" || raw === "direct") return raw;
+    if (raw === "direct" || raw === "offset") return raw;
   } catch {
     /* ignore */
   }
@@ -128,7 +128,7 @@ export function computeUnifiedCursorFrame(
   clientX: number,
   clientY: number,
   matrix: WorldTransformMatrix,
-  useTouchOffset = false,
+  useTouchOffset: boolean,
 ): ComputedCursorFrame {
   const safeZoom = Number.isFinite(matrix.zoom) && matrix.zoom > 0 ? matrix.zoom : 1;
   const localX = clientX - matrix.left;
@@ -149,20 +149,18 @@ export function computeUnifiedCursorFrame(
     };
   }
 
-  const invertedTopEdge = clientY < TOUCH_TOP_EDGE_THRESHOLD_PX;
+  const invertedTopEdge = localY < TOUCH_TOP_EDGE_THRESHOLD_PX;
   const appliedOffsetY = invertedTopEdge ? TOUCH_CURSOR_OFFSET_PX : -TOUCH_CURSOR_OFFSET_PX;
-  const cursorScreenY = clientY + appliedOffsetY;
-  const cursorLocalY = cursorScreenY - matrix.top;
 
   const cursorWorld: Vec2 = {
     x: directWorld.x,
-    y: (cursorLocalY - matrix.panY) / safeZoom,
+    y: (localY + appliedOffsetY - matrix.panY) / safeZoom,
   };
 
   return {
     directWorld,
     cursorWorld,
-    cursorScreen: { x: clientX, y: cursorScreenY },
+    cursorScreen: { x: clientX, y: clientY + appliedOffsetY },
     appliedOffsetY,
     invertedTopEdge,
   };

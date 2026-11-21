@@ -18,7 +18,6 @@ import {
   CALDRA_ACCENT_COLOR_KEY,
   hexToRgbChannels,
   resolveAccentColorTokens,
-  resolveBubbleTintTokens,
 } from "@/lib/settings/appearancePreferences";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -99,7 +98,7 @@ export function BubbleNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const router = useRouter();
   const navigate = useNavigate();
-  const { accent, theme, cardOpacity, bubbleOpacity } = useSettings();
+  const { accent, theme } = useSettings();
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -120,22 +119,19 @@ export function BubbleNav() {
   const fallbackActiveIndex = activeIndex >= 0 ? activeIndex : 2; // Default Início (centro)
   const resolvedActiveIndex = optimisticIndex ?? fallbackActiveIndex;
 
-  // Trava anti-spam e deduplicação de cliques/toques repetidos (mesma aba dentro de 80ms)
+  // Trava anti-spam e deduplicação de cliques/toques repetidos
   const lastNavTimeRef = useRef<number>(0);
   const lastNavIndexRef = useRef<number>(-1);
 
-  // Resolve dinamicamente tokens visuais: Cor de Destaque, Opacidade dos Cartões e Opacidade Translúcida das Bolhas (0.10 a 0.38)
-  const { navContainerStyle, activePillStyle, activeIconColor } = useMemo(() => {
+  // Resolve dinamicamente a Cor de Destaque ativa (--accent-color e --accent-rgb)
+  const navAccentStyle = useMemo<CSSProperties>(() => {
     const prefersDark =
       mounted &&
       typeof window !== "undefined" &&
       (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
-    const isAmoled =
-      theme === "amoled" ||
-      (mounted && typeof document !== "undefined" && document.documentElement.classList.contains("amoled"));
     const isDark =
-      isAmoled ||
       theme === "dark" ||
+      theme === "amoled" ||
       (theme === "system" && prefersDark) ||
       (mounted && typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
 
@@ -153,28 +149,11 @@ export function BubbleNav() {
       ? hexToRgbString(accentColor, accentRgb)
       : accentRgb;
 
-    const clampedCardAlpha = Math.min(1, Math.max(0.2, cardOpacity / 100));
-    const bubbleTokens = resolveBubbleTintTokens(bubbleOpacity);
-
-    const navBgRgb = isAmoled ? "5, 8, 12" : isDark ? "14, 20, 28" : "255, 255, 255";
-
     return {
-      navContainerStyle: {
-        "--accent-color": accentColor,
-        "--accent-rgb": rgbChannels,
-        "--card-opacity": clampedCardAlpha.toFixed(2),
-        "--bubble-opacity": bubbleTokens.rawRatio.toFixed(2),
-        "--bubble-tint-alpha": bubbleTokens.fillAlpha.toFixed(3),
-        "--bubble-border-alpha": bubbleTokens.borderAlpha.toFixed(3),
-        backgroundColor: `rgba(${navBgRgb}, ${Math.max(0.88, clampedCardAlpha).toFixed(2)})`,
-      } as CSSProperties,
-      activePillStyle: {
-        backgroundColor: `rgba(${rgbChannels}, ${bubbleTokens.fillAlpha.toFixed(3)})`,
-        borderColor: `rgba(${rgbChannels}, ${bubbleTokens.borderAlpha.toFixed(3)})`,
-      } as CSSProperties,
-      activeIconColor: accentColor,
-    };
-  }, [accent, theme, cardOpacity, bubbleOpacity, mounted]);
+      "--accent-color": accentColor,
+      "--accent-rgb": rgbChannels,
+    } as CSSProperties;
+  }, [accent, theme, mounted]);
 
   // Escuta evento personalizado para novo projeto caso disparado
   useEffect(() => {
@@ -190,26 +169,26 @@ export function BubbleNav() {
       const dest = DESTINATIONS[index];
       if (!dest) return;
 
-      const now = performance.now();
-      if (now - lastNavTimeRef.current < 80 && lastNavIndexRef.current === index) return;
-      lastNavTimeRef.current = now;
-      lastNavIndexRef.current = index;
-
-      // Se já estiver na mesma rota exata, apenas limpa estado otimista
-      if (pathname === dest.to) {
+      // Previne disparos repetidos na mesma aba
+      if (dest.matches(pathname)) {
         setOptimisticIndex(null);
         return;
       }
 
-      // Resposta visual e tátil imediata em 0ms (sem startViewTransition nem startTransition)
+      const now = performance.now();
+      if (now - lastNavTimeRef.current < 50 && lastNavIndexRef.current === index) return;
+      lastNavTimeRef.current = now;
+      lastNavIndexRef.current = index;
+
+      // Resposta visual e tátil imediata no MESMO sub-frame de entrada (<2ms, 500Hz)
       setOptimisticIndex(index);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("caldra:tab-switch", { detail: dest.to }));
-      }
       triggerHaptic("selection");
       AudioManager.play("ui_nav");
 
-      void navigate({ to: dest.to });
+      // Navegação sem engasgos com transição concorrente React
+      React.startTransition(() => {
+        void navigate({ to: dest.to });
+      });
     },
     [navigate, pathname],
   );
@@ -230,7 +209,7 @@ export function BubbleNav() {
       setNewProjectOpen(false);
       triggerHaptic("success");
       AudioManager.play("ui_pop");
-      startTransition(() => {
+      React.startTransition(() => {
         void navigate({ to: "/projetos/$projectId", params: { projectId: created.id } });
       });
     } catch (e) {
@@ -242,11 +221,11 @@ export function BubbleNav() {
     <>
       <nav
         aria-label="Navegação principal da oficina digital"
-        className="caldra-floating-nav h-14 px-3 rounded-full"
-        style={navContainerStyle}
+        className="caldra-floating-nav"
+        style={navAccentStyle}
       >
-        <div className="relative flex h-full w-full items-center justify-between">
-          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque + Opacidade Translúcida das Bolhas */}
+        <div className="relative flex h-full w-full items-center">
+          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque — GPU acelerada 190ms */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute top-0 left-0 z-0 flex h-full w-1/5 items-center justify-center"
@@ -256,10 +235,10 @@ export function BubbleNav() {
               willChange: "transform",
             }}
           >
-            <div className="caldra-nav-sliding-pill w-12 h-10 rounded-full" style={activePillStyle} />
+            <div className="caldra-nav-sliding-pill" />
           </div>
 
-          {/* 5 Botões Minimalistas Apenas Ícones (Área de toque generosa 52x44px e 0ms delay) */}
+          {/* 5 Botões de Destino com disparo imediato em onPointerDown e feedback <2ms */}
           {DESTINATIONS.map((dest, destIdx) => {
             const isCurrent = destIdx === resolvedActiveIndex;
             const Icon = dest.icon;
@@ -269,40 +248,33 @@ export function BubbleNav() {
                 key={dest.id}
                 type="button"
                 aria-label={dest.label}
-                title={dest.label}
                 aria-current={isCurrent ? "page" : undefined}
                 data-active={isCurrent ? "true" : "false"}
                 onPointerDown={(e) => {
                   if (e.pointerType === "mouse" && e.button !== 0) return;
+                  e.preventDefault();
                   navigateToDestination(destIdx);
                 }}
                 onPointerEnter={() => handlePointerEnter(destIdx)}
-                onClick={() => {
-                  navigateToDestination(destIdx);
+                onClick={(e) => {
+                  // Fallback para acessibilidade de teclado
+                  if (e.detail === 0) {
+                    navigateToDestination(destIdx);
+                  }
                 }}
                 style={{
                   touchAction: "manipulation",
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   WebkitTapHighlightColor: "transparent",
-                  transform: "translateZ(0)",
-                  color: isCurrent ? activeIconColor : undefined,
+                  willChange: "transform, opacity",
                 }}
-                className="caldra-nav-item-btn min-w-[52px] h-[44px] flex items-center justify-center cursor-pointer select-none focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
+                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
               >
-                <span
-                  className="relative z-10 flex w-12 h-10 items-center justify-center rounded-full pointer-events-none"
-                  style={{ transform: "translateZ(0)" }}
-                >
-                  <Icon
-                    className="caldra-nav-item-icon size-[22px] shrink-0"
-                    style={{
-                      transform: "translateZ(0)",
-                      color: isCurrent ? activeIconColor : undefined,
-                    }}
-                    strokeWidth={2}
-                  />
-                </span>
+                <Icon
+                  className="caldra-nav-item-icon"
+                  strokeWidth={isCurrent ? 2.2 : 1.85}
+                />
               </button>
             );
           })}
@@ -333,28 +305,28 @@ function NavToolsModal({ open, onClose }: { open: boolean; onClose: () => void }
       title: "Calculadora Científica",
       desc: "Trigonometria, caldeiraria e conversões angulares",
       icon: Calculator,
-      color: "caldra-bubble-amber",
+      color: "caldra-bubble-amber text-amber-500",
       to: "/calculadora",
     },
     {
       title: "Traçagem Paramétrica",
       desc: "Modelos 3D, planificação zero fresta e traçagem passo a passo",
       icon: DraftingCompass,
-      color: "caldra-bubble-sky",
+      color: "caldra-bubble-sky text-sky-500",
       to: "/tracagem",
     },
     {
       title: "Prancheta CAD 2D CHAMFER",
       desc: "Desenho vetorial técnico, cotas e exportação DXF",
       icon: PenTool,
-      color: "caldra-bubble-amber-primary",
+      color: "caldra-bubble-red text-red-500",
       to: "/desenho-2d",
     },
     {
       title: "Bancada de Chapas e Nesting",
       desc: "Aproveitamento de retalho e plano de corte na chapa",
       icon: Layers,
-      color: "caldra-bubble-emerald",
+      color: "caldra-bubble-emerald text-emerald-500",
       to: "/oficina",
       search: { tab: "chapa" as const },
     },

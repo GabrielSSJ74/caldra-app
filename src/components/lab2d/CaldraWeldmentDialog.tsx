@@ -28,7 +28,7 @@ import {
 import type { ProfileSection, ProfileType } from "@/lib/cad/weldments/types";
 import type { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 
 interface CaldraWeldmentDialogProps {
   open: boolean;

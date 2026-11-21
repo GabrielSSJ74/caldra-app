@@ -65,53 +65,16 @@ const THEMES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
 ];
 
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
-  {
-    id: "fluido",
-    label: "FLUIDO",
-    hint: "Shader líquido em movimento contínuo",
-  },
-  {
-    id: "suave",
-    label: "COSMOS RADIAL",
-    hint: "Massas radiais autônomas vivas em transição cromática pelo espaço profundo",
-  },
-  {
-    id: "padrao",
-    label: "PADRÃO",
-    hint: "Massas radiais autônomas vivas em transição cromática pelo espaço profundo",
-  },
+  { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
+  { id: "suave", label: "Fluid Aurora", hint: "Campos de luz flutuando em espaço profundo" },
+  { id: "padrao", label: "Padrão", hint: "Sem fundo animado — cor sólida do tema" },
 ];
 
-const ACCENTS: {
-  id: AccentColor;
-  label: string;
-  swatch: string;
-  triad: [string, string, string];
-}[] = [
-  {
-    id: "default",
-    label: "Neutro / Monocromático",
-    swatch: "linear-gradient(135deg, #0F172A 0%, #334155 58%, #94A3B8 100%)",
-    triad: ["#0F172A", "#334155", "#94A3B8"],
-  },
-  {
-    id: "amber",
-    label: "Âmbar Caldeiraria",
-    swatch: "var(--amber-gradient, linear-gradient(135deg, #8A3300 0%, #D16002 45%, #F7941D 100%))",
-    triad: ["#D16002", "#8A3300", "#F7941D"],
-  },
-  {
-    id: "blue",
-    label: "Azul Técnico",
-    swatch: "var(--blue-gradient, linear-gradient(135deg, #003471 0%, #00A8FF 62%, #2CA5D6 100%))",
-    triad: ["#003471", "#00A8FF", "#2CA5D6"],
-  },
-  {
-    id: "crimson",
-    label: "Vermelho Carmesim",
-    swatch: "var(--crimson-gradient, linear-gradient(135deg, #D61818 0%, #E51A4C 60%, #C11034 100%))",
-    triad: ["#D61818", "#E51A4C", "#C11034"],
-  },
+const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
+  { id: "default", label: "Neutro / Monocromático", swatch: "var(--foreground)" },
+  { id: "amber", label: "Âmbar Caldeiraria", swatch: "#F59E0B" },
+  { id: "blue", label: "Azul Técnico", swatch: "#0066FF" },
+  { id: "crimson", label: "Vermelho Carmesim", swatch: "#B22222" },
 ];
 
 const LANGUAGES: { id: AppLanguage; label: string }[] = [
@@ -153,8 +116,6 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
     setRegion,
     auroraStyle,
     setAuroraStyle,
-    useAccentInOrbs,
-    setUseAccentInOrbs,
     language,
     setLanguage,
     cardOpacity,
@@ -278,15 +239,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
           CABEÇALHO DA CENTRAL — COMPACTO E TÉCNICO
           ========================================================================= */}
       <NavigationAreaHeader
-        badgeText="IDENTIDADE TÉCNICA & ASSINATURA"
+        badgeText="CENTRAL UNIFICADA"
         badgeColor="text-amber-500"
         indicatorColor="bg-amber-500"
-        secondaryBadge={
-          <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-0.5 font-mono text-[9.5px] font-bold tracking-wider uppercase text-amber-500 border border-amber-500/30 whitespace-nowrap shrink-0">
-            CALDRA ID
-          </span>
-        }
-        title="Credencial & Plano"
+        title="Perfil e Conta"
         actions={
           <>
             <button
@@ -829,9 +785,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
               <button
                 type="button"
-                onClick={(e) => {
+                onClick={() => {
                   triggerHaptic("tap");
-                  resetAppearance(e);
+                  resetAppearance();
                   toast.success("Aparência restaurada para o padrão do CALDRA.");
                 }}
                 className="inline-flex h-9 items-center gap-1 rounded-lg border border-border/70 px-2.5 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
@@ -854,9 +810,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     <button
                       key={t.id}
                       type="button"
-                      onClick={(e) => {
+                      onClick={() => {
                         triggerHaptic("tap");
-                        setTheme(t.id, e);
+                        setTheme(t.id);
                       }}
                       className={cn(
                         "relative flex h-11 items-center justify-between rounded-xl border px-3 font-mono text-xs transition-all cursor-pointer",
@@ -955,8 +911,8 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 </span>
                 <div className="caldra-card rounded-xl p-3 flex items-center justify-between transition-all">
                   <div className="flex items-center gap-2.5">
-                    <div className="caldra-bubble-base caldra-bubble-center size-9 shrink-0">
-                      <Compass className="relative z-10 size-4.5 shrink-0" style={{ transform: "translateZ(0)" }} />
+                    <div className="caldra-bubble-base caldra-bubble-amber size-9 shrink-0">
+                      <Compass className="size-4.5" />
                     </div>
                     <div>
                       <span className="font-display text-xs font-bold text-foreground block leading-tight">
@@ -969,23 +925,23 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <div className="caldra-bubble-base caldra-bubble-red size-6.5 text-[9px] font-bold">
-                      <span className="relative z-10 leading-none select-none" style={{ transform: "translateZ(0)" }}>C</span>
+                      C
                     </div>
                     <div className="caldra-bubble-base caldra-bubble-sky size-6.5 text-[9px] font-bold">
-                      <span className="relative z-10 leading-none select-none" style={{ transform: "translateZ(0)" }}>2D</span>
+                      2D
                     </div>
-                    <div className="caldra-bubble-base caldra-bubble-center size-6.5 text-[9px] font-bold">
-                      <span className="relative z-10 leading-none select-none" style={{ transform: "translateZ(0)" }}>✦</span>
+                    <div className="caldra-bubble-base caldra-bubble-center size-6.5 text-[9px] font-bold border border-amber-500/50 text-amber-500">
+                      ✦
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Cor de destaque — botões de 44 px com tríade cromática */}
+            {/* Cor de destaque — botões de 44 px */}
             <div className="space-y-1.5">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                Cor de Destaque (Tríade Cromática)
+                Cor de Destaque
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {ACCENTS.map((a) => {
@@ -999,27 +955,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         if (a.id !== "blue" && a.id !== "crimson" && !requirePro("accent.colors")) return;
                         setAccent(a.id);
                       }}
-                      style={
-                        isActive
-                          ? {
-                              borderColor: "var(--accent-border)",
-                              backgroundColor: "var(--accent-surface)",
-                              color: "var(--accent-color)",
-                              boxShadow: "var(--accent-glow)",
-                            }
-                          : undefined
-                      }
                       className={cn(
-                        "flex h-11 items-center justify-center gap-2 rounded-xl border px-2.5 font-mono text-xs transition-all duration-300 cursor-pointer",
+                        "flex h-11 items-center justify-center gap-2 rounded-xl border px-2.5 font-mono text-xs transition-colors cursor-pointer",
                         isActive
-                          ? "font-semibold"
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
                       )}
                     >
                       <span
                         aria-hidden
-                        className="size-3 rounded-full ring-1 ring-black/10 dark:ring-white/20 shrink-0"
-                        style={{ backgroundImage: a.swatch }}
+                        className="size-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/15"
+                        style={{ background: a.swatch }}
                       />
                       <span className="truncate">{a.label}</span>
                     </button>
@@ -1028,121 +974,56 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
             </div>
 
-            {/* Ecossistema do Fundo (Luz Viva) */}
-            <div className="space-y-2">
+            {/* Estilo do Fundo / Aurora */}
+            <div className="space-y-1.5">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                ECOSSISTEMA DO FUNDO (LUZ VIVA)
+                Estilo do Fundo (Aurora)
               </span>
               <div className="grid grid-cols-3 gap-2">
                 {AURORA_STYLES.map((a) => {
                   const isSelected = auroraStyle === a.id;
+                  const isProGated = a.id === "fluido" && !isMestre;
                   return (
                     <button
                       key={a.id}
                       type="button"
                       onClick={() => {
                         triggerHaptic("tap");
+                        if (isProGated) {
+                          toast.info("O estilo de fundo Fluido é exclusivo do CALDRA PRO.", {
+                            description:
+                              "Faça upgrade para o CALDRA PRO para ativar o fundo dinâmico fluido.",
+                            action: {
+                              label: "Ver Planos",
+                              onClick: () => {
+                                window.location.href = "/pro";
+                              },
+                            },
+                          });
+                          return;
+                        }
                         setAuroraStyle(a.id);
                       }}
                       className={cn(
-                        "relative h-11 rounded-xl border px-1.5 text-center font-mono text-[10.5px] sm:text-xs uppercase transition-colors cursor-pointer flex items-center justify-center gap-1",
+                        "relative h-11 rounded-xl border text-center font-mono text-xs uppercase transition-colors cursor-pointer flex items-center justify-center gap-1.5",
                         isSelected
                           ? "border-sky-500/50 bg-sky-500/10 text-sky-500 font-bold shadow-xs ring-1 ring-sky-500/30"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
+                        isProGated && !isSelected && "opacity-80",
                       )}
                     >
                       <span>{a.label}</span>
+                      {isProGated && (
+                        <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 font-mono text-[8.5px] font-bold text-amber-500">
+                          PRO
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
-
-              {/* Botão / Toggle "Usar Cor de Destaque" nos Orbes / Aurora (Não-Destrutivo) */}
-              {(() => {
-                const activeTriadObj =
-                  ACCENTS.find((item) =>
-                    item.id === (accent === "magenta" ? "crimson" : accent),
-                  ) ?? ACCENTS[2]!;
-                return (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={useAccentInOrbs}
-                    data-testid="toggle-orbs-use-accent"
-                    onClick={() => {
-                      triggerHaptic("tap");
-                      setUseAccentInOrbs(!useAccentInOrbs);
-                    }}
-                    style={
-                      useAccentInOrbs
-                        ? {
-                            borderColor: "var(--accent-border)",
-                            backgroundColor: "var(--accent-surface)",
-                            boxShadow: "var(--accent-glow)",
-                          }
-                        : undefined
-                    }
-                    className={cn(
-                      "w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-300 cursor-pointer",
-                      useAccentInOrbs
-                        ? "text-foreground"
-                        : "border-border/70 bg-muted/15 text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="font-mono text-[11px] font-semibold uppercase tracking-wider"
-                          style={useAccentInOrbs ? { color: "var(--accent-color)" } : undefined}
-                        >
-                          Usar Cor de Destaque
-                        </span>
-                        <span className="inline-flex items-center gap-1" aria-hidden>
-                          {activeTriadObj.triad.map((hex, idx) => (
-                            <span
-                              key={idx}
-                              className="size-2 rounded-full ring-1 ring-black/10 dark:ring-white/20"
-                              style={{ backgroundColor: hex }}
-                            />
-                          ))}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-[10px] text-muted-foreground truncate">
-                        {useAccentInOrbs
-                          ? `Ativado — Seguindo a tríade ${activeTriadObj.label}`
-                          : "Desativado — Mantém a paleta original do estilo ativo"}
-                      </p>
-                    </div>
-
-                    <span
-                      aria-hidden
-                      style={
-                        useAccentInOrbs
-                          ? { backgroundImage: "var(--accent-gradient)" }
-                          : undefined
-                      }
-                      className={cn(
-                        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-all duration-300",
-                        useAccentInOrbs
-                          ? "border-transparent"
-                          : "border-border/80 bg-muted/60",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "inline-block size-4 rounded-full bg-white shadow-sm transition-transform duration-300",
-                          useAccentInOrbs ? "translate-x-5.5" : "translate-x-1",
-                        )}
-                      />
-                    </span>
-                  </button>
-                );
-              })()}
-
-              <p className="text-[10px] text-muted-foreground" data-testid="aurora-style-description">
-                {auroraStyle === "fluido"
-                  ? "Shader líquido em movimento contínuo"
-                  : "Massas radiais autônomas vivas em transição cromática pelo espaço profundo"}
+              <p className="text-[10px] text-muted-foreground">
+                {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint}
               </p>
             </div>
 

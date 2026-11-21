@@ -23,11 +23,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { X, Delete, Check, Minus, Plus, Keyboard, Sliders, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
-import {
-  CHAMFER_INJECT_CAD_VALUE_EVENT,
-  type ChamferInjectCadValueDetail,
-} from "@/lib/lab2d/chamferBenchCalculator";
-import { chamferParameterStore, type ChamferParameter } from "@/chamfer/core/parameterStore";
 import type { NumericPropertyDef } from "./types";
 
 interface ChamferCompactNumericEditorProps {
@@ -65,23 +60,6 @@ export function ChamferCompactNumericEditor({
     property.value.toFixed(property.decimals ?? 2)
   );
   const [isTyping, setIsTyping] = useState<boolean>(false);
-  // Expressão paramétrica no Numpad (Pilar 2 — sem abrir teclado nativo do celular)
-  const [favoriteParams, setFavoriteParams] = useState<ChamferParameter[]>(() =>
-    chamferParameterStore.getAll().slice(0, 8),
-  );
-  const [exprMode, setExprMode] = useState<boolean>(false);
-  const [exprError, setExprError] = useState<string | null>(null);
-  const [savedToast, setSavedToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    const sync = () => {
-      const all = chamferParameterStore.getAll();
-      const favs = all.filter((p) => p.favorite);
-      setFavoriteParams((favs.length > 0 ? favs : all).slice(0, 8));
-    };
-    sync();
-    return chamferParameterStore.subscribe(sync);
-  }, []);
 
   // Estado do arraste / deslize horizontal (Scrubbing - Regra 8)
   const [isDragging, setIsDragging] = useState(false);
@@ -117,22 +95,6 @@ export function ChamferCompactNumericEditor({
     [onChange, property.min, property.max, property.decimals]
   );
 
-  // Ponte Bidirecional da Mini-Calculadora de Bancada (`[ ↳ Usar no CAD ]`)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onInject = (rawEv: Event) => {
-      const ev = rawEv as CustomEvent<ChamferInjectCadValueDetail>;
-      if (!ev.detail || ev.detail.handled) return;
-      if (!Number.isFinite(ev.detail.value)) return;
-      setIsTyping(false);
-      applyValue(ev.detail.value);
-      triggerHaptic("selection");
-      ev.detail.handled = true;
-    };
-    window.addEventListener(CHAMFER_INJECT_CAD_VALUE_EVENT, onInject);
-    return () => window.removeEventListener(CHAMFER_INJECT_CAD_VALUE_EVENT, onInject);
-  }, [applyValue]);
-
   // Incremento / Decremento por passo ativo (− e +)
   const handleStepChange = (direction: -1 | 1) => {
     triggerHaptic("selection");
@@ -141,63 +103,14 @@ export function ChamferCompactNumericEditor({
     applyValue(next);
   };
 
-  // Insere chip de parâmetro ou operador matemático na expressão sem abrir teclado nativo
-  const handleInsertExprToken = (token: string) => {
-    triggerHaptic("selection");
-    setExprMode(true);
-    setExprError(null);
-    const isFresh = !isTyping && !exprMode;
-    setIsTyping(true);
-    const base = isFresh ? "" : inputBuffer;
-    const sep = base.length > 0 && !base.endsWith(" ") && !base.endsWith("(") ? " " : "";
-    const nextBuf = `${base}${sep}${token}`.trim();
-    setInputBuffer(nextBuf);
-    const ev = chamferParameterStore.evaluate(nextBuf);
-    if (ev.ok && Number.isFinite(ev.value)) {
-      let clamped = ev.value;
-      if (property.min !== undefined) clamped = Math.max(property.min, clamped);
-      if (property.max !== undefined) clamped = Math.min(property.max, clamped);
-      setCurrentValue(clamped);
-      onChange(clamped);
-    }
-  };
-
-  // Salva expressão/valor atual como parâmetro do modelo ou usuário
-  const handleSaveAsParameter = () => {
-    triggerHaptic("heavy");
-    const slug = property.label
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_|_$/g, "") || "cota";
-    const res = chamferParameterStore.setParameter(slug, inputBuffer || String(currentValue), {
-      unit: property.unit === "°" ? "deg" : "mm",
-      favorite: true,
-      kind: "user",
-      description: `Salvo do Numpad (${property.label})`,
-    });
-    if (res.ok && res.parameter) {
-      setSavedToast(`Salvo: ${res.parameter.name} = ${res.parameter.value.toFixed(2)}`);
-      setTimeout(() => setSavedToast(null), 2200);
-    } else {
-      setExprError(res.error ?? "Erro ao salvar parâmetro");
-    }
-  };
-
   // Digitação de dígitos pelo teclado integrado do CHAMFER (sem teclado Android)
   const handleDigit = (digit: string) => {
     triggerHaptic("selection");
-    setExprError(null);
     let nextBuffer: string;
 
     if (!isTyping) {
       setIsTyping(true);
-      setExprMode(false);
       nextBuffer = digit === "." ? "0." : digit;
-    } else if (exprMode) {
-      if (inputBuffer.length >= 42) return;
-      nextBuffer = inputBuffer + digit;
     } else {
       if (digit === "." && inputBuffer.includes(".")) return;
       if (inputBuffer.length >= 10) return;
@@ -205,17 +118,6 @@ export function ChamferCompactNumericEditor({
     }
 
     setInputBuffer(nextBuffer);
-    if (exprMode || /[a-zA-Z+\-*/×÷()]/.test(nextBuffer)) {
-      const ev = chamferParameterStore.evaluate(nextBuffer);
-      if (ev.ok && Number.isFinite(ev.value)) {
-        let clamped = ev.value;
-        if (property.min !== undefined) clamped = Math.max(property.min, clamped);
-        if (property.max !== undefined) clamped = Math.min(property.max, clamped);
-        setCurrentValue(clamped);
-        onChange(clamped);
-      }
-      return;
-    }
     const parsed = parseFloat(nextBuffer);
     if (!isNaN(parsed)) {
       let clamped = parsed;
@@ -232,22 +134,13 @@ export function ChamferCompactNumericEditor({
     triggerHaptic("selection");
     if (!isTyping || inputBuffer.length <= 1) {
       setIsTyping(true);
-      setExprMode(false);
       setInputBuffer("0");
       setCurrentValue(0);
       onChange(property.min ?? 0);
       return;
     }
-    const next = inputBuffer.slice(0, -1).trimEnd();
-    setInputBuffer(next || "0");
-    if (/[a-zA-Z+\-*/×÷()]/.test(next)) {
-      const ev = chamferParameterStore.evaluate(next);
-      if (ev.ok && Number.isFinite(ev.value)) {
-        setCurrentValue(ev.value);
-        onChange(ev.value);
-      }
-      return;
-    }
+    const next = inputBuffer.slice(0, -1);
+    setInputBuffer(next);
     const parsed = parseFloat(next);
     if (!isNaN(parsed)) {
       setCurrentValue(parsed);
@@ -370,75 +263,6 @@ export function ChamferCompactNumericEditor({
             <X className="size-4" />
           </button>
         </div>
-      </div>
-
-      {/* ---------------------------------------------------- */}
-      {/* FAIXA DE PARÂMETROS FAVORITOS + OPERADORES (PILAR 2) */}
-      {/* ---------------------------------------------------- */}
-      <div
-        style={{ borderColor: "var(--chamfer-border)" }}
-        className="mt-1.5 flex flex-col gap-1 border-b pb-1.5"
-      >
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-          {favoriteParams.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              onClick={() => handleInsertExprToken(p.name)}
-              title={`${p.name} = ${p.value.toFixed(2)} ${p.unit}`}
-              style={{
-                backgroundColor: "var(--chamfer-accent-soft)",
-                borderColor: "var(--chamfer-accent-border)",
-                color: "var(--chamfer-accent)",
-              }}
-              className="shrink-0 rounded-lg border px-2 py-1 font-mono text-[10px] font-semibold transition hover:brightness-110 active:scale-95 cursor-pointer"
-            >
-              {p.name}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={handleSaveAsParameter}
-            style={{
-              backgroundColor: "var(--chamfer-accent)",
-              borderColor: "var(--chamfer-accent)",
-              color: "var(--chamfer-accent-contrast)",
-            }}
-            className="shrink-0 rounded-lg border px-2 py-1 font-mono text-[10px] font-bold transition hover:brightness-110 active:scale-95 cursor-pointer"
-          >
-            fx Salvar Parâmetro
-          </button>
-        </div>
-        <div className="flex items-center gap-1">
-          {["+", "-", "×", "÷", "(", ")"].map((op) => (
-            <button
-              key={op}
-              type="button"
-              onClick={() => handleInsertExprToken(op)}
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-border)",
-                color: "var(--chamfer-text-primary)",
-              }}
-              className="flex-1 rounded-lg border py-1 font-mono text-xs font-bold transition hover:opacity-85 active:scale-95 cursor-pointer"
-            >
-              {op}
-            </button>
-          ))}
-        </div>
-        {(exprError || savedToast || exprMode) && (
-          <div className="flex items-center justify-between px-0.5 font-mono text-[10px]">
-            {exprError ? (
-              <span style={{ color: "var(--chamfer-status-error)" }}>{exprError}</span>
-            ) : savedToast ? (
-              <span style={{ color: "var(--chamfer-status-success)" }}>{savedToast}</span>
-            ) : (
-              <span style={{ color: "var(--chamfer-accent)" }}>
-                = {currentValue.toFixed(property.decimals ?? 2)} {property.unit ?? "mm"}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* ---------------------------------------------------- */}

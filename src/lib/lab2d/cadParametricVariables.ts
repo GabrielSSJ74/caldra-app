@@ -1,17 +1,12 @@
 /**
  * CALDRA CHAMFER — VARIÁVEIS E EQUAÇÕES PARAMÉTRICAS (CAD PARAMETRICS)
  *
- * Atualizado para delegar 100% da avaliação ao parser recursivo seguro de
- * `@/chamfer/core/parameterStore` (ZERO eval / ZERO new Function, conversão automática de unidades
- * mm/cm/m/in/pol/"/°/deg/rad e detecção de ciclos via DFS), preservando integralmente
- * a API retrocompatível `ParametricVariableStore` e `globalParametricStore`.
+ * Tabela de variáveis globais e expressões relacionais do projeto:
+ *  - Ex: LARGURA = 500, ALTURA = 300, MARGEM = 25, FURO = LARGURA / 10
+ *  - Avaliador de expressões matemáticas seguro e determinístico;
+ *  - Grafo de dependências direcionado acíclico (DAG) para propagação em cascata;
+ *  - Atualização automática de entidades geométricas vinculadas a variáveis.
  */
-
-import {
-  chamferParameterStore,
-  evaluateSafeParameterExpression,
-  extractExpressionDependencies,
-} from "@/chamfer/core/parameterStore";
 
 export interface ParametricVariable {
   name: string;
@@ -26,6 +21,7 @@ export class ParametricVariableStore {
   private listeners: (() => void)[] = [];
 
   constructor() {
+    // Variáveis padrão para caldeiraria e mecânica
     this.setVariable("LARGURA", "600", "Largura nominal da chapa / peça");
     this.setVariable("ALTURA", "400", "Altura nominal da chapa / peça");
     this.setVariable("ESPESSURA", "6.35", "Espessura da chapa (1/4 pol)");
@@ -54,43 +50,104 @@ export class ParametricVariableStore {
 
   public getValue(name: string, fallback = 0): number {
     const v = this.variables.get(name.toUpperCase());
-    if (v) return v.value;
-    const modern = chamferParameterStore.get(name);
-    return modern ? modern.value : fallback;
+    return v ? v.value : fallback;
   }
 
   /**
-   * Avalia expressão matemática com parser recursivo puro (zero eval / zero new Function).
+   * Avalia expressão com suporte a:
+   * - Nomes de variáveis do projeto
+   * - Operadores: +, -, *, /, ^, parênteses
+   * - Funções: sqrt, sin, cos, tan, atan2, abs, min, max, round, ceil, floor, if
+   * - Unidades: mm, in, pol, ", cm, m, deg, °
+   * - Separador decimal: vírgula ou ponto (ex: "1,5 in", "500 mm")
    */
   public evaluateExpression(expr: string): number {
-    const res = evaluateSafeParameterExpression(expr, (key) => {
-      const legacy = this.variables.get(key.toUpperCase());
-      if (legacy) return legacy.value;
-      const modern = chamferParameterStore.get(key);
-      return modern ? modern.value : undefined;
-    });
-    return res.ok && Number.isFinite(res.value) ? res.value : 0;
-  }
+    let clean = (expr || "").trim();
+    if (!clean) return 0;
 
-  private hasCycle(targetUpper: string, candidateExpr: string): boolean {
-    const deps = extractExpressionDependencies(candidateExpr).map((d) => d.toUpperCase());
-    const visited = new Set<string>();
-    const dfs = (cur: string): boolean => {
-      const list =
-        cur === targetUpper
-          ? deps
-          : extractExpressionDependencies(this.variables.get(cur)?.expression ?? "").map((d) =>
-              d.toUpperCase(),
-            );
-      for (const next of list) {
-        if (next === targetUpper) return true;
-        if (visited.has(next)) continue;
-        visited.add(next);
-        if (dfs(next)) return true;
-      }
-      return false;
+    // Normalização de unidades técnicas comuns
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*(?:in|pol|")\b/gi, (_, val) => {
+      const v = parseFloat(val.replace(",", "."));
+      return String(v * 25.4);
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*cm\b/gi, (_, val) => {
+      const v = parseFloat(val.replace(",", "."));
+      return String(v * 10);
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*m\b/gi, (_, val) => {
+      const v = parseFloat(val.replace(",", "."));
+      return String(v * 1000);
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*mm\b/gi, (_, val) => {
+      return val.replace(",", ".");
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*(?:deg|°)\b/gi, (_, val) => {
+      return val.replace(",", ".");
+    });
+
+    // Se houver vírgula entre números (ex: 12,5 + 2,3), converte para ponto
+    clean = clean.replace(/(\d+),(\d+)/g, "$1.$2");
+
+    // Se for número puro direto
+    const num = Number(clean);
+    if (!isNaN(num)) return num;
+
+    // Substitui variáveis conhecidas pelo seu valor numérico
+    let parsed = clean.toUpperCase();
+    const sortedVars = Array.from(this.variables.values()).sort(
+      (a, b) => b.name.length - a.name.length,
+    );
+
+    for (const v of sortedVars) {
+      const regex = new RegExp(`\\b${v.name}\\b`, "g");
+      parsed = parsed.replace(regex, `(${v.value})`);
+    }
+
+    // Mapeamento de funções matemáticas suportadas
+    parsed = parsed.toLowerCase();
+    const mathMap: Record<string, string> = {
+      sqrt: "Math.sqrt",
+      sin: "Math.sin",
+      cos: "Math.cos",
+      tan: "Math.tan",
+      atan2: "Math.atan2",
+      abs: "Math.abs",
+      min: "Math.min",
+      max: "Math.max",
+      round: "Math.round",
+      ceil: "Math.ceil",
+      floor: "Math.floor",
+      pi: "Math.PI",
     };
-    return dfs(targetUpper);
+
+    for (const [fn, mathFn] of Object.entries(mathMap)) {
+      const regex = new RegExp(`\\b${fn}\\b`, "g");
+      parsed = parsed.replace(regex, mathFn);
+    }
+
+    // Suporte a if(cond, a, b) -> (cond ? a : b)
+    parsed = parsed.replace(/\bif\s*\(([^,]+),([^,]+),([^)]+)\)/g, "($1 ? $2 : $3)");
+
+    try {
+      // Verifica se a expressão contém apenas tokens seguros (números, operadores, Math.*, parênteses e ternários)
+      const sanitized = parsed.replace(/[^0-9a-zA-Z_+\-*/().^eE\s,?:<>=!]/g, "");
+      // Garante que qualquer palavra usada seja ou 'Math' ou membro de Math ou operador seguro
+      const tokens = sanitized.match(/[a-zA-Z_]+/g) || [];
+      const allowedTokens = new Set([
+        "Math", "sqrt", "sin", "cos", "tan", "atan2", "abs", "min", "max",
+        "round", "ceil", "floor", "PI", "E"
+      ]);
+      for (const tok of tokens) {
+        if (!allowedTokens.has(tok)) {
+          return 0; // Rejeita qualquer símbolo não permitido
+        }
+      }
+      const runnable = sanitized.replace(/\^/g, "**");
+      const result = new Function("Math", `return (${runnable});`)(Math);
+      return typeof result === "number" && !isNaN(result) && isFinite(result) ? result : 0;
+    } catch {
+      return 0;
+    }
   }
 
   public setVariable(
@@ -101,9 +158,6 @@ export class ParametricVariableStore {
   ) {
     const upperName = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
     if (!upperName) return;
-    if (this.hasCycle(upperName, expression)) {
-      return;
-    }
 
     const value = this.evaluateExpression(expression);
     this.variables.set(upperName, {
@@ -114,13 +168,7 @@ export class ParametricVariableStore {
       unit,
     });
 
-    // Sincroniza silenciosamente com o novo ChamferParameterStore
-    chamferParameterStore.setParameter(upperName.toLowerCase(), expression, {
-      unit,
-      description,
-      kind: "user",
-    });
-
+    // Reavalia variáveis dependentes
     this.recomputeAll();
     this.notify();
   }
@@ -137,7 +185,7 @@ export class ParametricVariableStore {
     while (changed && cycles < 10) {
       changed = false;
       cycles++;
-      for (const [, v] of this.variables.entries()) {
+      for (const [key, v] of this.variables.entries()) {
         const newVal = this.evaluateExpression(v.expression);
         if (Math.abs(newVal - v.value) > 1e-6) {
           v.value = newVal;

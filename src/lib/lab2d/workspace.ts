@@ -15,36 +15,11 @@ export type WorkspaceFrame = {
   /** Altura interna útil, em mm. */
   h: number;
   visible: boolean;
-  /** Exibe dimensões de referência da área (nunca cotas da peça). */
+  /** Exibe 1500 mm / 3000 mm como dimensões de referência (nunca cotas da peça). */
   showDims: boolean;
-  /** Trava os limites da área contra redimensionamento acidental. */
-  locked?: boolean;
 };
 
-export interface WorkspacePreset {
-  id: string;
-  w: number;
-  h: number;
-  label: string;
-  subtitle: string;
-}
-
-export const WORKSPACE_INDUSTRIAL_PRESETS: WorkspacePreset[] = [
-  { id: "1000x1000", w: 1000, h: 1000, label: "1000 × 1000 mm", subtitle: "Bancada Compacta" },
-  { id: "1500x1000", w: 1500, h: 1000, label: "1500 × 1000 mm", subtitle: "Chapa Padrão 1,5 × 1,0 m" },
-  { id: "2000x1000", w: 2000, h: 1000, label: "2000 × 1000 mm", subtitle: "Chapa Industrial 2,0 × 1,0 m" },
-  { id: "3000x1500", w: 3000, h: 1500, label: "3000 × 1500 mm", subtitle: "Mesa Laser / Plasma 3,0 × 1,5 m" },
-  { id: "1200x1200", w: 1200, h: 1200, label: "1200 × 1200 mm", subtitle: "Bancada Quadrada" },
-  { id: "6000x2000", w: 6000, h: 2000, label: "6000 × 2000 mm", subtitle: "Chapa Pesada / Caldeiraria" },
-];
-
-export const DEFAULT_FRAME: WorkspaceFrame = {
-  w: 1500,
-  h: 1000,
-  visible: true,
-  showDims: true,
-  locked: false,
-};
+export const DEFAULT_FRAME: WorkspaceFrame = { w: 1500, h: 3000, visible: true, showDims: true };
 
 const KEY = "caldra.chamfer.frame.v1";
 const MIN = 50;
@@ -63,7 +38,6 @@ export function loadFrame(): WorkspaceFrame {
       h: clampSide(Number(p.h), DEFAULT_FRAME.h),
       visible: p.visible !== false,
       showDims: p.showDims !== false,
-      locked: Boolean(p.locked),
     };
   } catch {
     return DEFAULT_FRAME;

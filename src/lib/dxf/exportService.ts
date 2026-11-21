@@ -15,7 +15,6 @@
 
 import {
   DEFAULT_CNC_OPTIONS,
-  auditDxfRoundTrip,
   buildCncDxf,
   cncCounts,
   preflightCnc,
@@ -24,7 +23,6 @@ import {
   type CncExportOptions,
   type CncPreflightRow,
   type CncRole,
-  type DxfRoundTripAudit,
 } from "@/lib/dxf/cncExport";
 import { exportDxf, type DxfDocument } from "@/lib/dxf/dxfService";
 import type { Entity } from "@/lib/lab2d/core";
@@ -56,7 +54,6 @@ export type DxfExportRequest = {
   roles?: Partial<Record<CncRole, boolean>>;
   leads?: boolean;
   flattenCurves?: boolean;
-  includeAnnotations?: boolean;
   metadata?: DxfMetadata;
 };
 
@@ -80,7 +77,6 @@ export function optionsFrom(req: DxfExportRequest): CncExportOptions {
     roles: { ...base.roles, ...req.roles },
     leads: req.leads ?? base.leads,
     flattenCurves: req.flattenCurves ?? base.flattenCurves,
-    includeAnnotations: req.includeAnnotations ?? base.includeAnnotations ?? false,
   };
 }
 
@@ -93,11 +89,10 @@ export type DxfExportResult = {
   preflight: CncPreflightRow[];
   counts: ReturnType<typeof cncCounts>;
   verification: ReturnType<typeof verifyCncDxf>;
-  roundTripAudit: DxfRoundTripAudit;
   options: CncExportOptions;
 };
 
-/** Gera o DXF completo com validação/preflight e auditoria de releitura S12. Não baixa nada. */
+/** Gera o DXF completo com validação/preflight. Não baixa nada. */
 export function exportDXF(req: DxfExportRequest): DxfExportResult {
   const options = optionsFrom(req);
   const doc = buildCncDxf(req.geometry, options);
@@ -105,13 +100,8 @@ export function exportDXF(req: DxfExportRequest): DxfExportResult {
   const issues = validateCncExport(req.geometry, options);
   const errors = issues.filter((i) => i.level === "error");
   const preflight = preflightCnc(req.geometry, options);
-  const roundTripAudit = auditDxfRoundTrip(text);
   return {
-    ok:
-      errors.length === 0 &&
-      preflight.every((r) => r.ok) &&
-      roundTripAudit.passed &&
-      doc.entities.length > 0,
+    ok: errors.length === 0 && preflight.every((r) => r.ok) && doc.entities.length > 0,
     doc,
     text,
     issues,
@@ -119,7 +109,6 @@ export function exportDXF(req: DxfExportRequest): DxfExportResult {
     preflight,
     counts: cncCounts(req.geometry),
     verification: verifyCncDxf(req.geometry, options, text),
-    roundTripAudit,
     options,
   };
 }

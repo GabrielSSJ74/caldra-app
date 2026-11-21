@@ -340,7 +340,7 @@ export function GeometryStudio({
 
   return (
     <div className="space-y-4">
-      {/* MEDIDAS — REGIÕES B, C, D e E */}
+      {/* MEDIDAS */}
       {stage === "modelo" && (
         <Panel className="p-3.5 lg:p-5" glow>
           <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
@@ -381,197 +381,150 @@ export function GeometryStudio({
                 selectedRef={selRef}
                 onSelectRef={setSelRef}
               />
+              <span className="pointer-events-none absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
+                Vista 2D · mm
+              </span>
             </VisualizationViewport>
 
-            {/* REGIÃO C — PARÂMETROS DIMENSIONAIS (MEDIDAS) EM GRID SIMÉTRICO 2x2 */}
-            <div className="flex flex-col justify-between">
-              <div>
-                <SectionLabel>MEDIDAS</SectionLabel>
-                <p className="mb-3 text-xs text-slate-400">
-                  Defina as dimensões da peça. O desenho acompanha cada alteração.
-                </p>
-                <div
-                  data-testid="medidas-grid-2x2"
-                  className="grid grid-cols-1 gap-3 min-[340px]:grid-cols-2"
-                >
-                  {activeFields.map((f) => {
-                    const err = issueFor(f.key);
-                    const desc = fieldMeaning(f.key);
-                    if (f.options) {
-                      const current = Math.round(values[f.key] ?? f.options[0]!.value);
-                      return (
-                        <div
-                          key={f.key}
-                          className="col-span-full flex flex-col justify-between rounded-[16px] border border-slate-400/16 bg-[#11192B] p-3"
-                        >
-                          <span className="mb-2 flex items-center justify-between font-mono text-[11px] font-semibold text-slate-200">
-                            <span className="truncate">{f.label}</span>
-                            <span className="rounded-md border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#38BDF8]">
-                              {f.tag}
-                            </span>
-                          </span>
-                          <div className="flex gap-1.5" role="group" aria-label={f.label}>
-                            {f.options.map((o) => (
-                              <button
-                                key={o.value}
-                                type="button"
-                                aria-pressed={current === o.value}
-                                onClick={() => setNumber(f.key, o.value)}
-                                className={`flex-1 rounded-lg border px-2 py-2 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors ${
-                                  current === o.value
-                                    ? "border-[#38BDF8] bg-sky-400/15 text-[#38BDF8]"
-                                    : "border-slate-400/20 text-slate-400 hover:text-white"
-                                }`}
-                              >
-                                {o.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
+            <div>
+              <SectionLabel>Medidas</SectionLabel>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Defina as dimensões da peça. O desenho acompanha cada alteração.
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {activeFields.map((f) => {
+                  const err = issueFor(f.key);
+                  if (f.options) {
+                    const current = Math.round(values[f.key] ?? f.options[0]!.value);
                     return (
-                      <label
-                        key={f.key}
-                        data-testid={`param-card-${f.key}`}
-                        className="flex flex-col justify-between rounded-[16px] border border-slate-400/16 bg-[#11192B] p-3 transition-colors focus-within:border-[#38BDF8]"
-                      >
-                        <div>
-                          <span className="mb-2 flex items-center justify-between gap-1.5">
-                            <span className="truncate text-[12px] font-semibold text-slate-200">
-                              {f.label}
-                            </span>
-                            <span className="shrink-0 rounded-md border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#38BDF8]">
-                              {f.tag}
-                            </span>
-                          </span>
-                          <SmartNumberInput
-                            value={values[f.key] ?? 0}
-                            unit={f.unit ?? "mm"}
-                            invalid={Boolean(err)}
-                            ariaLabel={f.label}
-                            inputRef={(el) => {
-                              inputs.current[f.key] = el;
-                            }}
-                            onFocus={() => setFocused(f.key)}
-                            onBlur={() => setFocused(null)}
-                            onChange={(mm) => setNumber(f.key, mm)}
-                          />
+                      <div key={f.key} className="col-span-2">
+                        <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                          <span className="truncate">{f.label}</span>
+                          <span className="text-accent/80">{f.tag}</span>
+                        </span>
+                        <div className="flex gap-1.5" role="group" aria-label={f.label}>
+                          {f.options.map((o) => (
+                            <button
+                              key={o.value}
+                              type="button"
+                              aria-pressed={current === o.value}
+                              onClick={() => setNumber(f.key, o.value)}
+                              className={`flex-1 rounded-lg border px-2 py-2 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors ${
+                                current === o.value
+                                  ? "border-accent/60 bg-accent/10 text-accent"
+                                  : "border-line text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
                         </div>
-                        {err ? (
-                          <span className="mt-2 block text-[11px] leading-[1.35] text-destructive">
-                            {err}
-                          </span>
-                        ) : (
-                          desc && (
-                            <span className="mt-2 block text-[11px] leading-[1.35] text-[#94A3B8]">
-                              {desc}
-                            </span>
-                          )
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-
-                {/* REGIÃO D — CARD MÉTODO E RESOLUÇÃO DO TRAÇADO */}
-                <div
-                  data-testid="metodo-card"
-                  className="mt-3 rounded-[16px] border border-slate-400/16 bg-[#11192B] p-3.5"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono text-[10px] font-bold tracking-[0.14em] text-[#38BDF8] uppercase">
-                      MÉTODO
-                    </span>
-                    <span className="font-mono text-[11px] font-medium text-slate-200">
-                      {engine.method}
-                    </span>
-                  </div>
-                  <label className="mt-3 flex items-center gap-2.5">
-                    <span className="shrink-0 font-mono text-[11px] font-medium text-slate-300">
-                      Divisões do traçado
-                    </span>
-                    <input
-                      type="range"
-                      min={3}
-                      max={24}
-                      value={values["divisions"] ?? 12}
-                      onChange={(e) => set("divisions", e.target.value)}
-                      aria-label="Divisões do traçado"
-                      className="h-1.5 min-w-0 flex-1 cursor-pointer accent-[#38BDF8]"
-                    />
-                    <span
-                      data-testid="divisions-badge"
-                      className="inline-flex min-w-[34px] shrink-0 items-center justify-center rounded-lg border border-sky-400/35 bg-[#0B1120] px-2 py-0.5 font-mono text-xs font-bold text-[#38BDF8]"
-                    >
-                      {values["divisions"] ?? 12}
-                    </span>
-                  </label>
-                </div>
-
-                {diagnoses.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {diagnoses.map((d) => (
-                      <div
-                        key={`${d.field}-${d.message}`}
-                        className="rounded-xl border border-destructive/40 bg-destructive/8 p-3"
-                      >
-                        <p className="text-[12px] text-destructive">{d.message}</p>
-                        {d.fix && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setValues((p) => ({ ...p, ...d.fix!.values }));
-                              toast.success(d.fix!.label);
-                            }}
-                            className="mt-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 font-mono text-[10px] tracking-wider text-accent uppercase"
-                          >
-                            {d.fix.label}
-                          </button>
-                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  }
+                  return (
+                    <label key={f.key} className="block">
+                      <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                        <span className="truncate">{f.label}</span>
+                        <span className="text-accent/80">{f.tag}</span>
+                      </span>
+                      <SmartNumberInput
+                        value={values[f.key] ?? 0}
+                        unit={f.unit ?? "mm"}
+                        invalid={Boolean(err)}
+                        ariaLabel={f.label}
+                        inputRef={(el) => {
+                          inputs.current[f.key] = el;
+                        }}
+                        onFocus={() => setFocused(f.key)}
+                        onBlur={() => setFocused(null)}
+                        onChange={(mm) => setNumber(f.key, mm)}
+                      />
+                      {err && (
+                        <span className="mt-1 block text-[10px] text-destructive">{err}</span>
+                      )}
+                      {aprendiz && !err && fieldMeaning(f.key) && (
+                        <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">
+                          {fieldMeaning(f.key)}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
 
-              {/* REGIÃO E — BARRA DE STATUS E AÇÃO PRINCIPAL (AVANÇAR >) */}
-              <div
-                data-testid="status-action-bar"
-                className="mt-4 flex items-center justify-between gap-2.5 rounded-[16px] border border-slate-400/16 bg-[#11192B] px-3.5 py-2.5"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={cn(
-                      "inline-block size-2 shrink-0 rounded-full",
-                      calculating
-                        ? "animate-pulse bg-amber-400"
-                        : diagnoses.length > 0
-                          ? "bg-destructive"
-                          : "bg-[#38BDF8] shadow-[0_0_8px_#38BDF8]",
-                    )}
-                  />
-                  <span className="font-mono text-[10px] leading-tight font-bold tracking-[0.08em] text-[#38BDF8] uppercase">
-                    {calculating
-                      ? "CALCULANDO…"
-                      : "PRONTO • ATUALIZAÇÃO EM TEMPO REAL"}
+              {/* MÉTODO */}
+              <div className="mt-3 rounded-xl border border-line bg-background/40 p-3">
+                <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                  Método
+                </p>
+                <p className="mt-1 text-sm">{engine.method}</p>
+                <label className="mt-2 flex items-center gap-3">
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    Divisões do traçado
                   </span>
-                </div>
+                  <input
+                    type="range"
+                    min={3}
+                    max={24}
+                    value={values["divisions"] ?? 12}
+                    onChange={(e) => set("divisions", e.target.value)}
+                    className="h-1 flex-1 accent-[var(--accent)]"
+                  />
+                  <span className="w-8 text-right font-mono text-xs">
+                    {values["divisions"] ?? 12}
+                  </span>
+                </label>
+              </div>
 
-                <button
-                  type="button"
-                  disabled={!result}
-                  onClick={() => setStage("resultados")}
+              {diagnoses.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {diagnoses.map((d) => (
+                    <div
+                      key={`${d.field}-${d.message}`}
+                      className="rounded-xl border border-destructive/40 bg-destructive/8 p-3"
+                    >
+                      <p className="text-[12px] text-destructive">{d.message}</p>
+                      {d.fix && (
+                        <button
+                          onClick={() => {
+                            setValues((p) => ({ ...p, ...d.fix!.values }));
+                            toast.success(d.fix!.label);
+                          }}
+                          className="mt-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 font-mono text-[10px] tracking-wider text-accent uppercase"
+                        >
+                          {d.fix.label}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p
                   className={cn(
-                    "brand-gradient ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 font-display text-[13px] font-bold text-slate-950 shadow-md transition-opacity",
-                    !result && "pointer-events-none opacity-40",
+                    "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
+                    calculating ? "text-muted-foreground" : "text-accent",
                   )}
                 >
-                  <span>Avançar</span>
-                  <ChevronRight className="size-4" />
-                </button>
-              </div>
+                  {calculating ? "Calculando…" : "Pronto · atualização em tempo real"}
+                </p>
+              )}
             </div>
+          </div>
+
+          {/* AVANÇAR — leva para a tela de Resultados */}
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              disabled={!result}
+              onClick={() => setStage("resultados")}
+              className={cn(
+                "brand-gradient flex items-center gap-2 rounded-xl px-5 py-2.5 font-display text-[13px] font-semibold text-background transition-opacity",
+                !result && "pointer-events-none opacity-40",
+              )}
+            >
+              Avançar <ChevronRight className="size-4" />
+            </button>
           </div>
         </Panel>
       )}

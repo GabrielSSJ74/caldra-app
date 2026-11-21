@@ -216,7 +216,7 @@ export function CadViewport3D({
     <div className={cn("relative flex h-full w-full flex-col overflow-hidden bg-[#0c111d] select-none", className)}>
       {/* 1. Barra de Controles Superior */}
       <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        {/* Modos de Aresta Técnica: [ SOMB | SOMB+AR | ARAME ] */}
+        {/* Modos de Aresta Técnica */}
         <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-[#0f172a]/90 p-1 backdrop-blur pointer-events-auto shadow-lg">
           <button
             type="button"
@@ -227,7 +227,7 @@ export function CadViewport3D({
                 ? "bg-sky-500/20 text-sky-400 font-semibold border border-sky-500/40"
                 : "text-slate-400 hover:text-slate-200"
             )}
-            title="SOMB (Caldra-Code): Sombreado metálico acetinado puro sem arestas sobrepostas"
+            title="SOMB: Superfície sombreada com bordas brancas puras"
           >
             SOMB
           </button>
@@ -240,7 +240,7 @@ export function CadViewport3D({
                 ? "bg-sky-500/20 text-sky-400 font-semibold border border-sky-500/40"
                 : "text-slate-400 hover:text-slate-200"
             )}
-            title="SOMB+AR (Caldra-Code): Superfície sólida 3D com sombreamento metálico e arestas reais de contorno"
+            title="SOMB+AR: Superfície com bordas e geratrizes técnicas"
           >
             SOMB+AR
           </button>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Crosshair, FileSearch, Minus, Plus } from "lucide-react";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 import { Button } from "@/components/chameleon/ds";
 import { SmartNumberInput } from "@/components/chameleon/SmartNumberInput";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";

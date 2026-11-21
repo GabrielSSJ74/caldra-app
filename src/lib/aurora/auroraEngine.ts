@@ -9,12 +9,12 @@
  *  - Resolução calibrada com DPR mobile amigável e sem piscadas.
  */
 
-export const VERT = `
+const VERT = `
 attribute vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 `;
 
-export const FRAG = `
+const FRAG = `
 precision highp float;
 
 uniform vec2  u_res;
@@ -129,17 +129,15 @@ type Mount = {
   amp: number;
   dark: boolean;
   amoled: boolean;
-  useAccentInOrbs: boolean;
-  accent: string;
 };
 
-export const HEX = (h: string): [number, number, number] => [
+const HEX = (h: string): [number, number, number] => [
   parseInt(h.slice(1, 3), 16) / 255,
   parseInt(h.slice(3, 5), 16) / 255,
   parseInt(h.slice(5, 7), 16) / 255,
 ];
 
-export const PALETTE_DARK: Record<string, [number, number, number]> = {
+const PALETTE_DARK: Record<string, [number, number, number]> = {
   u_baseA: HEX("#18181b"),
   u_baseB: HEX("#111114"),
   u_warm: HEX("#f59e0b"),
@@ -151,7 +149,7 @@ export const PALETTE_DARK: Record<string, [number, number, number]> = {
   u_violet: HEX("#4c1d95"),
 };
 
-export const PALETTE_LIGHT: Record<string, [number, number, number]> = {
+const PALETTE_LIGHT: Record<string, [number, number, number]> = {
   u_baseA: HEX("#ffffff"),
   u_baseB: HEX("#f1f5f9"),
   u_warm: HEX("#f59e0b"),
@@ -163,7 +161,7 @@ export const PALETTE_LIGHT: Record<string, [number, number, number]> = {
   u_violet: HEX("#7c3aed"),
 };
 
-export const PALETTE_AMOLED: Record<string, [number, number, number]> = {
+const PALETTE_AMOLED: Record<string, [number, number, number]> = {
   u_baseA: HEX("#000000"),
   u_baseB: HEX("#000000"),
   u_warm: HEX("#925405"),
@@ -175,97 +173,14 @@ export const PALETTE_AMOLED: Record<string, [number, number, number]> = {
   u_violet: HEX("#2e125b"),
 };
 
-function mixRgb(
-  a: [number, number, number],
-  b: [number, number, number],
-  t: number,
-): [number, number, number] {
-  return [
-    a[0] * (1 - t) + b[0] * t,
-    a[1] * (1 - t) + b[1] * t,
-    a[2] * (1 - t) + b[2] * t,
-  ];
-}
-
-export function resolveAuroraEnginePalette(
-  dark: boolean,
-  amoled: boolean,
-  useAccentInOrbs = false,
-  accent = "blue",
-): Record<string, [number, number, number]> {
-  const basePalette = !dark ? PALETTE_LIGHT : amoled ? PALETTE_AMOLED : PALETTE_DARK;
-  if (!useAccentInOrbs) {
-    return basePalette;
-  }
-
-  const norm = String(accent || "blue").trim().toLowerCase();
-  let s1 = HEX("#003471");
-  let s2 = HEX("#00A8FF");
-  let s3 = HEX("#2CA5D6");
-
-  if (
-    norm === "amber" ||
-    norm === "#d16002" ||
-    norm === "#8a3300" ||
-    norm === "#f7941d" ||
-    norm === "#f59e0b"
-  ) {
-    s1 = HEX("#8A3300");
-    s2 = HEX("#F7941D");
-    s3 = HEX("#D16002");
-  } else if (
-    norm === "crimson" ||
-    norm === "magenta" ||
-    norm === "#d61818" ||
-    norm === "#e51a4c" ||
-    norm === "#c11034" ||
-    norm === "#b22222"
-  ) {
-    s1 = HEX("#C11034");
-    s2 = HEX("#E51A4C");
-    s3 = HEX("#D61818");
-  } else if (norm === "default" || norm === "neutro") {
-    s1 = HEX("#1E293B");
-    s2 = HEX("#64748B");
-    s3 = HEX("#334155");
-  }
-
-  if (!dark) {
-    return {
-      u_baseA: basePalette.u_baseA!,
-      u_baseB: basePalette.u_baseB!,
-      u_warm: s2,
-      u_warmDeep: s3,
-      u_magenta: s2,
-      u_wine: s3,
-      u_fuchsia: s2,
-      u_indigo: s1,
-      u_violet: s3,
-    };
-  }
-
-  const baseAnchor = basePalette.u_baseA!;
-  const mixFactor = amoled ? 0.35 : 0.15;
-  return {
-    u_baseA: basePalette.u_baseA!,
-    u_baseB: basePalette.u_baseB!,
-    u_warm: mixRgb(s2, baseAnchor, mixFactor),
-    u_warmDeep: mixRgb(s3, baseAnchor, mixFactor),
-    u_magenta: mixRgb(s2, baseAnchor, mixFactor),
-    u_wine: mixRgb(s3, baseAnchor, mixFactor),
-    u_fuchsia: mixRgb(s2, baseAnchor, mixFactor),
-    u_indigo: mixRgb(s1, baseAnchor, mixFactor),
-    u_violet: mixRgb(s3, baseAnchor, mixFactor),
-  };
-}
-
 class AuroraEngine {
   private canvas: HTMLCanvasElement | null = null;
   private gl: WebGLRenderingContext | null = null;
   private program: WebGLProgram | null = null;
   private uniforms: Record<string, WebGLUniformLocation | null> = {};
   private stack: Mount[] = [];
-  private currentPaletteKey: string | null = null;
+  private currentDark: boolean | null = null;
+  private currentAmoled: boolean | null = null;
   private raf = 0;
   private lastFrameTime = 0;
   private elapsedAnimTime = 0;
@@ -290,17 +205,18 @@ class AuroraEngine {
     this.listeners.forEach((l) => l(false));
   }
 
-  private applyPalette(dark: boolean, amoled: boolean, useAccentInOrbs = false, accent = "blue") {
+  private applyPalette(dark: boolean, amoled: boolean) {
     const gl = this.gl;
     if (!gl) return;
-    const palette = resolveAuroraEnginePalette(dark, amoled, useAccentInOrbs, accent);
+    const palette = !dark ? PALETTE_LIGHT : amoled ? PALETTE_AMOLED : PALETTE_DARK;
     for (const [name, rgb] of Object.entries(palette)) {
       const loc = this.uniforms[name];
       if (loc) gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
     }
     const darkLoc = this.uniforms["u_isDark"];
     if (darkLoc) gl.uniform1f(darkLoc, dark ? 1.0 : 0.0);
-    this.currentPaletteKey = `${dark ? 1 : 0}:${amoled ? 1 : 0}:${useAccentInOrbs ? 1 : 0}:${accent}`;
+    this.currentDark = dark;
+    this.currentAmoled = amoled;
   }
 
   private init(): boolean {
@@ -309,7 +225,6 @@ class AuroraEngine {
     try {
       const canvas = document.createElement("canvas");
       canvas.setAttribute("aria-hidden", "true");
-      canvas.setAttribute("data-testid", "aurora-liquid-shader-canvas");
       canvas.style.cssText =
         "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;";
       const opts: WebGLContextAttributes = {
@@ -356,7 +271,7 @@ class AuroraEngine {
       for (const name of uniformNames) {
         this.uniforms[name] = gl.getUniformLocation(prog, name);
       }
-      this.applyPalette(true, false, false, "blue");
+      this.applyPalette(true, false);
 
       canvas.addEventListener("webglcontextlost", (e) => {
         e.preventDefault();
@@ -394,11 +309,9 @@ class AuroraEngine {
     amp: number,
     dark = true,
     amoled = false,
-    useAccentInOrbs = false,
-    accent = "blue",
   ): () => void {
     if (!this.init() || !this.canvas) return () => {};
-    const mount: Mount = { el, animated, amp, dark, amoled, useAccentInOrbs, accent };
+    const mount: Mount = { el, animated, amp, dark, amoled };
     this.stack.push(mount);
     this.attach();
     return () => {
@@ -407,23 +320,13 @@ class AuroraEngine {
     };
   }
 
-  update(
-    el: HTMLElement,
-    animated: boolean,
-    amp: number,
-    dark = true,
-    amoled = false,
-    useAccentInOrbs = false,
-    accent = "blue",
-  ) {
+  update(el: HTMLElement, animated: boolean, amp: number, dark = true, amoled = false) {
     const m = this.stack.find((x) => x.el === el);
     if (!m) return;
     m.animated = animated;
     m.amp = amp;
     m.dark = dark;
     m.amoled = amoled;
-    m.useAccentInOrbs = useAccentInOrbs;
-    m.accent = accent;
     if (this.top() === m) this.attach();
   }
 
@@ -442,8 +345,7 @@ class AuroraEngine {
       this.ro?.observe(top.el);
     }
     this.resize();
-    const reduced =
-      typeof window !== "undefined" &&
+    const reduced = typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (top.animated && !reduced && document.visibilityState === "visible") {
       this.play();
@@ -457,8 +359,8 @@ class AuroraEngine {
     const top = this.top();
     if (!this.canvas || !this.gl || !top) return;
     const rect = top.el.getBoundingClientRect();
-    const w = Math.max(1, rect.width || window.innerWidth || 1);
-    const h = Math.max(1, rect.height || window.innerHeight || 1);
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
     const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
     const maxDpr = isMobile ? 1.15 : 1.35;
     const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
@@ -477,9 +379,8 @@ class AuroraEngine {
     const gl = this.gl;
     const top = this.top();
     if (!gl || !top || !this.canvas) return;
-    const paletteKey = `${top.dark ? 1 : 0}:${top.amoled ? 1 : 0}:${top.useAccentInOrbs ? 1 : 0}:${top.accent}`;
-    if (paletteKey !== this.currentPaletteKey) {
-      this.applyPalette(top.dark, top.amoled, top.useAccentInOrbs, top.accent);
+    if (top.dark !== this.currentDark || top.amoled !== this.currentAmoled) {
+      this.applyPalette(top.dark, top.amoled);
     }
     gl.uniform2f(this.uniforms["u_res"]!, this.canvas.width, this.canvas.height);
     gl.uniform1f(this.uniforms["u_time"]!, animTime);
@@ -522,8 +423,7 @@ class AuroraEngine {
     if (!top) return;
     if (document.visibilityState === "visible") {
       this.lastFrameTime = performance.now();
-      const reduced =
-        typeof window !== "undefined" &&
+      const reduced = typeof window !== "undefined" &&
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       if (top.animated && !reduced) {
         this.play();

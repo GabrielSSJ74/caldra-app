@@ -25,14 +25,6 @@ import type { Entity } from "./core";
 import { samplePath } from "./bezier";
 import { getIsoExtrusionVector, type IsoPlane } from "./isometricEngine";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
-import {
-  analyzeEntityBarGeometry,
-  getEntityStructuralProfile,
-} from "./structuralProfile";
-import {
-  consolidateStitchedLoopsInEntities2D,
-  sanitizeClosedPolygonLoop2D,
-} from "./cadDirectModeling3D";
 
 export type WireframeEdgeCategory =
   | "top_primary"
@@ -259,28 +251,9 @@ export function resolveEntityZRatios(
   const safeH = sheetThickness > 0 ? sheetThickness : 5;
   const params = e.params ?? {};
 
-  const rawZ0 =
-    typeof e.elevationZ === "number"
-      ? e.elevationZ
-      : typeof params.elevationZ === "number"
-        ? (params.elevationZ as number)
-        : typeof params.zBaseMm === "number"
-          ? (params.zBaseMm as number)
-          : undefined;
-  const rawH =
-    typeof e.extrudeHeight === "number"
-      ? e.extrudeHeight
-      : typeof params.extrudeHeight === "number"
-        ? (params.extrudeHeight as number)
-        : typeof params.extrudeHeightMm === "number"
-          ? (params.extrudeHeightMm as number)
-          : undefined;
-
-  if (typeof rawZ0 === "number" || typeof rawH === "number") {
-    const zBaseMm = typeof rawZ0 === "number" && Number.isFinite(rawZ0) ? rawZ0 : 0;
-    const defaultH = Math.abs(zBaseMm) > 0.01 ? 0.15 : safeH;
-    const hMm =
-      typeof rawH === "number" && Number.isFinite(rawH) ? Math.max(0.1, rawH) : defaultH;
+  if (typeof params.zBaseMm === "number" || typeof params.extrudeHeightMm === "number") {
+    const zBaseMm = typeof params.zBaseMm === "number" ? params.zBaseMm : 0;
+    const hMm = typeof params.extrudeHeightMm === "number" ? params.extrudeHeightMm : safeH;
     return {
       z0: zBaseMm / safeH,
       z1: (zBaseMm + hMm) / safeH,
@@ -310,21 +283,8 @@ export function resolveEntityZRatios(
 
 /** Converte entidade fechada em polígono amostrado para análise topológica (Outer vs Hole) */
 export function sampleClosedEntityLoop(e: Entity, sampleSteps = 48): Vec2[] | null {
-  if (e.type === "rect" && e.w > 0.1 && e.h > 0.1) {
-    return [
-      { x: e.x, y: e.y },
-      { x: e.x + e.w, y: e.y },
-      { x: e.x + e.w, y: e.y + e.h },
-      { x: e.x, y: e.y + e.h },
-    ];
-  }
-  if (e.type === "polyline" && e.pts.length >= 3) {
-    const first = e.pts[0]!;
-    const last = e.pts[e.pts.length - 1]!;
-    if (e.closed || Math.hypot(first.x - last.x, first.y - last.y) <= 2.05) {
-      const clean = sanitizeClosedPolygonLoop2D(e.pts, 2.05);
-      return clean.length >= 3 ? clean : null;
-    }
+  if (e.type === "polyline" && e.closed && e.pts.length >= 3) {
+    return e.pts;
   }
   if (e.type === "circle" && e.r > 0) {
     const pts: Vec2[] = [];
@@ -386,67 +346,18 @@ export function pointInPolygon2D(p: Vec2, ring: Vec2[]): boolean {
  *  - Furos/recortes passantes internos (`holeEntityIds`) contidos dentro de um contorno externo
  *  - Mapa de contornos externos para seus furos filhos (`outerToHolesMap`)
  */
-export interface ClassifiedOuterAndHoleResult {
+export function classifyOuterAndHoleEntities(entities: Entity[]): {
   outerEntityIds: Set<string>;
   holeEntityIds: Set<string>;
   outerToHolesMap: Map<string, Entity[]>;
   sampledLoops: Map<string, Vec2[]>;
-  entityById: Map<string, Entity>;
-}
-
-let cachedClassifiedEntitiesRef: Entity[] | null = null;
-let cachedClassifiedSnapshot: Entity[] = [];
-let cachedClassifiedResult: ClassifiedOuterAndHoleResult | null = null;
-let wireframeCacheHits = 0;
-let wireframeCacheMisses = 0;
-
-export function getWireframe3DCacheStats(): {
-  hits: number;
-  misses: number;
-  hitRatePercent: number;
 } {
-  const total = wireframeCacheHits + wireframeCacheMisses;
-  return {
-    hits: wireframeCacheHits,
-    misses: wireframeCacheMisses,
-    hitRatePercent: total > 0 ? Math.round((wireframeCacheHits / total) * 1000) / 10 : 100,
-  };
-}
-
-/**
- * Classifica um conjunto de entidades 2D em:
- *  - Contornos externos ou ressaltos/canais em múltiplos níveis Z (`outerEntityIds`)
- *  - Furos/recortes passantes internos (`holeEntityIds`) contidos dentro de um contorno externo
- *  - Mapa de contornos externos para seus furos filhos (`outerToHolesMap`)
- *
- * Otimizado com memoização por referência de array e verificação rasa O(N) das entidades,
- * eliminando a re-amostragem de polígonos de 48 pontos e o teste O(M²) pointInPolygon2D
- * durante os 60fps da Órbita 3D (onde apenas ângulos θ, φ mudam).
- */
-export function classifyOuterAndHoleEntities(rawEntities: Entity[]): ClassifiedOuterAndHoleResult {
-  if (
-    cachedClassifiedResult &&
-    (cachedClassifiedEntitiesRef === rawEntities ||
-      (cachedClassifiedSnapshot.length === rawEntities.length &&
-        rawEntities.every((e, idx) => cachedClassifiedSnapshot[idx] === e)))
-  ) {
-    wireframeCacheHits++;
-    return cachedClassifiedResult;
-  }
-
-  wireframeCacheMisses++;
-  const { entities } = consolidateStitchedLoopsInEntities2D(rawEntities, 2.0);
   const closedCandidates: { entity: Entity; loop: Vec2[]; absArea: number }[] = [];
   const sampledLoops = new Map<string, Vec2[]>();
-  const entityById = new Map<string, Entity>();
 
   for (const e of entities) {
-    entityById.set(e.id, e);
     if (
       e.isConstruction ||
-      e.isReferenceGuide ||
-      e.params?.isLoft3DSolid ||
-      e.params?.loft3d ||
       e.layer === "centro" ||
       e.layer === "referencia" ||
       e.layer === "dobra" ||
@@ -473,18 +384,8 @@ export function classifyOuterAndHoleEntities(rawEntities: Entity[]): ClassifiedO
   for (let i = 0; i < closedCandidates.length; i++) {
     const item = closedCandidates[i]!;
     const ent = item.entity;
-    const elevZ =
-      typeof ent.elevationZ === "number"
-        ? ent.elevationZ
-        : typeof ent.params?.elevationZ === "number"
-          ? (ent.params.elevationZ as number)
-          : typeof ent.params?.zBaseMm === "number"
-            ? (ent.params.zBaseMm as number)
-            : 0;
     const hasCustomZFeature =
-      Math.abs(elevZ) > 0.01 ||
-      typeof ent.extrudeHeight === "number" ||
-      typeof ent.params?.extrudeHeight === "number" ||
+      typeof ent.params?.zBaseMm === "number" ||
       typeof ent.params?.extrudeHeightMm === "number" ||
       typeof ent.params?.stepRatio === "number" ||
       ent.layer === "marcacao" ||
@@ -532,17 +433,7 @@ export function classifyOuterAndHoleEntities(rawEntities: Entity[]): ClassifiedO
     }
   }
 
-  const result: ClassifiedOuterAndHoleResult = {
-    outerEntityIds,
-    holeEntityIds,
-    outerToHolesMap,
-    sampledLoops,
-    entityById,
-  };
-  cachedClassifiedEntitiesRef = rawEntities;
-  cachedClassifiedSnapshot = rawEntities.slice();
-  cachedClassifiedResult = result;
-  return result;
+  return { outerEntityIds, holeEntityIds, outerToHolesMap, sampledLoops };
 }
 
 /**
@@ -755,7 +646,7 @@ export function buildClassifiedWireframeScene3D(
     sheetThickness: opts.sheetThickness,
   });
 
-  const { holeEntityIds, outerToHolesMap, sampledLoops, entityById } =
+  const { holeEntityIds, outerToHolesMap, sampledLoops } =
     classifyOuterAndHoleEntities(entities);
 
   const opticalFaces: ClassifiedOpticalFace3D[] = [];
@@ -789,21 +680,17 @@ export function buildClassifiedWireframeScene3D(
 
   // 1. Véus translúcidos das faces superiores e bases dos contornos externos (com recorte evenodd dos furos)
   for (const [outerId, childHoles] of outerToHolesMap.entries()) {
-    const outerEnt = entityById.get(outerId);
+    const outerEnt = entities.find((x) => x.id === outerId);
     const rawOuterLoop = sampledLoops.get(outerId);
     if (!outerEnt || !rawOuterLoop) continue;
 
-    const outerSp = getEntityStructuralProfile(outerEnt);
-    const outerEffectiveThickness = outerSp
-      ? outerSp.heightH || outerSp.widthB || opts.sheetThickness
-      : opts.sheetThickness;
-    const { z0, z1, isRecessOrGroove } = resolveEntityZRatios(outerEnt, outerEffectiveThickness);
+    const { z0, z1, isRecessOrGroove } = resolveEntityZRatios(outerEnt, opts.sheetThickness);
     const entVectors = resolveBaseToTopExtrusionVector({
       isOrbitTilted: opts.isOrbitTilted,
       orbitProjection: opts.orbitProjection,
       isIsometric: opts.isIsometric,
       isoPlane: opts.isoPlane,
-      sheetThickness: outerEffectiveThickness,
+      sheetThickness: opts.sheetThickness,
       zBaseRatio: z0,
       zTopRatio: z1,
     });
@@ -859,7 +746,7 @@ export function buildClassifiedWireframeScene3D(
 
   // 2. Processa cada entidade individualmente para classificar todas as suas arestas nas 5 categorias
   for (const e of entities) {
-    if (e.type === "text" || e.type === "point" || e.params?.isIsoSolidFace || e.isReferenceGuide) continue;
+    if (e.type === "text" || e.type === "point" || e.params?.isIsoSolidFace) continue;
 
     // CATEGORIA 3.5: Linhas de Centro, Eixos de Simetria e Construção 3D
     if (
@@ -905,17 +792,13 @@ export function buildClassifiedWireframeScene3D(
     }
 
     const isHole = holeEntityIds.has(e.id) || e.layer === "furo";
-    const entSp = getEntityStructuralProfile(e);
-    const effectiveThickness = entSp
-      ? entSp.heightH || entSp.widthB || opts.sheetThickness
-      : opts.sheetThickness;
-    const { z0, z1 } = resolveEntityZRatios(e, effectiveThickness);
+    const { z0, z1 } = resolveEntityZRatios(e, opts.sheetThickness);
     const entVec = resolveBaseToTopExtrusionVector({
       isOrbitTilted: opts.isOrbitTilted,
       orbitProjection: opts.orbitProjection,
       isIsometric: opts.isIsometric,
       isoPlane: opts.isoPlane,
-      sheetThickness: effectiveThickness,
+      sheetThickness: opts.sheetThickness,
       zBaseRatio: z0,
       zTopRatio: z1,
     });
@@ -1274,44 +1157,9 @@ export function buildClassifiedWireframeScene3D(
         }
       }
 
-      // 3.2 Arestas verticais/laterais (Z = 0 -> Z = +h) apenas em Quinas Vivas (Δθ >= 25°)
-      // ou Linhas de Transição de Tangência (início/fim de dobra), nunca no interior de curvas suaves
-      const cosSharpCorner = Math.cos((25 * Math.PI) / 180);
-      const cosFlatWall = Math.cos((2.0 * Math.PI) / 180);
-      const segDirs: Vec2[] = [];
-      for (let i = 0; i < n; i++) {
-        const pA = rawPts[i]!;
-        const pB = rawPts[(i + 1) % n]!;
-        const dx = pB.x - pA.x;
-        const dy = pB.y - pA.y;
-        const len = Math.hypot(dx, dy) || 1;
-        segDirs.push({ x: dx / len, y: dy / len });
-      }
-      const isCurvedStrip = (idx: number): boolean => {
-        if (!isClosed && (idx <= 0 || idx >= n - 1)) return false;
-        const dPrev = segDirs[(idx - 1 + n) % n]!;
-        const dCurr = segDirs[idx]!;
-        const dNext = segDirs[(idx + 1) % n]!;
-        const dotL = dPrev.x * dCurr.x + dPrev.y * dCurr.y;
-        const dotR = dCurr.x * dNext.x + dCurr.y * dNext.y;
-        return (
-          (dotL < cosFlatWall && dotL >= cosSharpCorner) ||
-          (dotR < cosFlatWall && dotR >= cosSharpCorner)
-        );
-      };
-
-      for (let i = 0; i < n; i++) {
-        if (isClosed && n >= 3) {
-          const dPrev = segDirs[(i - 1 + n) % n]!;
-          const dCurr = segDirs[i]!;
-          const dotCorner = dPrev.x * dCurr.x + dPrev.y * dCurr.y;
-          const isSharp = dotCorner < cosSharpCorner;
-          const isTangentTransition =
-            !isSharp && isCurvedStrip((i - 1 + n) % n) !== isCurvedStrip(i);
-          if (!isSharp && !isTangentTransition) {
-            continue;
-          }
-        }
+      // 3.2 Arestas verticais/laterais (Z = 0 -> Z = +h) nos vértices (deduplicadas)
+      const vertStep = rawPts.length > 48 ? Math.max(1, Math.floor(rawPts.length / 16)) : 1;
+      for (let i = 0; i < n; i += vertStep) {
         const bPt = basePts[i]!;
         const tPt = topPts[i]!;
         const latKey = canonicalSegmentKey(bPt, tPt);
@@ -1327,112 +1175,6 @@ export function buildClassifiedWireframeScene3D(
         }
         if (rawPts.length <= 48) {
           pushVertexDot(tPt);
-        }
-      }
-
-      // 3.5 Se a polilinha/linha for um Perfil Estrutural Tubular Oco (Metalão Quadrado / Retangular / Tubo),
-      //     desenha as duas bocas ocas nas extremidades (s = -L/2 e s = +L/2) com espessura real `e`
-      //     e as 4 arestas longitudinais internas da cavidade vazada!
-      if (
-        entSp &&
-        (entSp.kind === "metalon_quadrado" ||
-          entSp.kind === "metalon_retangular" ||
-          entSp.kind === "tubo_redondo")
-      ) {
-        const barGeom = analyzeEntityBarGeometry(e);
-        if (barGeom) {
-          const B = Math.max(2, barGeom.drawnWidthB || entSp.widthB);
-          const H = Math.max(2, effectiveThickness);
-          const wallE = Math.max(0.8, Math.min(entSp.wallThicknessE || 2.0, Math.min(B, H) * 0.42));
-          const halfL = barGeom.lengthL / 2;
-          const halfInB = Math.max(0.5, B / 2 - wallE);
-          const zLowRatio = Math.min(0.45, wallE / H);
-          const zHighRatio = Math.max(0.55, (H - wallE) / H);
-
-          const offsetAtZRatio = (ratio: number): Vec2 => ({
-            x: entVec.baseOffset.x + (entVec.topOffset.x - entVec.baseOffset.x) * ratio,
-            y: entVec.baseOffset.y + (entVec.topOffset.y - entVec.baseOffset.y) * ratio,
-          });
-
-          const offLow = offsetAtZRatio(zLowRatio);
-          const offHigh = offsetAtZRatio(zHighRatio);
-
-          const projectTubePt = (s: number, v: number, zOff: Vec2): Vec2 => ({
-            x: barGeom.center.x + barGeom.axisU.x * s + barGeom.axisV.x * v + zOff.x,
-            y: barGeom.center.y + barGeom.axisU.y * s + barGeom.axisV.y * v + zOff.y,
-          });
-
-          // Quatro cantos da cavidade interna na Boca Inicial (s = -halfL)
-          const s0 = projectTubePt(-halfL, -halfInB, offLow);
-          const s1 = projectTubePt(-halfL, +halfInB, offLow);
-          const s2 = projectTubePt(-halfL, +halfInB, offHigh);
-          const s3 = projectTubePt(-halfL, -halfInB, offHigh);
-
-          // Quatro cantos da cavidade interna na Boca Final (s = +halfL)
-          const f0 = projectTubePt(+halfL, -halfInB, offLow);
-          const f1 = projectTubePt(+halfL, +halfInB, offLow);
-          const f2 = projectTubePt(+halfL, +halfInB, offHigh);
-          const f3 = projectTubePt(+halfL, -halfInB, offHigh);
-
-          // Véu escuro da cavidade oca nas duas bocas do tubo para leitura imediata do furo passante
-          if (style.showOpticalVeil) {
-            opticalFaces.push(
-              {
-                id: `veil_tube_mouth_start_${e.id}`,
-                role: "hole_wall",
-                paintDepth: 86,
-                outerLoop: [s0, s1, s2, s3],
-                holeLoops: [],
-              },
-              {
-                id: `veil_tube_mouth_end_${e.id}`,
-                role: "hole_wall",
-                paintDepth: 86,
-                outerLoop: [f0, f1, f2, f3],
-                holeLoops: [],
-              },
-            );
-          }
-
-          // Contorno interno visível das duas bocas ocas (mostrando a espessura da parede `e`)
-          const mouthPairs: Array<[Vec2, Vec2, string, number]> = [
-            [s0, s1, "s_bot", 88],
-            [s1, s2, "s_rgt", 89],
-            [s2, s3, "s_top", 92],
-            [s3, s0, "s_lft", 89],
-            [f0, f1, "f_bot", 88],
-            [f1, f2, "f_rgt", 89],
-            [f2, f3, "f_top", 92],
-            [f3, f0, "f_lft", 89],
-          ];
-          for (const [pA, pB, tag, depth] of mouthPairs) {
-            edges.push({
-              id: `tube_mouth_${e.id}_${tag}`,
-              category: tag.endsWith("top") ? "top_primary" : "lateral_wall",
-              kind: "segment",
-              paintDepth: depth,
-              pts: [pA, pB],
-            });
-          }
-
-          // 4 arestas longitudinais internas tracejadas ao longo do interior do tubo
-          if (style.showHiddenEdges) {
-            const innerLongPairs: Array<[Vec2, Vec2, string]> = [
-              [s0, f0, "in_bl"],
-              [s1, f1, "in_br"],
-              [s2, f2, "in_tr"],
-              [s3, f3, "in_tl"],
-            ];
-            for (const [pA, pB, tag] of innerLongPairs) {
-              edges.push({
-                id: `tube_inner_long_${e.id}_${tag}`,
-                category: "hidden_back",
-                kind: "segment",
-                paintDepth: 48,
-                pts: [pA, pB],
-              });
-            }
-          }
         }
       }
     }
@@ -1668,8 +1410,8 @@ export function renderClassifiedWireframeSceneToCanvas(
  *  - Anéis orbitais concêntricos discretos centrados no pivô da peça no plano Z = 0
  */
 export function renderBaseOrbitalGridToCanvas(
-  _ctx: CanvasRenderingContext2D,
-  _opts: {
+  ctx: CanvasRenderingContext2D,
+  opts: {
     pivot: Vec2;
     gridStep: number;
     invScale: number;
@@ -1677,7 +1419,72 @@ export function renderBaseOrbitalGridToCanvas(
     pieceRadiusHint?: number;
   },
 ): void {
-  // Grid 3D de chão desativado conforme especificação (peça 3D orbita sobre fundo limpo)
-  return;
+  const { pivot, invScale: inv, isLight } = opts;
+  const pal = isLight ? CHAMFER_WIREFRAME_3D_PALETTE.light : CHAMFER_WIREFRAME_3D_PALETTE.dark;
+  const step = Math.max(15, opts.gridStep || 25);
+  const halfCount = 16;
+  const span = halfCount * step;
+
+  ctx.save();
+  ctx.setLineDash([]);
+
+  // 1. Subdivisões ortogonais finas no plano Z = 0 (0.75px, rgba(83, 100, 123, 0.15))
+  ctx.strokeStyle = pal.orbitalGridLine;
+  ctx.lineWidth = 0.75 * inv;
+  ctx.beginPath();
+  for (let i = -halfCount; i <= halfCount; i++) {
+    if (i % 2 === 0) continue;
+    const c = i * step;
+    ctx.moveTo(pivot.x - span, pivot.y + c);
+    ctx.lineTo(pivot.x + span, pivot.y + c);
+    ctx.moveTo(pivot.x + c, pivot.y - span);
+    ctx.lineTo(pivot.x + c, pivot.y + span);
+  }
+  ctx.stroke();
+
+  // 2. Linhas principais ortogonais no plano Z = 0
+  ctx.strokeStyle = pal.orbitalGridMajor;
+  ctx.lineWidth = 0.85 * inv;
+  ctx.beginPath();
+  for (let i = -halfCount; i <= halfCount; i += 2) {
+    const c = i * step;
+    ctx.moveTo(pivot.x - span, pivot.y + c);
+    ctx.lineTo(pivot.x + span, pivot.y + c);
+    ctx.moveTo(pivot.x + c, pivot.y - span);
+    ctx.lineTo(pivot.x + c, pivot.y + span);
+  }
+  ctx.stroke();
+
+  // 3. Diagonais radiais discretas a 45° / 135° passando pelo pivô no plano Z = 0
+  const baseR = Math.max(60, opts.pieceRadiusHint && opts.pieceRadiusHint > 10 ? opts.pieceRadiusHint : 120);
+  const maxRingR = baseR * 1.85;
+  const diagSpan = maxRingR * Math.SQRT1_2;
+  ctx.strokeStyle = pal.orbitalGridLine;
+  ctx.lineWidth = 0.7 * inv;
+  ctx.beginPath();
+  ctx.moveTo(pivot.x - diagSpan, pivot.y - diagSpan);
+  ctx.lineTo(pivot.x + diagSpan, pivot.y + diagSpan);
+  ctx.moveTo(pivot.x - diagSpan, pivot.y + diagSpan);
+  ctx.lineTo(pivot.x + diagSpan, pivot.y - diagSpan);
+  ctx.stroke();
+
+  // 4. Anéis orbitais concêntricos discretos no plano Z = 0 (Padrão Imagem 2)
+  const ringRadii = [baseR * 0.55, baseR * 0.95, baseR * 1.35, baseR * 1.78];
+  for (let idx = 0; idx < ringRadii.length; idx++) {
+    const rRing = ringRadii[idx]!;
+    ctx.beginPath();
+    if (idx % 2 === 1) {
+      ctx.setLineDash([4.5 * inv, 3.5 * inv]);
+    } else {
+      ctx.setLineDash([]);
+    }
+    ctx.strokeStyle = pal.orbitalGridRing;
+    ctx.lineWidth = 0.75 * inv;
+    ctx.arc(pivot.x, pivot.y, rRing, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 

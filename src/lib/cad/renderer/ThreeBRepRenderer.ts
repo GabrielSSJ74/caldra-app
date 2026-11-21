@@ -18,22 +18,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
-import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { CadTessellatedShape } from "../core/CadMesh";
 import type { CadSelectedEntity, CadSelectionType, CadMeasurementResult } from "../core/CadSelection";
 import type { EdgeMode, ViewPresetId } from "@/lib/viz3d/cameraPresets";
-import {
-  DEFAULT_BREP_WIREFRAME_LAYER_CONFIG,
-  type BRepTechnicalWireframeData3D,
-  type BRepWireframeLayerConfig,
-} from "@/lib/lab2d/chamferBRepWireframe3D";
-import {
-  computeAdaptiveZoomMetrics,
-  loadZoomSensitivityConfig,
-} from "@/lib/lab2d/chamferAdaptiveZoom";
 import {
   computeOrbitalBasisZUp,
   cubicBezier022,
@@ -42,17 +29,6 @@ import {
   type CameraPose3D,
   type Sketch3DWireframe,
 } from "../sketch/sketch3dBridge";
-import {
-  GENESIS_CONSTRUCTION_DURATION_MS,
-  computeGenesisBoundsFromPositions,
-  computeGenesisConstructionProgress,
-  computeGenesisShimmerFactor,
-  createGenesisLaserEdgesGeometry,
-  createGenesisLaserEdgesMaterial,
-  createGenesisVertexPinpointsObject,
-  extractGenesisVertexPinpoints3D,
-  type GenesisBounds3D,
-} from "@/lib/viz3d/genesisWireframeShader";
 
 export type CadGizmoMode = "translate" | "rotate" | "scale" | "off";
 
@@ -88,92 +64,21 @@ export class ThreeBRepRenderer {
   private rootGroup: THREE.Group;
   private meshGroup: THREE.Group;
   private edgesGroup: THREE.Group;
-  private brepWireframeGroup: THREE.Group;
   private verticesGroup: THREE.Group;
   private sketchWireframeGroup: THREE.Group;
-  private loftPreviewGroup: THREE.Group;
   private selectionOverlayGroup: THREE.Group;
   private measurementGroup: THREE.Group;
   private gridHelper: THREE.GridHelper | null = null;
   private currentTheme: "light" | "dark" = "light";
 
-  // Dados do Sólido Carregado e Camadas ARAME B-Rep
+  // Dados do Sólido Carregado
   private currentShape: CadTessellatedShape | null = null;
-  private currentBRepWireframeData: BRepTechnicalWireframeData3D | null = null;
-  private brepWireframeLayers: BRepWireframeLayerConfig = {
-    ...DEFAULT_BREP_WIREFRAME_LAYER_CONFIG,
-  };
-  private currentScreenScalePxPerMm = 1.0;
-  private depthPrePassMesh: THREE.Mesh | null = null;
-  private depthPrePassMaterial: THREE.MeshBasicMaterial;
-  private brepOuterContourMat: LineMaterial;
-  private brepFeatureThicknessMat: LineMaterial;
-  private brepInternalDetailMat: LineMaterial;
-  private brepHiddenXRayMat: LineMaterial;
-  private brepCenterlineAxisMat: LineMaterial;
-  private brepSelectedEdgeMat: LineMaterial;
-  private brepLineObjects: {
-    outerContour: THREE.Object3D | null;
-    featureThickness: THREE.Object3D | null;
-    internalDetail: THREE.Object3D | null;
-    hiddenXRay: THREE.Object3D | null;
-    centerlineAxis: THREE.Object3D | null;
-  } = {
-    outerContour: null,
-    featureThickness: null,
-    internalDetail: null,
-    hiddenXRay: null,
-    centerlineAxis: null,
-  };
-  private genesisVisibleLaserMat: THREE.ShaderMaterial;
-  private genesisXRayLaserMat: THREE.ShaderMaterial;
-  private genesisPinpointsObj: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
-  private genesisCompassGroup: THREE.Group | null = null;
-  private genesisBounds: GenesisBounds3D | null = null;
-  private genesisBuildStartTime = 0;
-  private genesisShimmerTimerId: ReturnType<typeof setTimeout> | null = null;
-  private isSoftwareGl = false;
   private currentWireframes: Sketch3DWireframe[] = [];
   private multiSelection: CadSelectedEntity[] = [];
   private hoveredEntity: CadSelectedEntity | null = null;
 
-  // Materiais Técnicos Industriais (CaldraMachinedSteelMaterial — Aço Usinado Prata-Claro Dinâmico)
-  private baseSolidMaterial: THREE.ShaderMaterial;
-  private studioUniforms: {
-    uShadingMode: { value: number };
-    uKeyLightDir: { value: THREE.Vector3 };
-    uFillLightDir: { value: THREE.Vector3 };
-    uWorldLightDir: { value: THREE.Vector3 };
-    uViewDir: { value: THREE.Vector3 };
-    uCamRight: { value: THREE.Vector3 };
-    uCamUp: { value: THREE.Vector3 };
-    uUpDir: { value: THREE.Vector3 };
-    uPartCenter: { value: THREE.Vector3 };
-    uPartRadius: { value: number };
-    uOpacity: { value: number };
-    uWireframeColor: { value: THREE.Color };
-    uZMin: { value: number };
-    uZMax: { value: number };
-    uGenesisBuildProgress: { value: number };
-    uSectionEnabled: { value: number };
-    uSectionPlane: { value: THREE.Vector4 };
-  };
-  // Section Analysis (Pilar 7): Plano de corte + Stencil Buffer Cap hachurado 45°
-  private sectionClipPlane: THREE.Plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
-  private sectionEnabled = false;
-  private sectionStencilGroup: THREE.Group;
-  private sectionCapMesh: THREE.Mesh | null = null;
-  private sectionHatchTexture: THREE.CanvasTexture | null = null;
-  private sectionBackStencilMat: THREE.MeshBasicMaterial;
-  private sectionFrontStencilMat: THREE.MeshBasicMaterial;
-  private sectionCapMaterial: THREE.MeshBasicMaterial;
-  private sectionBackMesh: THREE.Mesh | null = null;
-  private sectionFrontMesh: THREE.Mesh | null = null;
-  private envMapTexture: THREE.Texture | null = null;
-  private keyLight: THREE.DirectionalLight | null = null;
-  private fillLight: THREE.DirectionalLight | null = null;
-  private worldKeyLight: THREE.DirectionalLight | null = null;
-  private hemiLight: THREE.HemisphereLight | null = null;
+  // Materiais Técnicos Industriais
+  private baseSolidMaterial: THREE.MeshStandardMaterial;
   private primaryFaceMaterial: THREE.MeshStandardMaterial;
   private secondaryFaceMaterial: THREE.MeshStandardMaterial;
   private hoveredFaceMaterial: THREE.MeshStandardMaterial;
@@ -265,7 +170,7 @@ export class ThreeBRepRenderer {
     this.onCameraRotateCallback = options.onCameraRotate;
     this.onOrbitAnglesChangeCallback = options.onOrbitAnglesChange;
     this.transparentBackground = options.transparentBackground ?? false;
-    this.showFloorGrid = false;
+    this.showFloorGrid = options.showFloorGrid ?? true;
     this.disableOrbitControls = options.disableOrbitControls ?? false;
     this.onDemandRender = options.onDemandRender ?? false;
 
@@ -276,8 +181,8 @@ export class ThreeBRepRenderer {
     const width = this.container.clientWidth || 800;
     const height = this.container.clientHeight || 600;
 
-    // 2. Câmeras (FOV 38° alinhado com correspondência óptica 2D <-> 3D; Near Clipping 0.01 e Ortho -50000..50000 para zoom extremo sem cortar a peça)
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 0.01, 100000);
+    // 2. Câmeras (FOV 38° alinhado com correspondência óptica 2D <-> 3D)
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 15000);
     this.camera.position.set(0, -160, 220);
     this.camera.up.set(0, 1, 0);
 
@@ -288,35 +193,31 @@ export class ThreeBRepRenderer {
       d * aspect,
       d,
       -d,
-      -50000,
-      50000,
+      0.1,
+      15000,
     );
     this.orthoCamera.position.copy(this.camera.position);
     this.orthoCamera.up.copy(this.camera.up);
 
     this.activeCamera = this.isOrtho ? this.orthoCamera : this.camera;
 
-    // 3. Renderer WebGL (com Stencil Buffer habilitado para Section Analysis Cap hachurado)
+    // 3. Renderer WebGL
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
-      stencil: true,
       powerPreference: "high-performance",
     });
-    this.renderer.localClippingEnabled = true;
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.NoToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.container.appendChild(this.renderer.domElement);
 
     // 4. OrbitControls
     this.controls = new OrbitControls(this.activeCamera, this.renderer.domElement);
     this.controls.enableDamping = !this.disableOrbitControls;
     this.controls.dampingFactor = 0.08;
-    this.controls.minDistance = 0.5;
-    this.controls.maxDistance = 50000;
     this.controls.target.set(0, 0, 0);
     if (this.disableOrbitControls) {
       this.controls.enabled = false;
@@ -326,71 +227,20 @@ export class ThreeBRepRenderer {
     this.rootGroup = new THREE.Group();
     this.meshGroup = new THREE.Group();
     this.edgesGroup = new THREE.Group();
-    this.brepWireframeGroup = new THREE.Group();
     this.verticesGroup = new THREE.Group();
     this.sketchWireframeGroup = new THREE.Group();
-    this.loftPreviewGroup = new THREE.Group();
     this.selectionOverlayGroup = new THREE.Group();
     this.measurementGroup = new THREE.Group();
-    this.sectionStencilGroup = new THREE.Group();
-    this.sectionStencilGroup.visible = false;
 
     this.rootGroup.add(this.meshGroup);
     this.rootGroup.add(this.edgesGroup);
-    this.rootGroup.add(this.brepWireframeGroup);
     this.rootGroup.add(this.verticesGroup);
     this.rootGroup.add(this.sketchWireframeGroup);
-    this.rootGroup.add(this.loftPreviewGroup);
     this.rootGroup.add(this.selectionOverlayGroup);
     this.rootGroup.add(this.measurementGroup);
-    this.rootGroup.add(this.sectionStencilGroup);
     this.scene.add(this.rootGroup);
 
-    // Materiais Stencil Buffer 2-passos + Tampa Hachurada 45° para Section Analysis (Pilar 7)
-    this.sectionBackStencilMat = new THREE.MeshBasicMaterial({
-      depthWrite: false,
-      depthTest: false,
-      colorWrite: false,
-      stencilWrite: true,
-      stencilFunc: THREE.AlwaysStencilFunc,
-      side: THREE.BackSide,
-      stencilFail: THREE.IncrementWrapStencilOp,
-      stencilZFail: THREE.IncrementWrapStencilOp,
-      stencilZPass: THREE.IncrementWrapStencilOp,
-      clippingPlanes: [this.sectionClipPlane],
-    });
-    this.sectionFrontStencilMat = new THREE.MeshBasicMaterial({
-      depthWrite: false,
-      depthTest: false,
-      colorWrite: false,
-      stencilWrite: true,
-      stencilFunc: THREE.AlwaysStencilFunc,
-      side: THREE.FrontSide,
-      stencilFail: THREE.DecrementWrapStencilOp,
-      stencilZFail: THREE.DecrementWrapStencilOp,
-      stencilZPass: THREE.DecrementWrapStencilOp,
-      clippingPlanes: [this.sectionClipPlane],
-    });
-    this.sectionHatchTexture = this.createDiagonalHatchTexture();
-    this.sectionCapMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      map: this.sectionHatchTexture,
-      side: THREE.DoubleSide,
-      stencilWrite: true,
-      stencilRef: 0,
-      stencilFunc: THREE.NotEqualStencilFunc,
-      stencilFail: THREE.ReplaceStencilOp,
-      stencilZFail: THREE.ReplaceStencilOp,
-      stencilZPass: THREE.ReplaceStencilOp,
-    });
-    const capGeo = new THREE.PlaneGeometry(4000, 4000);
-    this.sectionCapMesh = new THREE.Mesh(capGeo, this.sectionCapMaterial);
-    this.sectionCapMesh.name = "section_analysis_hatch_cap";
-    this.sectionCapMesh.frustumCulled = false;
-    this.sectionCapMesh.renderOrder = 6;
-    this.sectionStencilGroup.add(this.sectionCapMesh);
-
-    // 6. Configuração de Iluminação de Estúdio 3 Fontes Acoplada à Câmera
+    // 6. Configuração de Iluminação Técnica Industrial
     this.setupLighting();
 
     // 7. Gizmo CAD (FASE 06)
@@ -399,197 +249,16 @@ export class ThreeBRepRenderer {
     this.onGizmoCommitCallback = options.onGizmoCommit;
     this.setupGizmo();
 
-    // 8. Motor de Sombreamento Metálico Dinâmico Caldra-Code (CaldraMachinedSteelMaterial: 1º SOMB | 2º SOMB+AR | 3º ARAME)
-    this.studioUniforms = {
-      uShadingMode: { value: this.edgeMode === "shaded" ? 0 : this.edgeMode === "wireframe" ? 2 : 1 },
-      uKeyLightDir: { value: new THREE.Vector3(-0.45, 0.55, 0.70).normalize() },
-      uFillLightDir: { value: new THREE.Vector3(0.55, -0.35, 0.50).normalize() },
-      uWorldLightDir: { value: new THREE.Vector3(-0.40, 0.60, 0.70).normalize() },
-      uViewDir: { value: new THREE.Vector3(0, -0.6, 0.8).normalize() },
-      uCamRight: { value: new THREE.Vector3(1, 0, 0) },
-      uCamUp: { value: new THREE.Vector3(0, 0, 1) },
-      uUpDir: { value: new THREE.Vector3(0, 0, 1) },
-      uPartCenter: { value: new THREE.Vector3(0, 0, 5) },
-      uPartRadius: { value: 80.0 },
-      uOpacity: { value: 1.0 },
-      uWireframeColor: { value: new THREE.Color(0x1e3a5f) },
-      uZMin: { value: 0.0 },
-      uZMax: { value: 10.0 },
-      uGenesisBuildProgress: { value: 1.0 },
-      uSectionEnabled: { value: 0.0 },
-      uSectionPlane: { value: new THREE.Vector4(0, 0, -1, 0) },
-    };
-
-    this.baseSolidMaterial = new THREE.ShaderMaterial({
-      uniforms: this.studioUniforms,
-      vertexShader: /* glsl */ `
-        varying vec3 vWorldNormal;
-        varying vec3 vViewNormal;
-        varying vec3 vWorldPos;
-        varying vec3 vViewPos;
-        void main() {
-          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-          vWorldPos = worldPosition.xyz;
-          vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-          vViewNormal = normalize(normalMatrix * normal);
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          vViewPos = mvPosition.xyz;
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform int uShadingMode;
-        uniform vec3 uKeyLightDir;
-        uniform vec3 uFillLightDir;
-        uniform vec3 uWorldLightDir;
-        uniform vec3 uViewDir;
-        uniform vec3 uCamRight;
-        uniform vec3 uCamUp;
-        uniform vec3 uUpDir;
-        uniform vec3 uPartCenter;
-        uniform float uPartRadius;
-        uniform float uOpacity;
-        uniform vec3 uWireframeColor;
-        uniform float uZMin;
-        uniform float uZMax;
-        uniform float uGenesisBuildProgress;
-        uniform float uSectionEnabled;
-        uniform vec4 uSectionPlane;
-        varying vec3 vWorldNormal;
-        varying vec3 vViewNormal;
-        varying vec3 vWorldPos;
-        varying vec3 vViewPos;
-
-        void main() {
-          if (uSectionEnabled > 0.5 && dot(vWorldPos, uSectionPlane.xyz) + uSectionPlane.w < 0.0) {
-            discard;
-          }
-          if (uShadingMode == 2) {
-            // CAMADA 3 (MODO ARAME) — ESPESSURA EM AZUL-AÇO PETRÓLEO ACETINADO (#2B4C73 / #345B87, opacity: 0.22)
-            // E FACES HORIZONTAIS (TOPO +Z E BASE -Z) QUASE 100% TRANSPARENTES (opacity: 0.02)
-            vec3 N = normalize(vWorldNormal);
-            float absNz = abs(N.z);
-
-            vec3 lightDir = normalize(vec3(-0.55, -0.65, 0.52));
-            float dirShade = clamp(0.5 + 0.5 * dot(N, lightDir), 0.0, 1.0);
-
-            vec3 steelBlueDark = vec3(0.169, 0.298, 0.451); // #2B4C73
-            vec3 steelBlueMid  = vec3(0.204, 0.357, 0.529); // #345B87
-            vec3 wallColor = mix(steelBlueDark, steelBlueMid, dirShade);
-
-            if (absNz > 0.75) {
-              gl_FragColor = vec4(wallColor, 0.02 * uGenesisBuildProgress);
-            } else {
-              float wallOpacity = mix(0.16, 0.26, dirShade) * uGenesisBuildProgress;
-              gl_FragColor = vec4(wallColor, wallOpacity);
-            }
-            return;
-          }
-
-          // ============================================================================
-          // CALDRA MACHINED STEEL MATERIAL (MODOS "SOMB" E "SOMB+AR" — ESTILO CALDRA-CODE)
-          // Aço Usinado Prata-Claro de Alta Claridade com Varredura Especular Dinâmica
-          // dependente da posição e do ângulo da câmera (Perspectiva e ORTO).
-          // ============================================================================
-
-          // 1. Paleta de Aço Usinado Claro (Zero Tons Escuros Pesados):
-          vec3 colorShadow    = vec3(0.36, 0.43, 0.52); // #5C6E85 Prata-Azulado Acetinado nas sombras (nunca mais escuro que isso!)
-          vec3 colorMidtone   = vec3(0.68, 0.74, 0.81); // #ADBDD0 Aço Usinado Claro médio
-          vec3 colorHighlight = vec3(0.97, 0.98, 1.00); // #F8FAFC Branco-Prata Especular puro
-
-          // Orientação consistente da normal em relação ao observador:
-          vec3 N_world = normalize(vWorldNormal);
-          if (dot(N_world, uViewDir) < 0.0) {
-            N_world = -N_world;
-          }
-
-          // Normal no espaço da câmera (View Space ortonormal):
-          vec3 N_view = normalize(vec3(
-            dot(N_world, uCamRight),
-            dot(N_world, uCamUp),
-            dot(N_world, uViewDir)
-          ));
-
-          // Coordenadas espaciais normalizadas da peça no espaço da câmera (funciona em Perspectiva e ORTO):
-          float safeRadius = max(uPartRadius, 25.0);
-          vec3 relWorld = (vWorldPos - uPartCenter) / safeRadius;
-          vec2 partViewXY = vec2(
-            clamp(dot(relWorld, uCamRight) * 1.08, -1.4, 1.4),
-            clamp(dot(relWorld, uCamUp) * 1.42, -1.4, 1.4)
-          );
-          vec2 rawViewXY = clamp(vViewPos.xy / (safeRadius * 1.35), -1.5, 1.5);
-          vec2 effectiveXY = mix(partViewXY, rawViewXY, 0.28);
-
-          // 2. Varredura Especular Contínua na Face Plana (Spatial + View-Angle Sweep):
-          // Direção de luz no espaço da câmera (o termo vViewPos * 0.0015 e effectiveXY criam variação espacial de ponta a ponta mesmo em ORTO):
-          vec3 L_view = normalize(vec3(-0.45, 0.55, 0.70) - vViewPos * 0.0015 - vec3(effectiveXY * 0.42, 0.0));
-          // Direção de luz do mundo (ancorada à prancheta):
-          vec3 L_world = normalize(uWorldLightDir);
-
-          // Vetor de visão local e Half-Vector (H_view) para reflexo Blinn-Phong de aço escovado:
-          vec3 V_view = normalize(vec3(-effectiveXY * 0.46, 1.0) - vViewPos * 0.0012);
-          vec3 H_view = normalize(L_view + V_view);
-
-          // Projeção da luz da prancheta no espaço da câmera para que o degradê gire e deslize ao orbitar a câmera:
-          vec2 worldLightInView = vec2(dot(L_world, uCamRight), dot(L_world, uCamUp));
-          vec2 dynamicSweepAxis = normalize(vec2(-0.65, 0.76) + worldLightInView * 0.58);
-
-          // Deslocamento dinâmico de claridade conforme a inclinação da peça/câmera na Órbita 3D:
-          float tiltShift = (N_view.x * -0.26 + N_view.y * 0.32) + (dot(N_world, L_world) - 0.5) * 0.36;
-
-          vec2 vPosDir = length(vViewPos.xy) > 1e-4 ? normalize(vViewPos.xy) : dynamicSweepAxis;
-          float viewPosSweep = dot(vPosDir, vec2(-0.65, 0.76)) * 0.5 + 0.5;
-          float spatialSweep = clamp(dot(effectiveXY, dynamicSweepAxis) * 0.50 + 0.52 + tiltShift, 0.0, 1.0);
-          float surfaceSweep = clamp(mix(spatialSweep, viewPosSweep, 0.18), 0.0, 1.0);
-
-          // Termo difuso metálico (NdotL em viewSpace + worldSpace):
-          float diffView  = clamp(dot(N_view, L_view), 0.0, 1.0);
-          float diffWorld = clamp(dot(N_world, L_world) * 0.5 + 0.5, 0.0, 1.0);
-          float NdotL = clamp(diffView * 0.65 + diffWorld * 0.35, 0.0, 1.0);
-
-          // Lobo especular Blinn-Phong largo de aço escovado (pow 14.0) e lobo especular fino de alto brilho (pow 48.0):
-          float specBroad = pow(max(dot(N_view, H_view), 0.0), 14.0);
-          float specFine  = pow(max(dot(N_view, H_view), 0.0), 48.0);
-
-          // Sombreamento contínuo em faces planas (topo/base de flanges, chapas e perfis):
-          float planarLum = clamp(surfaceSweep * 0.58 + NdotL * 0.42, 0.0, 1.0);
-          vec3 planarColor = mix(colorShadow, colorMidtone, smoothstep(0.0, 0.54, planarLum));
-          float planarSpecMix = clamp(
-            smoothstep(0.40, 0.95, surfaceSweep) * 0.64 + specBroad * 0.54 + specFine * 0.46,
-            0.0,
-            1.0
-          );
-          planarColor = mix(planarColor, colorHighlight, planarSpecMix);
-
-          // 3. Iluminação Cilíndrica Realista nas Paredes Internas dos Furos e na Borda Externa:
-          float cylFactor = smoothstep(0.15, 0.65, 1.0 - abs(N_world.z));
-          vec2 cylN2 = normalize(N_view.xy + vec2(1e-5, 0.0));
-          float cylAlign = dot(cylN2, dynamicSweepAxis) * 0.5 + 0.5;
-          float cylLum = clamp(cylAlign * 0.64 + diffWorld * 0.36, 0.0, 1.0);
-          vec3 cylColor = mix(colorShadow, colorMidtone, smoothstep(0.04, 0.56, cylLum));
-          float cylSpecBroad = pow(max(dot(cylN2, dynamicSweepAxis), 0.0), 6.0);
-          float cylSpecFine  = pow(max(dot(cylN2, dynamicSweepAxis), 0.0), 26.0);
-          float cylSpecMix = clamp(cylSpecBroad * 0.68 + cylSpecFine * 0.48 + specBroad * 0.35, 0.0, 1.0);
-          cylColor = mix(cylColor, colorHighlight, cylSpecMix);
-
-          vec3 color = mix(planarColor, cylColor, cylFactor);
-
-          // Realce de borda Fresnel ultra-sutil nas quinas no modo SOMB (1º botão):
-          if (uShadingMode == 0) {
-            float ndotV = clamp(N_view.z, 0.0, 1.0);
-            float fresnel = pow(1.0 - ndotV, 3.0) * 0.16;
-            color = mix(color, colorHighlight, fresnel);
-          }
-
-          gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-        }
-      `,
+    // 8. Inicialização de Materiais (Smooth Shading ativo nas paredes curvas)
+    this.baseSolidMaterial = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8,
+      roughness: 0.38,
+      metalness: 0.72,
+      flatShading: false,
       polygonOffset: true,
-      polygonOffsetFactor: 1.5,
-      polygonOffsetUnits: 1.5,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
       side: THREE.DoubleSide,
-      transparent: false,
-      depthWrite: true,
     });
 
     this.primaryFaceMaterial = new THREE.MeshStandardMaterial({
@@ -632,10 +301,10 @@ export class ThreeBRepRenderer {
     });
 
     this.edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0xf1f5f9,
-      linewidth: 1.15,
+      color: 0xf8fafc,
+      linewidth: 1.5,
       transparent: true,
-      opacity: 0.90,
+      opacity: 0.88,
     });
 
     this.primaryEdgeMaterial = new THREE.LineBasicMaterial({
@@ -668,108 +337,6 @@ export class ThreeBRepRenderer {
       gapSize: 2,
     });
 
-    // 7.5. Materiais Screen-Space Invariantes para o Modo "ARAME TÉCNICO B-REP"
-    const resVec = new THREE.Vector2(width, height);
-    this.depthPrePassMaterial = new THREE.MeshBasicMaterial({
-      colorWrite: false,
-      depthWrite: true,
-      depthTest: true,
-      polygonOffset: true,
-      polygonOffsetFactor: 1.5,
-      polygonOffsetUnits: 1.5,
-      side: THREE.DoubleSide,
-    });
-
-    this.brepOuterContourMat = new LineMaterial({
-      color: 0xf8fafc,
-      linewidth: 1.05,
-      worldUnits: false,
-      transparent: true,
-      opacity: 0.92,
-      depthTest: true,
-      depthWrite: false,
-      depthFunc: THREE.LessEqualDepth,
-      resolution: resVec.clone(),
-    });
-
-    this.brepFeatureThicknessMat = new LineMaterial({
-      color: 0xbae6fd,
-      linewidth: 0.95,
-      worldUnits: false,
-      transparent: true,
-      opacity: 0.75,
-      depthTest: true,
-      depthWrite: false,
-      depthFunc: THREE.LessEqualDepth,
-      resolution: resVec.clone(),
-    });
-
-    this.brepInternalDetailMat = new LineMaterial({
-      color: 0x38bdf8,
-      linewidth: 0.85,
-      worldUnits: false,
-      transparent: true,
-      opacity: 0.55,
-      depthTest: true,
-      depthWrite: false,
-      depthFunc: THREE.LessEqualDepth,
-      resolution: resVec.clone(),
-    });
-
-    // Raio-X Contínuo Ultra-Fino em Azul-Safira Translúcido (NUNCA tracejado grosseiro!)
-    this.brepHiddenXRayMat = new LineMaterial({
-      color: 0x60a5fa,
-      linewidth: 0.85,
-      worldUnits: false,
-      dashed: false,
-      transparent: true,
-      opacity: 0.22,
-      depthTest: true,
-      depthWrite: false,
-      depthFunc: THREE.GreaterDepth,
-      resolution: resVec.clone(),
-    });
-
-    this.brepCenterlineAxisMat = new LineMaterial({
-      color: 0x38bdf8,
-      linewidth: 0.75,
-      worldUnits: false,
-      dashed: false,
-      transparent: true,
-      opacity: 0.16,
-      depthTest: false,
-      depthWrite: false,
-      resolution: resVec.clone(),
-    });
-
-    this.brepSelectedEdgeMat = new LineMaterial({
-      color: 0x00f0ff,
-      linewidth: 2.8,
-      worldUnits: false,
-      transparent: true,
-      opacity: 1.0,
-      depthTest: false,
-      depthWrite: false,
-      resolution: resVec.clone(),
-    });
-
-    // Shaders Laser & Raio-X da "Gênese CALDRA" (Camada 1)
-    this.genesisVisibleLaserMat = createGenesisLaserEdgesMaterial({ isXRay: false });
-    this.genesisXRayLaserMat = createGenesisLaserEdgesMaterial({ isXRay: true });
-    this.genesisXRayLaserMat.depthTest = true;
-    this.genesisXRayLaserMat.depthFunc = THREE.GreaterDepth;
-
-    // Detecção de Software WebGL (SwiftShader / llvmpipe) para cadenciamento seguro de quadros
-    try {
-      const gl = this.renderer.getContext();
-      const dbg = gl.getExtension("WEBGL_debug_renderer_info");
-      const unmasked = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : "";
-      this.isSoftwareGl = /SwiftShader|Software|llvmpipe/i.test(unmasked);
-    } catch {
-      this.isSoftwareGl = false;
-    }
-    this.genesisBuildStartTime = performance.now();
-
     // 8. Raycasting e Eventos de Mouse/Touch
     this.raycaster = new THREE.Raycaster();
     this.raycaster.params.Line = { threshold: 3.5 };
@@ -785,93 +352,24 @@ export class ThreeBRepRenderer {
   }
 
   private setupLighting(): void {
-    // 0. Mapa de Ambiente de Estúdio Real (IBL via PMREMGenerator + RoomEnvironment)
-    try {
-      const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-      pmremGenerator.compileEquirectangularShader();
-      this.envMapTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-      this.scene.environment = this.envMapTexture;
-      pmremGenerator.dispose();
-    } catch {
-      // Fallback silencioso se o contexto WebGL não suportar PMREM
-    }
+    const ambient = new THREE.AmbientLight(0xffffff, 0.85);
+    this.scene.add(ambient);
 
-    // 1. Luz Hemisférica Fria Clara de Estúdio — garante que nenhuma face fique preta ou chumbo-escura
-    this.hemiLight = new THREE.HemisphereLight(0xf8fafc, 0x5c6e85, 0.85);
-    this.hemiLight.position.set(0, 0, 300);
-    this.scene.add(this.hemiLight);
+    const key = new THREE.DirectionalLight(0xffffff, 1.25);
+    key.position.set(120, 180, 140);
+    this.scene.add(key);
 
-    // 2. Key Light Principal no Espaço da Câmera (position: (-1.2*R, +1.5*R, +1.8*R))
-    this.keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
-    this.keyLight.position.set(-240, 300, 360);
-    this.scene.add(this.keyLight);
+    const fill = new THREE.DirectionalLight(0xdbeafe, 0.75);
+    fill.position.set(-140, 100, -100);
+    this.scene.add(fill);
 
-    // 3. Fill Light Fria no Espaço da Câmera (position: (+1.4*R, -0.8*R, +1.2*R))
-    this.fillLight = new THREE.DirectionalLight(0xcbd5e1, 1.15);
-    this.fillLight.position.set(280, -160, 240);
-    this.scene.add(this.fillLight);
+    const rim = new THREE.DirectionalLight(0xffedd5, 0.65);
+    rim.position.set(0, -150, -120);
+    this.scene.add(rim);
 
-    // 4. World Key Light (Luz Direcional de Referência da Prancheta fixa no mundo)
-    this.worldKeyLight = new THREE.DirectionalLight(0xf8fafc, 1.35);
-    this.worldKeyLight.position.set(400, -300, 800);
-    this.scene.add(this.worldKeyLight);
-  }
-
-  /**
-   * Atualiza a cada frame o Camera-Space Light Rig (Key Light em (-1.2*R, +1.5*R, +1.8*R)
-   * e Fill Light em (+1.4*R, -0.8*R, +1.2*R)) combinadas com a World Key Light fixa na prancheta,
-   * fazendo com que a claridade e o gradiente de aço usinado prateado deslizem dinamicamente
-   * sobre a peça ao girar, inclinar ou mover a câmera na Órbita 3D.
-   */
-  private updateCameraCoupledLighting(): void {
-    const viewDir = this.activeCamera.position
-      .clone()
-      .sub(this.controls.target)
-      .normalize();
-    if (viewDir.lengthSq() < 1e-6) {
-      viewDir.set(0, -0.6, 0.8).normalize();
-    }
-
-    const camUp = this.activeCamera.up.clone().normalize();
-    let camRight = new THREE.Vector3().crossVectors(camUp, viewDir).normalize();
-    if (camRight.lengthSq() < 1e-6) {
-      camRight = new THREE.Vector3(1, 0, 0);
-    }
-    const orthoUp = new THREE.Vector3().crossVectors(viewDir, camRight).normalize();
-
-    const R = Math.max(this.studioUniforms.uPartRadius.value, 120);
-
-    // Key Light de Câmera: (-1.2 * R, +1.5 * R, +1.8 * R)
-    const keyDir = new THREE.Vector3()
-      .addScaledVector(camRight, -1.2)
-      .addScaledVector(orthoUp, 1.5)
-      .addScaledVector(viewDir, 1.8)
-      .normalize();
-
-    // Fill Light de Câmera: (+1.4 * R, -0.8 * R, +1.2 * R)
-    const fillDir = new THREE.Vector3()
-      .addScaledVector(camRight, 1.4)
-      .addScaledVector(orthoUp, -0.8)
-      .addScaledVector(viewDir, 1.2)
-      .normalize();
-
-    // World Key Light fixa na prancheta: direção (-0.4, 0.6, 0.7) combinada com (400, -300, 800)
-    const worldDir = new THREE.Vector3(-0.4, 0.6, 0.7).normalize();
-
-    this.studioUniforms.uViewDir.value.copy(viewDir);
-    this.studioUniforms.uCamRight.value.copy(camRight);
-    this.studioUniforms.uCamUp.value.copy(orthoUp);
-    this.studioUniforms.uKeyLightDir.value.copy(keyDir);
-    this.studioUniforms.uFillLightDir.value.copy(fillDir);
-    this.studioUniforms.uWorldLightDir.value.copy(worldDir);
-    this.studioUniforms.uUpDir.value.set(0, 0, 1);
-
-    if (this.keyLight) {
-      this.keyLight.position.copy(this.controls.target).addScaledVector(keyDir, R * 2.2);
-    }
-    if (this.fillLight) {
-      this.fillLight.position.copy(this.controls.target).addScaledVector(fillDir, R * 2.0);
-    }
+    const top = new THREE.DirectionalLight(0xffffff, 0.5);
+    top.position.set(0, 200, 0);
+    this.scene.add(top);
   }
 
   // ==========================================
@@ -882,7 +380,7 @@ export class ThreeBRepRenderer {
     this.currentShape = shape;
     this.clearGeometry();
 
-    if (!shape || !shape.mesh) {
+    if (!shape) {
       this.updateGridAndBackground();
       return;
     }
@@ -912,31 +410,7 @@ export class ThreeBRepRenderer {
       solidMesh.name = "solid_mesh";
       solidMesh.castShadow = true;
       solidMesh.receiveShadow = true;
-      solidMesh.frustumCulled = false;
-      solidMesh.renderOrder = 2;
       this.meshGroup.add(solidMesh);
-
-      // Malha de pré-passe de profundidade (colorWrite: false) usada exclusivamente no modo ARAME
-      // para ocluir e separar com precisão sub-pixel arestas frontais vs. arestas traseiras Raio-X
-      const depthMesh = new THREE.Mesh(geometry, this.depthPrePassMaterial);
-      depthMesh.name = "arame_depth_prepass_mesh";
-      depthMesh.frustumCulled = false;
-      depthMesh.renderOrder = 1;
-      depthMesh.visible = this.edgeMode === "wireframe";
-      this.depthPrePassMesh = depthMesh;
-      this.meshGroup.add(depthMesh);
-
-      // Atualiza malhas de Stencil Cap (2 passos) compartilhando a mesma BufferGeometry
-      if (this.sectionBackMesh) this.sectionStencilGroup.remove(this.sectionBackMesh);
-      if (this.sectionFrontMesh) this.sectionStencilGroup.remove(this.sectionFrontMesh);
-      this.sectionBackMesh = new THREE.Mesh(geometry, this.sectionBackStencilMat);
-      this.sectionBackMesh.frustumCulled = false;
-      this.sectionBackMesh.renderOrder = 4;
-      this.sectionFrontMesh = new THREE.Mesh(geometry, this.sectionFrontStencilMat);
-      this.sectionFrontMesh.frustumCulled = false;
-      this.sectionFrontMesh.renderOrder = 5;
-      this.sectionStencilGroup.add(this.sectionBackMesh);
-      this.sectionStencilGroup.add(this.sectionFrontMesh);
     }
 
     if (edges && edges.edges.length > 0) {
@@ -945,9 +419,28 @@ export class ThreeBRepRenderer {
       const zSpan = Math.max(0.1, maxZ - minZ);
       const zTol = zSpan * 0.08;
 
+      const topEdgeMat = new THREE.LineBasicMaterial({
+        color: 0xf8fafc,
+        linewidth: 1.8,
+        transparent: true,
+        opacity: 0.98,
+      });
+      const lateralEdgeMat = new THREE.LineBasicMaterial({
+        color: 0x91a3b8,
+        linewidth: 1.15,
+        transparent: true,
+        opacity: 0.68,
+      });
+      const bottomEdgeMat = new THREE.LineBasicMaterial({
+        color: 0x65758a,
+        linewidth: 1.0,
+        transparent: true,
+        opacity: 0.52,
+      });
+
       for (const edge of edges.edges) {
         if (edge.pointCount < 2) continue;
-        // Elimina linhas de costura internas (seam edges)
+        // Elimina linhas de costura radiais/verticais (seam edges em 0°/360° e arestas internas suaves < 35°)
         if (edge.isSeam) continue;
 
         let eMinZ = Infinity;
@@ -960,17 +453,11 @@ export class ThreeBRepRenderer {
 
         const isTopEdge = eMinZ >= maxZ - zTol;
         const isBottomEdge = eMaxZ <= minZ + zTol;
-        const isTangentEdge = Boolean(edge.isTangentEdge);
-
-        // Arestas de contorno SOMB+AR: Branco-Prata Fino e Nítido (#F1F5F9 / #FFFFFF, 1.15px, opacity: 0.90)
-        const mat = new THREE.LineBasicMaterial({
-          color: 0xf1f5f9,
-          linewidth: 1.15,
-          transparent: true,
-          opacity: isTangentEdge ? 0.0 : 0.90,
-          depthTest: true,
-          depthWrite: false,
-        });
+        const mat = isTopEdge
+          ? topEdgeMat
+          : isBottomEdge
+            ? bottomEdgeMat
+            : lateralEdgeMat;
 
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -979,38 +466,12 @@ export class ThreeBRepRenderer {
         );
         const line = new THREE.Line(lineGeo, mat);
         line.name = `edge_${edge.edgeIndex}`;
-        line.frustumCulled = false;
-        line.renderOrder = 3;
         line.userData = {
           edgeIndex: edge.edgeIndex,
           edgeId: edge.edgeId,
-          isTangentEdge,
-          edgeHierarchy: isTopEdge
-            ? "top_primary"
-            : isBottomEdge
-              ? "bottom_visible"
-              : "lateral_wall",
+          edgeHierarchy: isTopEdge ? "top_primary" : isBottomEdge ? "bottom_visible" : "lateral_wall",
         };
         this.edgesGroup.add(line);
-      }
-    } else if (this.meshGroup.children.length > 0) {
-      // Fallback automático via EdgesGeometry (thresholdAngle = 32° sem linhas verticais falsas em curvas)
-      const solidMesh = this.meshGroup.children[0] as THREE.Mesh;
-      if (solidMesh?.geometry) {
-        const edgesGeo = new THREE.EdgesGeometry(solidMesh.geometry, 32);
-        const mat = new THREE.LineBasicMaterial({
-          color: 0xf1f5f9,
-          linewidth: 1.15,
-          transparent: true,
-          opacity: 0.90,
-          depthTest: true,
-          depthWrite: false,
-        });
-        const segs = new THREE.LineSegments(edgesGeo, mat);
-        segs.name = "edges_auto_32";
-        segs.frustumCulled = false;
-        segs.renderOrder = 3;
-        this.edgesGroup.add(segs);
       }
     }
 
@@ -1035,104 +496,14 @@ export class ThreeBRepRenderer {
       );
       const vPoints = new THREE.Points(vGeo, this.vertexMaterial);
       vPoints.name = "cad_vertices";
-      vPoints.frustumCulled = false;
       this.verticesGroup.add(vPoints);
     }
-
-    if (shape.bounds) {
-      this.studioUniforms.uZMin.value = shape.bounds.min.z;
-      this.studioUniforms.uZMax.value = Math.max(shape.bounds.min.z + 0.5, shape.bounds.max.z);
-      const cx = 0.5 * (shape.bounds.min.x + shape.bounds.max.x);
-      const cy = 0.5 * (shape.bounds.min.y + shape.bounds.max.y);
-      const cz = 0.5 * (shape.bounds.min.z + shape.bounds.max.z);
-      const dx = Math.max(1, shape.bounds.max.x - shape.bounds.min.x);
-      const dy = Math.max(1, shape.bounds.max.y - shape.bounds.min.y);
-      const dz = Math.max(1, shape.bounds.max.z - shape.bounds.min.z);
-      this.studioUniforms.uPartCenter.value.set(cx, cy, cz);
-      this.studioUniforms.uPartRadius.value = Math.max(20, 0.5 * Math.hypot(dx, dy, dz));
-    }
-
-    // Reconstrui as 5 camadas Gênese CALDRA caso não haja setBRepWireframeData separado
-    this.rebuildGenesisWireframeObjects();
 
     this.updateVisibilityByEdgeMode();
     if (autoFit || (!this.hasInitialCameraPose && !this.lastCameraMatch && !this.disableOrbitControls)) {
       this.fitView(false);
     }
     this.updateGridAndBackground();
-    this.requestRender();
-  }
-
-  /**
-   * Renderiza a malha fantasma translúcida azul-celeste ("Ghost Preview") da transição LOFT 3D em tempo real
-   * ao clicar nas seções [1] -> [2] -> [3], permitindo enxergar todas as seções internas por dentro da peça.
-   */
-  public setLoftPreviewShape(shape: CadTessellatedShape | null): void {
-    while (this.loftPreviewGroup.children.length > 0) {
-      const child = this.loftPreviewGroup.children[0]!;
-      this.loftPreviewGroup.remove(child);
-      if ("geometry" in child && child.geometry) {
-        (child.geometry as THREE.BufferGeometry).dispose();
-      }
-      if ("material" in child && child.material) {
-        const m = child.material as THREE.Material | THREE.Material[];
-        if (Array.isArray(m)) m.forEach((x) => x.dispose());
-        else m.dispose();
-      }
-    }
-
-    if (!shape || !shape.mesh || shape.mesh.vertexCount === 0) {
-      this.requestRender();
-      return;
-    }
-
-    const { mesh, edges } = shape;
-
-    if (mesh.vertexCount > 0 && mesh.triangleCount > 0) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
-      geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
-      geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-
-      const ghostMat = new THREE.MeshPhysicalMaterial({
-        color: 0x60a5fa,
-        emissive: 0x1d4ed8,
-        emissiveIntensity: 0.28,
-        roughness: 0.22,
-        metalness: 0.15,
-        transparent: true,
-        opacity: 0.36,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-
-      const ghostMesh = new THREE.Mesh(geometry, ghostMat);
-      ghostMesh.name = "loft_ghost_preview_mesh";
-      ghostMesh.frustumCulled = false;
-      ghostMesh.renderOrder = 10;
-      this.loftPreviewGroup.add(ghostMesh);
-    }
-
-    if (edges && edges.edges.length > 0) {
-      for (const edge of edges.edges) {
-        if (edge.pointCount < 2) continue;
-        const isFlowGuide = Boolean(edge.isSeam || edge.isTangentEdge);
-        const lineMat = new THREE.LineBasicMaterial({
-          color: isFlowGuide ? 0x93c5fd : 0x38bdf8,
-          linewidth: isFlowGuide ? 1.0 : 2.2,
-          transparent: true,
-          opacity: isFlowGuide ? 0.45 : 0.96,
-          depthTest: false,
-        });
-        const lineGeo = new THREE.BufferGeometry();
-        lineGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
-        const line = new THREE.Line(lineGeo, lineMat);
-        line.frustumCulled = false;
-        line.renderOrder = 12;
-        this.loftPreviewGroup.add(line);
-      }
-    }
-
     this.requestRender();
   }
 
@@ -1170,7 +541,6 @@ export class ThreeBRepRenderer {
       });
       const line = new THREE.Line(geo, mat);
       line.name = `sketch_wf_${wf.id}`;
-      line.frustumCulled = false;
       this.sketchWireframeGroup.add(line);
     }
 
@@ -1189,258 +559,7 @@ export class ThreeBRepRenderer {
     }
   }
 
-  private clearBRepWireframeObjects(): void {
-    while (this.brepWireframeGroup.children.length > 0) {
-      const obj = this.brepWireframeGroup.children[0]!;
-      this.brepWireframeGroup.remove(obj);
-      obj.traverse((child) => {
-        if ("geometry" in child && child.geometry instanceof THREE.BufferGeometry) {
-          child.geometry.dispose();
-        }
-        if (
-          "material" in child &&
-          child.material instanceof THREE.Material &&
-          child.material !== this.genesisVisibleLaserMat &&
-          child.material !== this.genesisXRayLaserMat &&
-          child.material !== this.brepOuterContourMat &&
-          child.material !== this.brepFeatureThicknessMat &&
-          child.material !== this.brepInternalDetailMat &&
-          child.material !== this.brepHiddenXRayMat &&
-          child.material !== this.brepCenterlineAxisMat
-        ) {
-          child.material.dispose();
-        }
-      });
-    }
-    this.genesisPinpointsObj = null;
-    this.genesisCompassGroup = null;
-    this.brepLineObjects = {
-      outerContour: null,
-      featureThickness: null,
-      internalDetail: null,
-      hiddenXRay: null,
-      centerlineAxis: null,
-    };
-  }
-
-  private updateBRepLineResolutions(width: number, height: number, pxPerMm?: number): void {
-    const safeW = Math.max(10, width);
-    const safeH = Math.max(10, height);
-    if (pxPerMm !== undefined && Number.isFinite(pxPerMm) && pxPerMm > 1e-4) {
-      this.currentScreenScalePxPerMm = pxPerMm;
-    }
-    const dashScale = Math.max(0.05, Math.min(200, this.currentScreenScalePxPerMm));
-    const allMats = [
-      this.brepOuterContourMat,
-      this.brepFeatureThicknessMat,
-      this.brepInternalDetailMat,
-      this.brepHiddenXRayMat,
-      this.brepCenterlineAxisMat,
-      this.brepSelectedEdgeMat,
-    ];
-    for (const m of allMats) {
-      m.resolution.set(safeW, safeH);
-    }
-    this.brepHiddenXRayMat.dashScale = dashScale;
-    this.brepCenterlineAxisMat.dashScale = dashScale;
-  }
-
-  /**
-   * Constrói as 5 camadas da "Gênese CALDRA" para a peça 3D atual:
-   *  - Camada 1: Linhas Laser Ultra-Finas (0.85px–1.15px) com gradiente de luminância por altura + Raio-X contínuo
-   *  - Camada 2: Micro-Pontos de Luz nos Vértices Geométricos ("Genesis Vertex Pinpoints")
-   *  - Camada 3: Paredes de Cristal Safira Fumê (via baseSolidMaterial uShadingMode == 2)
-   *  - Camada 4: Anéis de Compasso Concêntricos (3 anéis) e Linhas de Extensão Técnica no plano base
-   *  - Camada 5: Animação de construção 650ms cubic-bezier(0.16, 1, 0.3, 1) + Genesis Living Shimmer
-   */
-  private rebuildGenesisWireframeObjects(): void {
-    this.clearBRepWireframeObjects();
-
-    const data = this.currentBRepWireframeData;
-    let visibleContours: Float32Array | null = null;
-    let visibleThickness: Float32Array | null = null;
-    let visibleInternal: Float32Array | null = null;
-    let occludableAll: Float32Array | null = null;
-    let centerlines: Float32Array | null = null;
-
-    // 1. Extrai sempre EdgesGeometry(geometry, 35) da malha sólida tessellada (limiar 35°)
-    // para ignorar a tesselação de paredes cilíndricas suaves e preservar 100% das quinas reais e bordas de topo/base
-    const meshEdgeNumbers: number[] = [];
-    for (const child of this.meshGroup.children) {
-      const solidMesh = child as THREE.Mesh;
-      if (solidMesh?.geometry) {
-        const edgesGeo = new THREE.EdgesGeometry(solidMesh.geometry, 35);
-        const posAttr = edgesGeo.getAttribute("position");
-        if (posAttr && posAttr.array.length >= 6) {
-          const arr = posAttr.array;
-          for (let i = 0; i < arr.length; i++) {
-            meshEdgeNumbers.push(arr[i]!);
-          }
-        }
-        edgesGeo.dispose();
-      }
-    }
-
-    const concatFloat32 = (a: Float32Array | null, extra: number[]): Float32Array | null => {
-      const aLen = a ? a.length : 0;
-      if (aLen === 0 && extra.length === 0) return null;
-      if (extra.length === 0) return a;
-      if (aLen === 0) return new Float32Array(extra);
-      const out = new Float32Array(aLen + extra.length);
-      out.set(a!, 0);
-      out.set(extra, aLen);
-      return out;
-    };
-
-    if (data && data.allOccludablePositions.length >= 6) {
-      visibleContours = concatFloat32(data.outerContourPositions, meshEdgeNumbers);
-      visibleThickness = data.featureThicknessPositions;
-      visibleInternal = data.internalDetailPositions;
-      occludableAll = concatFloat32(data.allOccludablePositions, meshEdgeNumbers);
-      centerlines = data.centerlineAxisPositions;
-    } else if (this.currentShape?.edges?.edges && this.currentShape.edges.edges.length > 0) {
-      const segs: number[] = [...meshEdgeNumbers];
-      for (const edge of this.currentShape.edges.edges) {
-        if (edge.isSeam || edge.pointCount < 2) continue;
-        for (let i = 0; i + 5 < edge.points.length; i += 3) {
-          segs.push(
-            edge.points[i]!,
-            edge.points[i + 1]!,
-            edge.points[i + 2]!,
-            edge.points[i + 3]!,
-            edge.points[i + 4]!,
-            edge.points[i + 5]!,
-          );
-        }
-      }
-      if (segs.length >= 6) {
-        const arr = new Float32Array(segs);
-        visibleContours = arr;
-        occludableAll = arr;
-      }
-    } else if (meshEdgeNumbers.length >= 6) {
-      const arr = new Float32Array(meshEdgeNumbers);
-      visibleContours = arr;
-      occludableAll = arr;
-    }
-
-    if (!occludableAll || occludableAll.length < 6) {
-      return;
-    }
-
-    const bounds = computeGenesisBoundsFromPositions(occludableAll);
-    if (this.currentShape?.bounds) {
-      bounds.minZ = Math.min(bounds.minZ, this.currentShape.bounds.min.z);
-      bounds.maxZ = Math.max(bounds.maxZ, this.currentShape.bounds.max.z);
-    }
-    this.genesisBounds = bounds;
-    this.studioUniforms.uZMin.value = bounds.minZ;
-    this.studioUniforms.uZMax.value = Math.max(bounds.minZ + 0.5, bounds.maxZ);
-
-    const buildLaserSegments = (
-      positions: Float32Array | null,
-      isXRay: boolean,
-      name: string,
-      renderOrder: number,
-    ): THREE.LineSegments | null => {
-      if (!positions || positions.length < 6) return null;
-      const geo = createGenesisLaserEdgesGeometry(positions, bounds, isXRay);
-      const mat = isXRay ? this.genesisXRayLaserMat : this.genesisVisibleLaserMat;
-      const segs = new THREE.LineSegments(geo, mat);
-      segs.name = name;
-      segs.frustumCulled = false;
-      segs.renderOrder = renderOrder;
-      this.brepWireframeGroup.add(segs);
-      return segs;
-    };
-
-    // Camada 1B: Arestas da Base e Arestas Ocultas / Traseiras (Raio-X Contínuo Fino 0.95px em Azul-Aço Técnico #60A5FA / #4B83C3 @ 0.45)
-    this.brepLineObjects.hiddenXRay = buildLaserSegments(
-      occludableAll,
-      true,
-      "genesis_arame_hidden_xray",
-      4,
-    );
-
-    // Camada 1A: Arestas Superiores / Frontais Visíveis (1.1px CSS, NormalBlending)
-    this.brepLineObjects.internalDetail = buildLaserSegments(
-      visibleInternal,
-      false,
-      "genesis_arame_internal_detail",
-      5,
-    );
-    this.brepLineObjects.featureThickness = buildLaserSegments(
-      visibleThickness,
-      false,
-      "genesis_arame_feature_thickness",
-      6,
-    );
-    this.brepLineObjects.outerContour = buildLaserSegments(
-      visibleContours,
-      false,
-      "genesis_arame_outer_contour",
-      7,
-    );
-
-    // Camada 2: Micro-Pontos Discretos nos Vértices de Quina Real (1.5px, opacity: 0.35, NormalBlending)
-    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-    const pinpointData = extractGenesisVertexPinpoints3D(occludableAll, bounds);
-    if (pinpointData.count > 0) {
-      const pinpoints = createGenesisVertexPinpointsObject(pinpointData, dpr);
-      pinpoints.name = "genesis_arame_vertex_pinpoints";
-      this.genesisPinpointsObj = pinpoints;
-      this.brepWireframeGroup.add(pinpoints);
-    }
-
-    // Eixos/Centros de Furos e Cilindros (NormalBlending, sem anéis de compasso no piso do CAD 3D)
-    if (centerlines && centerlines.length >= 6) {
-      const axisGroup = new THREE.Group();
-      axisGroup.name = "genesis-centerlines-group";
-      const clGeo = new THREE.BufferGeometry();
-      clGeo.setAttribute("position", new THREE.BufferAttribute(centerlines, 3));
-      const clMat = new THREE.LineBasicMaterial({
-        color: 0x60a5fa,
-        transparent: true,
-        opacity: 0.35,
-        depthWrite: false,
-        depthTest: true,
-        blending: THREE.NormalBlending,
-      });
-      const clLines = new THREE.LineSegments(clGeo, clMat);
-      clLines.name = "genesis_arame_centerlines";
-      clLines.userData.baseOpacity = 0.35;
-      clLines.renderOrder = 3;
-      axisGroup.add(clLines);
-      this.genesisCompassGroup = axisGroup;
-      this.brepLineObjects.centerlineAxis = axisGroup;
-      this.brepWireframeGroup.add(axisGroup);
-    } else {
-      this.genesisCompassGroup = null;
-      this.brepLineObjects.centerlineAxis = null;
-    }
-
-    this.updateGenesisAnimationUniforms(performance.now());
-  }
-
-  public setBRepWireframeData(data: BRepTechnicalWireframeData3D | null): void {
-    const hadDataBefore = Boolean(this.currentBRepWireframeData);
-    this.currentBRepWireframeData = data;
-    if (!hadDataBefore && data) {
-      this.genesisBuildStartTime = performance.now();
-    }
-    this.rebuildGenesisWireframeObjects();
-    this.updateVisibilityByEdgeMode();
-    this.requestRender();
-  }
-
-  public setBRepWireframeLayerConfig(config: BRepWireframeLayerConfig): void {
-    this.brepWireframeLayers = { ...config };
-    this.updateVisibilityByEdgeMode();
-    this.requestRender();
-  }
-
   private clearGeometry(): void {
-    this.depthPrePassMesh = null;
     while (this.meshGroup.children.length > 0) {
       const obj = this.meshGroup.children[0] as THREE.Mesh;
       this.meshGroup.remove(obj);
@@ -1451,9 +570,6 @@ export class ThreeBRepRenderer {
       const obj = this.edgesGroup.children[0] as THREE.Line;
       this.edgesGroup.remove(obj);
       obj.geometry.dispose();
-      if (obj.material instanceof THREE.Material) {
-        obj.material.dispose();
-      }
     }
 
     while (this.verticesGroup.children.length > 0) {
@@ -1476,8 +592,7 @@ export class ThreeBRepRenderer {
         obj.material !== this.primaryFaceMaterial &&
         obj.material !== this.secondaryFaceMaterial &&
         obj.material !== this.primaryEdgeMaterial &&
-        obj.material !== this.secondaryEdgeMaterial &&
-        obj.material !== this.brepSelectedEdgeMat
+        obj.material !== this.secondaryEdgeMaterial
       ) {
         obj.material.dispose();
       }
@@ -1502,198 +617,57 @@ export class ThreeBRepRenderer {
   }
 
   // ==========================================
-  // MODOS DE APARÊNCIA CALDRA (SÓLIDO, SOMB, ARAME)
+  // MODOS DE APARÊNCIA CALDRA (SOMB, SOMB+AR, ARAME)
   // ==========================================
 
   public setEdgeMode(mode: EdgeMode): void {
-    const prevMode = this.edgeMode;
     this.edgeMode = mode;
-    if (mode === "wireframe" && prevMode !== "wireframe") {
-      // Dispara a animação de construção "Gênese" (650ms, cubic-bezier(0.16, 1, 0.3, 1))
-      this.genesisBuildStartTime = performance.now();
-    }
     this.updateVisibilityByEdgeMode();
     this.requestRender();
   }
 
-  /**
-   * Atualiza os uniforms de animação da "Gênese CALDRA" (construção 650ms + Genesis Living Shimmer).
-   */
-  private updateGenesisAnimationUniforms(nowMs: number): void {
-    if (this.edgeMode !== "wireframe") return;
-    const elapsed = Math.max(0, nowMs - this.genesisBuildStartTime);
-    const phase = computeGenesisConstructionProgress(elapsed, GENESIS_CONSTRUCTION_DURATION_MS);
-    const timeSec = (nowMs * 0.001) % 3600;
-
-    this.genesisVisibleLaserMat.uniforms.uTime!.value = timeSec;
-    this.genesisVisibleLaserMat.uniforms.uBuildProgress!.value = phase.edgesProgress;
-
-    this.genesisXRayLaserMat.uniforms.uTime!.value = timeSec;
-    this.genesisXRayLaserMat.uniforms.uBuildProgress!.value = phase.edgesProgress;
-
-    this.studioUniforms.uGenesisBuildProgress.value = phase.glassProgress;
-
-    if (this.genesisPinpointsObj) {
-      this.genesisPinpointsObj.material.uniforms.uTime!.value = timeSec;
-      this.genesisPinpointsObj.material.uniforms.uBuildProgress!.value = phase.pinpointsProgress;
-    }
-
-    if (this.genesisCompassGroup && this.genesisBounds) {
-      const cx = this.genesisBounds.centerX;
-      const cy = this.genesisBounds.centerY;
-      const scale = 0.78 + 0.22 * phase.ringsProgress;
-      this.genesisCompassGroup.position.set(cx * (1 - scale), cy * (1 - scale), 0);
-      this.genesisCompassGroup.scale.set(scale, scale, 1);
-
-      const shimmer = computeGenesisShimmerFactor(timeSec, 0.4);
-      for (const child of this.genesisCompassGroup.children) {
-        if ("material" in child && child.material instanceof THREE.LineBasicMaterial) {
-          const baseOp = typeof child.userData.baseOpacity === "number" ? child.userData.baseOpacity : 0.08;
-          child.material.opacity = baseOp * phase.ringsProgress * (0.82 + 0.18 * shimmer);
-        }
-      }
-    }
-  }
-
-  private scheduleGenesisShimmerTick(): void {
-    if (this.isDestroyed || this.isPaused || this.edgeMode !== "wireframe") return;
-    if (!this.onDemandRender) return;
-    if (this.genesisShimmerTimerId !== null) return;
-
-    const elapsed = performance.now() - this.genesisBuildStartTime;
-    const isBuilding = elapsed < GENESIS_CONSTRUCTION_DURATION_MS + 80;
-    // Em Software WebGL (headless Chromium), cadencia suavemente após o draw para nunca bloquear a thread principal
-    const delayMs = this.isSoftwareGl ? (isBuilding ? 45 : 90) : isBuilding ? 16 : 33;
-
-    this.genesisShimmerTimerId = setTimeout(() => {
-      this.genesisShimmerTimerId = null;
-      if (this.isDestroyed || this.isPaused || this.edgeMode !== "wireframe") return;
-      this.requestRender();
-    }, delayMs);
-  }
-
   private updateVisibilityByEdgeMode(): void {
-    const isDark = this.currentTheme === "dark";
-
-    if (this.edgeMode !== "wireframe" && this.genesisShimmerTimerId !== null) {
-      clearTimeout(this.genesisShimmerTimerId);
-      this.genesisShimmerTimerId = null;
-    }
-
+    const solidMesh = this.meshGroup.getObjectByName("solid_mesh") as THREE.Mesh | undefined;
     switch (this.edgeMode) {
-      case "shaded": {
-        // 1º MODO: "SOMB" DO CALDRA-CODE (Sombreado Metálico Puro sem arestas sobrepostas:
-        // Base Aço Anodizado #252F3F/#283244 + Reflexo Especular Prata-Brilhante #CBD5E1 -> #F8FAFC)
+      case "shaded":
         this.meshGroup.visible = true;
-        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
-        this.brepWireframeGroup.visible = false;
-        this.studioUniforms.uShadingMode.value = 0;
-        this.studioUniforms.uOpacity.value = 1.0;
-        this.baseSolidMaterial.transparent = false;
-        this.baseSolidMaterial.depthWrite = true;
-        this.baseSolidMaterial.polygonOffsetFactor = 1.5;
-        this.baseSolidMaterial.polygonOffsetUnits = 1.5;
-        this.primaryFaceMaterial.transparent = false;
-        this.primaryFaceMaterial.opacity = 1.0;
-
+        if (solidMesh) {
+          this.baseSolidMaterial.color.setHex(0x94a3b8);
+          this.baseSolidMaterial.transparent = false;
+          this.baseSolidMaterial.opacity = 1.0;
+          this.baseSolidMaterial.depthWrite = true;
+        }
         this.edgesGroup.visible = false;
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
-      }
 
-      case "shaded-edges": {
-        // 2º MODO: "SOMB+AR" DO CALDRA-CODE (Mesmo corpo CaldraMachinedSteelMaterial do SOMB
-        // + arestas reais de contorno finas 1.15px em Branco-Prata Nítido #F1F5F9 @ 0.90, sem emendas falsas)
+      case "shaded-edges":
         this.meshGroup.visible = true;
-        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = false;
-        this.brepWireframeGroup.visible = false;
-        this.studioUniforms.uShadingMode.value = 1;
-        this.studioUniforms.uOpacity.value = 1.0;
-        this.baseSolidMaterial.transparent = false;
-        this.baseSolidMaterial.depthWrite = true;
-        this.baseSolidMaterial.polygonOffsetFactor = 1.5;
-        this.baseSolidMaterial.polygonOffsetUnits = 1.5;
-        this.primaryFaceMaterial.transparent = false;
-        this.primaryFaceMaterial.opacity = 1.0;
-
+        if (solidMesh) {
+          this.baseSolidMaterial.color.setHex(0x94a3b8);
+          this.baseSolidMaterial.transparent = false;
+          this.baseSolidMaterial.opacity = 1.0;
+          this.baseSolidMaterial.depthWrite = true;
+        }
         this.edgesGroup.visible = true;
-        for (const child of this.edgesGroup.children) {
-          const line = child as THREE.Line;
-          const isTangent = Boolean(line.userData?.isTangentEdge);
-          line.visible = !isTangent;
-          if (!isTangent && line.material instanceof THREE.LineBasicMaterial) {
-            // Arestas SOMB+AR sempre em Branco-Prata Fino e Nítido (#F1F5F9, opacity: 0.90, 1.15px)
-            line.material.color.setHex(0xf1f5f9);
-            line.material.opacity = 0.90;
-            line.material.linewidth = 1.15;
-          }
-        }
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
-      }
 
-      case "wireframe": {
-        // MODO "ARAME 3D — GÊNESE CALDRA" (5 Camadas: Laser Gradient Edges + Vertex Pinpoints + Sapphire Crystal Walls + Base Compass Rings + Living Shimmer)
+      case "wireframe":
+        // Em modo ARAME (Technical Wireframe CAD com Profundidade Óptica), exibe o véu translúcido
+        // azul-noturno ultra-sutil (rgba(18, 33, 56, 0.24)) com arestas hierárquicas e micro-pontos brancos
         this.meshGroup.visible = true;
-        if (this.depthPrePassMesh) this.depthPrePassMesh.visible = true;
-
-        this.studioUniforms.uShadingMode.value = 2;
-        this.studioUniforms.uWireframeColor.value.setHex(0x1e3a5f);
-        this.studioUniforms.uOpacity.value = 0.16;
-        this.baseSolidMaterial.transparent = true;
-        this.baseSolidMaterial.depthWrite = false;
-        this.baseSolidMaterial.polygonOffsetFactor = 1.5;
-        this.baseSolidMaterial.polygonOffsetUnits = 1.5;
-
-        this.primaryFaceMaterial.transparent = true;
-        this.primaryFaceMaterial.opacity = 0.34;
-
-        if (this.brepWireframeGroup.children.length === 0 && (this.currentShape || this.currentBRepWireframeData)) {
-          this.rebuildGenesisWireframeObjects();
+        if (solidMesh) {
+          this.baseSolidMaterial.color.setHex(0x122138);
+          this.baseSolidMaterial.transparent = true;
+          this.baseSolidMaterial.opacity = 0.24;
+          this.baseSolidMaterial.depthWrite = false;
         }
-
-        const hasGenesisWireframe = this.brepWireframeGroup.children.length > 0;
-        if (hasGenesisWireframe) {
-          this.edgesGroup.visible = false;
-          this.brepWireframeGroup.visible = true;
-          if (this.brepLineObjects.outerContour) {
-            this.brepLineObjects.outerContour.visible = this.brepWireframeLayers.showContours;
-          }
-          if (this.brepLineObjects.featureThickness) {
-            this.brepLineObjects.featureThickness.visible = this.brepWireframeLayers.showContours;
-          }
-          if (this.brepLineObjects.internalDetail) {
-            this.brepLineObjects.internalDetail.visible = this.brepWireframeLayers.showContours;
-          }
-          if (this.brepLineObjects.hiddenXRay) {
-            this.brepLineObjects.hiddenXRay.visible = this.brepWireframeLayers.showHiddenXRay;
-          }
-          if (this.brepLineObjects.centerlineAxis) {
-            this.brepLineObjects.centerlineAxis.visible = this.brepWireframeLayers.showAxesCenters;
-          }
-          if (this.genesisPinpointsObj) {
-            this.genesisPinpointsObj.visible = this.brepWireframeLayers.showContours;
-          }
-        } else {
-          this.brepWireframeGroup.visible = false;
-          this.edgesGroup.visible = true;
-          for (const child of this.edgesGroup.children) {
-            const line = child as THREE.Line;
-            line.visible = true;
-            if (line.material instanceof THREE.LineBasicMaterial) {
-              line.material.color.setHex(0xbae6fd);
-              line.material.opacity = 0.88;
-              line.material.linewidth = 1.0;
-            }
-          }
-        }
-
-        this.updateGenesisAnimationUniforms(performance.now());
-        this.verticesGroup.visible = this.selectionType === "vertex";
-        this.vertexMaterial.color.setHex(0xf8fafc);
-        this.vertexMaterial.size = 4.0;
+        this.edgesGroup.visible = true;
+        this.verticesGroup.visible = true;
+        this.vertexMaterial.color.setHex(0xffffff);
+        this.vertexMaterial.size = 3.6;
         break;
-      }
     }
   }
 
@@ -1772,43 +746,15 @@ export class ThreeBRepRenderer {
           faceGeo.setIndex(new THREE.BufferAttribute(subIndices, 1));
 
           const overlay = new THREE.Mesh(faceGeo, faceMat);
-          overlay.frustumCulled = false;
           this.selectionOverlayGroup.add(overlay);
         }
       } else if (entity.type === "edge") {
         const edge = this.currentShape.edges.edges[entity.index];
-        if (edge && edge.points.length >= 6) {
-          const segPairs: number[] = [];
-          for (let k = 0; k < edge.points.length - 3; k += 3) {
-            segPairs.push(
-              edge.points[k]!,
-              edge.points[k + 1]!,
-              edge.points[k + 2]!,
-              edge.points[k + 3]!,
-              edge.points[k + 4]!,
-              edge.points[k + 5]!,
-            );
-          }
-          if (segPairs.length >= 6) {
-            const fatGeo = new LineSegmentsGeometry();
-            fatGeo.setPositions(new Float32Array(segPairs));
-            const fatLine = new LineSegments2(
-              fatGeo,
-              isPrimary ? this.brepSelectedEdgeMat : this.secondaryEdgeMaterial as unknown as LineMaterial,
-            );
-            if (!isPrimary) {
-              const edgeGeo = new THREE.BufferGeometry();
-              edgeGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
-              const line = new THREE.Line(edgeGeo, edgeMat);
-              line.frustumCulled = false;
-              this.selectionOverlayGroup.add(line);
-              fatGeo.dispose();
-            } else {
-              fatLine.frustumCulled = false;
-              fatLine.renderOrder = 15;
-              this.selectionOverlayGroup.add(fatLine);
-            }
-          }
+        if (edge) {
+          const edgeGeo = new THREE.BufferGeometry();
+          edgeGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
+          const line = new THREE.Line(edgeGeo, edgeMat);
+          this.selectionOverlayGroup.add(line);
         }
       } else if (entity.type === "vertex") {
         if (entity.point) {
@@ -1817,7 +763,6 @@ export class ThreeBRepRenderer {
             sphereGeo,
             new THREE.MeshBasicMaterial({ color: isPrimary ? 0x0284c7 : 0xf59e0b }),
           );
-          sphere.frustumCulled = false;
           sphere.position.set(entity.point.x, entity.point.y, entity.point.z);
           this.selectionOverlayGroup.add(sphere);
         }
@@ -1900,7 +845,6 @@ export class ThreeBRepRenderer {
         typeof this.transformControls.getHelper === "function"
           ? this.transformControls.getHelper()
           : (this.transformControls as unknown as THREE.Object3D);
-      helper.visible = false;
       this.scene.add(helper);
 
       this.transformControls.addEventListener("dragging-changed", (event: { value: boolean }) => {
@@ -1940,21 +884,11 @@ export class ThreeBRepRenderer {
     }
   }
 
-  private setTransformHelperVisible(vis: boolean): void {
-    if (!this.transformControls) return;
-    this.transformControls.visible = vis;
-    const helper =
-      typeof this.transformControls.getHelper === "function"
-        ? this.transformControls.getHelper()
-        : (this.transformControls as unknown as THREE.Object3D);
-    if (helper) helper.visible = vis;
-  }
-
   public updateGizmoPosition(): void {
     if (!this.transformControls || !this.gizmoTargetMesh) return;
 
     if (this.gizmoMode === "off" || this.multiSelection.length === 0) {
-      this.setTransformHelperVisible(false);
+      this.transformControls.visible = false;
       this.transformControls.enabled = false;
       return;
     }
@@ -1964,10 +898,10 @@ export class ThreeBRepRenderer {
     if (pt) {
       this.gizmoTargetMesh.position.copy(pt);
       this.gizmoInitialPos.copy(pt);
-      this.setTransformHelperVisible(true);
+      this.transformControls.visible = true;
       this.transformControls.enabled = true;
     } else {
-      this.setTransformHelperVisible(false);
+      this.transformControls.visible = false;
       this.transformControls.enabled = false;
     }
   }
@@ -1977,7 +911,7 @@ export class ThreeBRepRenderer {
     if (!this.transformControls) return;
 
     if (mode === "off") {
-      this.setTransformHelperVisible(false);
+      this.transformControls.visible = false;
       this.transformControls.enabled = false;
     } else {
       this.transformControls.setMode(mode);
@@ -2209,7 +1143,6 @@ export class ThreeBRepRenderer {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(W, H, false);
     }
-    this.updateBRepLineResolutions(W, H, safeK);
 
     const alpha = (params.azimuthDeg * Math.PI) / 180;
     const beta = (Math.max(-90, Math.min(90, params.elevationDeg)) * Math.PI) / 180;
@@ -2244,25 +1177,20 @@ export class ThreeBRepRenderer {
       .addScaledVector(rightVec, panMmRight)
       .addScaledVector(upVec, panMmUp);
 
-    const visibleHeightMm = Math.max(0.25, H / safeK);
-    const visibleWidthMm = Math.max(0.25, W / safeK);
+    const visibleHeightMm = Math.max(5, H / safeK);
+    const visibleWidthMm = Math.max(5, W / safeK);
     const fovRad = (this.camera.fov * Math.PI) / 360;
-    const distance = Math.max(0.5, (visibleHeightMm * 0.5) / Math.tan(fovRad));
+    const distance = Math.max(15, (visibleHeightMm * 0.5) / Math.tan(fovRad));
 
     const camPos = target3D.clone().addScaledVector(outDirVec, distance);
 
     this.hasInitialCameraPose = true;
     this.cameraAnimation = null;
 
-    this.camera.near = 0.01;
-    this.camera.far = 100000;
     this.camera.position.copy(camPos);
     this.camera.up.copy(upVec);
     this.camera.lookAt(target3D);
-    this.camera.updateProjectionMatrix();
 
-    this.orthoCamera.near = -50000;
-    this.orthoCamera.far = 50000;
     this.orthoCamera.position.copy(camPos);
     this.orthoCamera.up.copy(upVec);
     this.orthoCamera.left = -visibleWidthMm * 0.5;
@@ -2293,8 +1221,6 @@ export class ThreeBRepRenderer {
   public setTheme(theme: "light" | "dark"): void {
     this.currentTheme = theme;
     this.updateGridAndBackground();
-    this.updateVisibilityByEdgeMode();
-    this.renderImmediate();
     this.requestRender();
   }
 
@@ -2314,6 +1240,54 @@ export class ThreeBRepRenderer {
       }
       this.gridHelper = null;
     }
+
+    if (!this.showFloorGrid) {
+      return;
+    }
+
+    let maxDim = 400;
+    let centerX = this.controls.target.x || 0;
+    let centerY = this.controls.target.y || 0;
+    let floorZ = -0.15;
+
+    if (this.currentShape?.bounds) {
+      const b = this.currentShape.bounds;
+      const dx = b.max.x - b.min.x;
+      const dy = b.max.y - b.min.y;
+      const dz = b.max.z - b.min.z;
+      maxDim = Math.max(dx, dy, dz, 200);
+      centerX = Math.round(((b.min.x + b.max.x) / 2) / 50) * 50;
+      centerY = Math.round(((b.min.y + b.max.y) / 2) / 50) * 50;
+      floorZ = Math.min(0, b.min.z) - 0.15;
+    } else if (this.lastCameraMatch) {
+      centerX = Math.round(this.lastCameraMatch.startPose.target.x / 50) * 50;
+      centerY = Math.round(this.lastCameraMatch.startPose.target.y / 50) * 50;
+      maxDim = Math.max(400, this.lastCameraMatch.startPose.visibleWidthMm);
+    }
+
+    const gridSize = Math.max(800, Math.ceil((maxDim * 3.5) / 100) * 100);
+    const divisions = Math.min(120, Math.max(20, Math.round(gridSize / 20)));
+
+    const mainColor = isDark ? 0xffffff : 0x0f172a;
+    const subColor = isDark ? 0xffffff : 0x334155;
+
+    const grid = new THREE.GridHelper(gridSize, divisions, mainColor, subColor);
+    // Rotaciona 90° em X para que o GridHelper fique exatamente no plano de trabalho XY (Z = floorZ)
+    grid.rotation.x = Math.PI / 2;
+    grid.position.set(centerX, centerY, floorZ);
+
+    if (Array.isArray(grid.material)) {
+      grid.material[0].transparent = true;
+      grid.material[0].opacity = isDark ? 0.18 : 0.16;
+      grid.material[1].transparent = true;
+      grid.material[1].opacity = isDark ? 0.08 : 0.07;
+    } else {
+      grid.material.transparent = true;
+      grid.material.opacity = isDark ? 0.12 : 0.10;
+    }
+
+    this.gridHelper = grid;
+    this.scene.add(grid);
   }
 
   public fitView(
@@ -2407,7 +1381,6 @@ export class ThreeBRepRenderer {
     this.applyCameraPose(match.startPose);
     this.setExtrusionMorphScale(0.01);
     this.updateGridAndBackground();
-    this.updateCameraCoupledLighting();
     this.renderer.render(this.scene, this.activeCamera);
   }
 
@@ -2418,12 +1391,10 @@ export class ThreeBRepRenderer {
       const zScale = Math.max(0.01, Math.min(1, progress3D));
       this.meshGroup.scale.set(1, 1, zScale);
       this.edgesGroup.scale.set(1, 1, zScale);
-      this.brepWireframeGroup.scale.set(1, 1, zScale);
       this.verticesGroup.scale.set(1, 1, zScale);
     } else {
       this.meshGroup.scale.set(1, 1, 1);
       this.edgesGroup.scale.set(1, 1, 1);
-      this.brepWireframeGroup.scale.set(1, 1, 1);
       this.verticesGroup.scale.set(1, 1, 1);
     }
   }
@@ -2466,78 +1437,33 @@ export class ThreeBRepRenderer {
     this.setExtrusionMorphScale(1);
   }
 
-  private getCharacteristicPartRadiusMm(): number {
-    if (this.currentShape?.bounds) {
-      const b = this.currentShape.bounds;
-      const dx = Math.max(0, b.max.x - b.min.x);
-      const dy = Math.max(0, b.max.y - b.min.y);
-      const dz = Math.max(0, b.max.z - b.min.z);
-      return Math.max(10, 0.5 * Math.hypot(dx, dy, dz));
-    }
-    return 60;
-  }
-
   public zoomIn(factor = 0.8): void {
-    const sens = loadZoomSensitivityConfig().multiplier;
-    const camDist = Math.max(1, this.camera.position.distanceTo(this.controls.target));
-    const metrics = computeAdaptiveZoomMetrics({
-      cameraDistanceMm: camDist,
-      characteristicRadiusMm: this.getCharacteristicPartRadiusMm(),
-      userSensitivityMultiplier: sens,
-    });
-    const baseDelta = 1 - factor;
-    const adaptedFactor = Math.max(
-      0.55,
-      Math.min(0.99, 1 - baseDelta * Math.min(1.25, metrics.effectiveFactor)),
-    );
     if (this.isOrtho) {
-      this.orthoCamera.zoom = Math.min(this.orthoCamera.zoom / adaptedFactor, 40);
+      this.orthoCamera.zoom = Math.min(this.orthoCamera.zoom / factor, 15);
       this.orthoCamera.updateProjectionMatrix();
     } else {
       const offset = this.camera.position.clone().sub(this.controls.target);
-      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(adaptedFactor)));
+      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(factor)));
     }
     this.controls.update();
   }
 
   public zoomOut(factor = 1.25): void {
-    const sens = loadZoomSensitivityConfig().multiplier;
-    const camDist = Math.max(1, this.camera.position.distanceTo(this.controls.target));
-    const metrics = computeAdaptiveZoomMetrics({
-      cameraDistanceMm: camDist,
-      characteristicRadiusMm: this.getCharacteristicPartRadiusMm(),
-      userSensitivityMultiplier: sens,
-    });
-    const baseDelta = factor - 1;
-    const adaptedFactor = Math.max(
-      1.01,
-      Math.min(1.85, 1 + baseDelta * Math.min(1.25, metrics.effectiveFactor)),
-    );
     if (this.isOrtho) {
-      this.orthoCamera.zoom = Math.max(this.orthoCamera.zoom / adaptedFactor, 0.05);
+      this.orthoCamera.zoom = Math.max(this.orthoCamera.zoom / factor, 0.1);
       this.orthoCamera.updateProjectionMatrix();
     } else {
       const offset = this.camera.position.clone().sub(this.controls.target);
-      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(adaptedFactor)));
+      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(factor)));
     }
     this.controls.update();
   }
 
   public panCamera(deltaX: number, deltaY: number): void {
-    const sens = loadZoomSensitivityConfig().multiplier;
-    const camDist = Math.max(1, this.camera.position.distanceTo(this.controls.target));
-    const metrics = computeAdaptiveZoomMetrics({
-      cameraDistanceMm: camDist,
-      characteristicRadiusMm: this.getCharacteristicPartRadiusMm(),
-      userSensitivityMultiplier: sens,
-    });
-    const scale = Math.min(1.15, Math.max(0.08, metrics.adaptiveFactor));
     const eye = this.activeCamera.position.clone().sub(this.controls.target);
     const right = new THREE.Vector3().crossVectors(this.activeCamera.up, eye).normalize();
     const up = new THREE.Vector3().crossVectors(eye, right).normalize();
-    const panOffset = right
-      .multiplyScalar(deltaX * scale)
-      .add(up.multiplyScalar(deltaY * scale));
+    const panOffset = right.multiplyScalar(deltaX).add(up.multiplyScalar(deltaY));
     this.camera.position.add(panOffset);
     this.orthoCamera.position.add(panOffset);
     this.controls.target.add(panOffset);
@@ -2599,10 +1525,8 @@ export class ThreeBRepRenderer {
 
   private updatePointerCoords(e: PointerEvent): void {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    const w = rect.width > 0 ? rect.width : 1;
-    const h = rect.height > 0 ? rect.height : 1;
-    this.pointer.x = ((e.clientX - rect.left) / w) * 2 - 1;
-    this.pointer.y = -((e.clientY - rect.top) / h) * 2 + 1;
+    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((e.clientY - rect.height) / rect.height) * 2 + 1;
   }
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -2626,7 +1550,7 @@ export class ThreeBRepRenderer {
       e.clientY - this.pointerDownPos.y,
     );
 
-    if (elapsed < 500 && dist < 12) {
+    if (elapsed < 350 && dist < 5) {
       this.updatePointerCoords(e);
       this.raycaster.setFromCamera(this.pointer, this.activeCamera);
       const hit = this.performHitTest();
@@ -2709,7 +1633,6 @@ export class ThreeBRepRenderer {
 
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
-    this.updateBRepLineResolutions(width, height);
     if (this.onDemandRender) {
       this.requestRender();
     }
@@ -2721,17 +1644,11 @@ export class ThreeBRepRenderer {
 
   public setPaused(paused: boolean): void {
     this.isPaused = paused;
-    if (paused) {
-      if (this.animFrameId) {
-        cancelAnimationFrame(this.animFrameId);
-        this.animFrameId = 0;
-        this.renderQueued = false;
-      }
-      if (this.genesisShimmerTimerId !== null) {
-        clearTimeout(this.genesisShimmerTimerId);
-        this.genesisShimmerTimerId = null;
-      }
-    } else {
+    if (paused && this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = 0;
+      this.renderQueued = false;
+    } else if (!paused) {
       if (this.onDemandRender) {
         this.requestRender();
       } else if (!this.animFrameId) {
@@ -2740,35 +1657,16 @@ export class ThreeBRepRenderer {
     }
   }
 
-  public renderImmediate(): void {
-    if (this.isDestroyed || this.isPaused) return;
-    if (this.edgeMode === "wireframe") {
-      this.updateGenesisAnimationUniforms(performance.now());
-    }
-    this.updateCameraCoupledLighting();
-    this.renderer.render(this.scene, this.activeCamera);
-    if (this.edgeMode === "wireframe") {
-      this.scheduleGenesisShimmerTick();
-    }
-  }
-
   public requestRender(): void {
     if (this.isDestroyed || this.isPaused) return;
     if (!this.onDemandRender) return;
     if (this.renderQueued) return;
     this.renderQueued = true;
-    this.animFrameId = requestAnimationFrame((now) => {
+    this.animFrameId = requestAnimationFrame(() => {
       this.renderQueued = false;
       this.animFrameId = 0;
       if (this.isDestroyed || this.isPaused) return;
-      if (this.edgeMode === "wireframe") {
-        this.updateGenesisAnimationUniforms(now);
-      }
-      this.updateCameraCoupledLighting();
       this.renderer.render(this.scene, this.activeCamera);
-      if (this.edgeMode === "wireframe") {
-        this.scheduleGenesisShimmerTick();
-      }
     });
   }
 
@@ -2896,10 +1794,6 @@ export class ThreeBRepRenderer {
         }
       }
 
-      if (this.edgeMode === "wireframe") {
-        this.updateGenesisAnimationUniforms(performance.now());
-      }
-      this.updateCameraCoupledLighting();
       this.renderer.render(this.scene, this.activeCamera);
     };
 
@@ -2913,10 +1807,6 @@ export class ThreeBRepRenderer {
   public dispose(): void {
     this.isDestroyed = true;
     cancelAnimationFrame(this.animFrameId);
-    if (this.genesisShimmerTimerId !== null) {
-      clearTimeout(this.genesisShimmerTimerId);
-      this.genesisShimmerTimerId = null;
-    }
 
     const dom = this.renderer.domElement;
     dom.removeEventListener("pointerdown", this.onPointerDown);
@@ -2929,7 +1819,6 @@ export class ThreeBRepRenderer {
     }
 
     this.clearGeometry();
-    this.clearBRepWireframeObjects();
     this.clearSketchWireframes();
 
     if (this.gridHelper) {
@@ -2952,31 +1841,7 @@ export class ThreeBRepRenderer {
       this.gizmoTargetMesh = null;
     }
 
-    if (this.envMapTexture) {
-      this.envMapTexture.dispose();
-      this.envMapTexture = null;
-    }
     this.baseSolidMaterial.dispose();
-    this.sectionBackStencilMat.dispose();
-    this.sectionFrontStencilMat.dispose();
-    this.sectionCapMaterial.dispose();
-    if (this.sectionCapMesh) {
-      this.sectionCapMesh.geometry.dispose();
-      this.sectionCapMesh = null;
-    }
-    if (this.sectionHatchTexture) {
-      this.sectionHatchTexture.dispose();
-      this.sectionHatchTexture = null;
-    }
-    this.depthPrePassMaterial.dispose();
-    this.genesisVisibleLaserMat.dispose();
-    this.genesisXRayLaserMat.dispose();
-    this.brepOuterContourMat.dispose();
-    this.brepFeatureThicknessMat.dispose();
-    this.brepInternalDetailMat.dispose();
-    this.brepHiddenXRayMat.dispose();
-    this.brepCenterlineAxisMat.dispose();
-    this.brepSelectedEdgeMat.dispose();
     this.primaryFaceMaterial.dispose();
     this.secondaryFaceMaterial.dispose();
     this.hoveredFaceMaterial.dispose();
@@ -2997,72 +1862,5 @@ export class ThreeBRepRenderer {
     if (dom.parentElement) {
       dom.parentElement.removeChild(dom);
     }
-  }
-
-  private createDiagonalHatchTexture(): THREE.CanvasTexture | null {
-    if (typeof document === "undefined") return null;
-    const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.fillStyle = "#1E293B";
-      ctx.fillRect(0, 0, 64, 64);
-      ctx.strokeStyle = "#38BDF8";
-      ctx.lineWidth = 2.5;
-      for (let i = -64; i < 128; i += 12) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i + 64, 64);
-        ctx.stroke();
-      }
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(90, 90);
-    return tex;
-  }
-
-  /**
-   * Pilar 7 — Section Analysis Ao Vivo com Stencil Buffer Cap hachurado 45°
-   */
-  public setSectionPlane(config: {
-    enabled: boolean;
-    axis: "XY" | "XZ" | "YZ";
-    offsetMm: number;
-    flipped?: boolean;
-  }): void {
-    this.sectionEnabled = Boolean(config.enabled);
-    const sign = config.flipped ? 1 : -1;
-    const normal =
-      config.axis === "XY"
-        ? new THREE.Vector3(0, 0, sign)
-        : config.axis === "XZ"
-          ? new THREE.Vector3(0, sign, 0)
-          : new THREE.Vector3(sign, 0, 0);
-    const constant = -sign * config.offsetMm;
-
-    this.sectionClipPlane.set(normal, constant);
-    this.studioUniforms.uSectionEnabled.value = this.sectionEnabled ? 1.0 : 0.0;
-    this.studioUniforms.uSectionPlane.value.set(normal.x, normal.y, normal.z, constant);
-
-    this.sectionStencilGroup.visible = this.sectionEnabled && this.edgeMode !== "wireframe";
-    if (this.sectionCapMesh) {
-      const coplanar = new THREE.Vector3();
-      this.sectionClipPlane.coplanarPoint(coplanar);
-      this.sectionCapMesh.position.copy(coplanar);
-      this.sectionCapMesh.lookAt(coplanar.clone().add(normal));
-    }
-
-    // Aplica o mesmo plano de corte às arestas visíveis para corte limpo em SOMB+AR
-    this.edgesGroup.traverse((obj) => {
-      const mat = (obj as THREE.Line).material as THREE.Material | undefined;
-      if (mat) {
-        mat.clippingPlanes = this.sectionEnabled ? [this.sectionClipPlane] : [];
-      }
-    });
-
-    this.requestRender();
   }
 }

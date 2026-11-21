@@ -18,8 +18,6 @@ export type LiveDimensionKind =
   | "offset"
   | "dx"
   | "dy"
-  | "length"
-  | "angle"
   | "distance"
   | "u_along"
   | "v_perp"
@@ -37,7 +35,6 @@ export interface LiveDimension {
   normalDir: Vec2;
   isEditable: boolean;
   targetKey: string;
-  entityId?: string;
 }
 
 export class DynamicDimensionInteraction {

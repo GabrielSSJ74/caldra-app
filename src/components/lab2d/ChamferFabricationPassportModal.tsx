@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import type { Entity } from "@/lib/lab2d/core";
 import { boxOf } from "@/lib/lab2d/core";
 import { triggerHaptic } from "@/lib/ui/haptics";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 
 interface HoleSpec {
   id: string;

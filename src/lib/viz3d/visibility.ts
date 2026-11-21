@@ -232,16 +232,15 @@ const KIND_PRIORITY: Record<EntityKind, number> = {
 
 /**
  * Filtra as arestas do modelo de acordo com o modo de visualização 3D:
- * - "shaded" (SOMB): Nenhuma aresta (apenas superfícies sombreadas limpas — 100% preservado)
- * - "shaded-edges" (SOMB+AR): Apenas arestas reais e tecnicamente significativas B-Rep (bocas, juntas de gomos, dobras e geratrizes)
- * - "wireframe" (ARAME): Apenas arestas topológicas B-Rep (exclui diagonais internas de triangulação TRIANGULATION_INTERNAL)
- * - "solid" (SOLID): Sólido volumétrico de estúdio (apenas juntas de solda/interseção sutis, sem arame artificial)
+ * - "shaded" (SOMB): Nenhuma aresta (apenas superfícies sombreadas limpas)
+ * - "shaded-edges" (SOMB+AR): Apenas arestas reais e tecnicamente significativas
+ * - "wireframe" (ARAME): Estrutura completa, incluindo triangulação interna
  */
 export function filterEdgesForMode(
   edges: readonly Edge[],
   kinds: readonly EntityKind[] | undefined,
   tags: readonly (WireTag | undefined)[] | undefined,
-  edgeMode: "shaded" | "shaded-edges" | "wireframe" | "solid",
+  edgeMode: "shaded" | "shaded-edges" | "wireframe",
 ): {
   edges: Edge[];
   kinds: EntityKind[];
@@ -264,12 +263,6 @@ export function filterEdgesForMode(
 
     if (edgeMode === "shaded-edges") {
       if (!isSignificantTechnicalEdge(k)) continue;
-    } else if (edgeMode === "wireframe") {
-      // No modo ARAME técnico B-Rep, nunca desenha diagonais de triangulação interna
-      if (k === "TRIANGULATION_INTERNAL") continue;
-    } else if (edgeMode === "solid") {
-      // No modo SOLID, preserva apenas juntas de gomos / interseções reais para chanfro sutil de solda
-      if (k !== "JOINT" && k !== "INTERSECTION" && k !== "REAL_BOUNDARY") continue;
     }
 
     outEdges.push(e);

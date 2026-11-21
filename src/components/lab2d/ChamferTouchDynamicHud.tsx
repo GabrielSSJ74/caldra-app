@@ -15,17 +15,15 @@ import type { Vec2 } from "@/lib/geometry/types";
 import type { Entity } from "@/lib/lab2d/core";
 import type {
   GripEditMode,
-  LineCreationMode,
   PolylineSegmentMode,
   RectCreationMode,
   CircleCreationMode,
   PolygonCreationMode,
   SlotCreationMode,
 } from "@/lib/lab2d/cadcraftEngine";
-import { Lock, Check, X, Delete, CornerDownLeft, Sparkles } from "lucide-react";
+import { Lock, Unlock, Check, X, Delete, CornerDownLeft, ArrowUpDown, Sparkles } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
-import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
 
 export type DimensionalFieldKind =
@@ -52,10 +50,6 @@ export interface ChamferTouchDynamicHudProps {
   isDark?: boolean;
 
   // Sub-modos paramétricos das ferramentas CRI / MOD / SEL
-  lineMode?: LineCreationMode;
-  onChangeLineMode?: (m: LineCreationMode) => void;
-  polylineCreationMode?: LineCreationMode;
-  onChangePolylineCreationMode?: (m: LineCreationMode) => void;
   polylineSegMode: PolylineSegmentMode;
   onTogglePolylineSegMode: () => void;
   onUndoLastPolylineVertex: () => void;
@@ -112,7 +106,6 @@ export interface ChamferTouchDynamicHudProps {
   showPushPullZHandle: boolean;
   thicknessMm: number;
   onChangeThicknessMm: (nextZ: number) => void;
-  uiShellMode?: "compact" | "prumo";
 }
 
 export function ChamferTouchDynamicHud({
@@ -121,10 +114,6 @@ export function ChamferTouchDynamicHud({
   basePoint,
   cursorPoint,
   isDark = true,
-  lineMode = "end_to_end",
-  onChangeLineMode,
-  polylineCreationMode = "end_to_end",
-  onChangePolylineCreationMode,
   polylineSegMode,
   onTogglePolylineSegMode,
   onUndoLastPolylineVertex,
@@ -157,8 +146,9 @@ export function ChamferTouchDynamicHud({
   overlappingCandidates,
   onPickOverlappingEntity,
   onDismissOverlapping,
+  showPushPullZHandle,
+  thicknessMm,
   onChangeThicknessMm,
-  uiShellMode = "compact",
 }: ChamferTouchDynamicHudProps) {
   const [keypadField, setKeypadField] = useState<DimensionalFieldKind | null>(null);
   const [inputVal, setInputVal] = useState<string>("");
@@ -190,21 +180,15 @@ export function ChamferTouchDynamicHud({
     setKeypadField(null);
   }, [activeTool]);
 
-  const handleStepIncrement = (dir: 1 | -1, multiplier = 1) => {
+  const handleStepIncrement = (dir: 1 | -1) => {
     triggerHaptic("tap");
-    setInputVal((prev) => {
-      const curr = parseFloat(prev.replace(",", ".")) || 0;
-      const baseStep = keypadField === "sides" ? 1 : stepSize;
-      const next = Math.max(
-        keypadField === "sides" ? 3 : 0.1,
-        curr + dir * baseStep * multiplier,
-      );
-      return String(Number(next.toFixed(2)));
-    });
+    const curr = parseFloat(inputVal.replace(",", ".")) || 0;
+    const next = Math.max(
+      keypadField === "sides" ? 3 : 0.1,
+      curr + dir * (keypadField === "sides" ? 1 : stepSize),
+    );
+    setInputVal(String(Number(next.toFixed(2))));
   };
-
-  const minusHoldProps = useExponentialHold((mult) => handleStepIncrement(-1, mult));
-  const plusHoldProps = useExponentialHold((mult) => handleStepIncrement(1, mult));
 
   const handleLockCurrentField = () => {
     const parsed = parseFloat(inputVal.replace(",", "."));
@@ -270,129 +254,45 @@ export function ChamferTouchDynamicHud({
   };
 
   const hasTransientBanner =
-    activeTool === "line" ||
     activeTool === "polyline" ||
     activeTool === "rect" ||
     activeTool === "circle" ||
     activeTool === "polygon" ||
     activeTool === "slot" ||
     activeTool === "node" ||
+    activeTool === "smart_trim" ||
+    activeTool === "trim" ||
     activeTool === "offset" ||
     activeTool === "construction_line" ||
     activeTool === "spline";
 
+  const showDynamicPills =
+    pendingCount >= 1 &&
+    (activeTool === "line" ||
+      activeTool === "polyline" ||
+      activeTool === "rect" ||
+      activeTool === "circle" ||
+      activeTool === "polygon" ||
+      activeTool === "slot" ||
+      activeTool === "arc" ||
+      activeTool === "ellipse");
+
   return (
     <>
-      {/* 1. PÍLULA HORIZONTAL DE LINHA ÚNICA ULTRA-COMPACTA DE SUB-MODOS (SLIM SINGLE-ROW GLASS BAR) */}
+      {/* 1. BANNER DE COMANDO TRANSITÓRIO ÚNICO COM CHIPS DE PALAVRAS-CHAVE TÁTEIS */}
       {hasTransientBanner && (
         <div
-          data-testid="chamfer-slim-submode-bar"
-          style={{
-            top: uiShellMode === "prumo" ? 52 : 22, // No modo PRUMO fica a 52px do topo (abaixo da Ilha Superior Esquerda e Controle de Vista Direito)
-            height: 26,
-            padding: "2px 6px",
-            gap: 4,
-            borderRadius: 9999,
-            fontSize: 11,
-            fontWeight: 600,
-            backgroundColor: isDark ? "rgba(10, 15, 26, 0.86)" : "rgba(255, 255, 255, 0.88)",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
-            border: isDark
-              ? "1px solid rgba(255, 255, 255, 0.14)"
-              : "1px solid rgba(15, 23, 42, 0.12)",
-            boxShadow: isDark
-              ? "0 4px 16px rgba(0, 0, 0, 0.28)"
-              : "0 4px 14px rgba(15, 23, 42, 0.08)",
-          }}
           className={cn(
-            "pointer-events-auto absolute left-1/2 -translate-x-1/2 z-35 flex flex-nowrap items-center justify-start whitespace-nowrap overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain font-mono select-none max-w-[94%]",
-            isDark ? "text-slate-100" : "text-slate-800",
+            "pointer-events-auto absolute top-7 left-1/2 -translate-x-1/2 z-35 flex flex-wrap items-center justify-center gap-1 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-xl backdrop-blur-md select-none max-w-[92%]",
+            isDark
+              ? "border-slate-700/80 bg-slate-950/92 text-slate-200"
+              : "border-slate-300 bg-white/95 text-slate-800",
           )}
         >
-          {/* Chips para LINHA (Ponta-Ponta | Centro-Raio Simétrica) */}
-          {activeTool === "line" && (
-            <>
-              <span
-                className="font-bold px-1 shrink-0"
-                style={{ color: "var(--chamfer-accent, #E11D48)" }}
-              >
-                LINHA:
-              </span>
-              {(
-                [
-                  ["end_to_end", "Ponta-Ponta"],
-                  ["center_radius", "Centro-Raio"],
-                ] as const
-              ).map(([mId, label]) => (
-                <button
-                  key={mId}
-                  type="button"
-                  data-testid={`chamfer-line-mode-${mId}`}
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    onChangeLineMode?.(mId);
-                  }}
-                  style={
-                    lineMode === mId
-                      ? { backgroundColor: "var(--chamfer-accent, #E11D48)", color: "#FFFFFF" }
-                      : undefined
-                  }
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
-                    lineMode === mId
-                      ? "shadow-xs"
-                      : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </>
-          )}
-
-          {/* Chips para POLILINHA COMPOSTA (Ponta-Ponta | Centro-Raio + Linha ↔ Arco Tangente) */}
+          {/* Chips para POLILINHA COMPOSTA (Linha ↔ Arco Tangente) */}
           {activeTool === "polyline" && (
             <>
-              <span
-                className="font-bold px-1 shrink-0"
-                style={{ color: "var(--chamfer-accent, #E11D48)" }}
-              >
-                POLILINHA:
-              </span>
-              {(
-                [
-                  ["end_to_end", "Ponta-Ponta"],
-                  ["center_radius", "Centro-Raio"],
-                ] as const
-              ).map(([mId, label]) => (
-                <button
-                  key={mId}
-                  type="button"
-                  data-testid={`chamfer-polyline-mode-${mId}`}
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    onChangePolylineCreationMode?.(mId);
-                  }}
-                  style={
-                    polylineCreationMode === mId
-                      ? { backgroundColor: "var(--chamfer-accent, #E11D48)", color: "#FFFFFF" }
-                      : undefined
-                  }
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
-                    polylineCreationMode === mId
-                      ? "shadow-xs"
-                      : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
+              <span className="font-bold text-red-400 mr-1">POLILINHA:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -400,15 +300,15 @@ export function ChamferTouchDynamicHud({
                   onTogglePolylineSegMode();
                 }}
                 className={cn(
-                  "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                  "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
                   polylineSegMode === "tangent_arc"
                     ? "bg-sky-600 text-white"
                     : isDark
-                      ? "bg-slate-800/85 text-sky-300 hover:bg-slate-700"
-                      : "bg-slate-200/80 text-sky-700 hover:bg-slate-300",
+                      ? "bg-slate-800 text-sky-300 hover:bg-slate-700"
+                      : "bg-slate-100 text-sky-700 hover:bg-slate-200",
                 )}
               >
-                {polylineSegMode === "tangent_arc" ? "⌒ Arco" : "╱ Linha"}
+                {polylineSegMode === "tangent_arc" ? "⌒ Modo: Arco Tangente" : "╱ Modo: Linha Reta"}
               </button>
               {pendingCount >= 1 && (
                 <button
@@ -417,14 +317,9 @@ export function ChamferTouchDynamicHud({
                     triggerHaptic("tap");
                     onUndoLastPolylineVertex();
                   }}
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0",
-                    isDark
-                      ? "bg-slate-800/85 hover:bg-slate-700 text-slate-200"
-                      : "bg-slate-200/80 hover:bg-slate-300 text-slate-700",
-                  )}
+                  className="rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 px-2 py-0.5 font-semibold cursor-pointer"
                 >
-                  ↶ Vértice
+                  ↶ Desfazer Vértice
                 </button>
               )}
               {pendingCount >= 2 && (
@@ -434,7 +329,7 @@ export function ChamferTouchDynamicHud({
                     triggerHaptic("action");
                     onFinishPolyline(false);
                   }}
-                  className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                  className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 font-bold cursor-pointer"
                 >
                   ✓ Concluir
                 </button>
@@ -446,23 +341,23 @@ export function ChamferTouchDynamicHud({
                     triggerHaptic("action");
                     onFinishPolyline(true);
                   }}
-                  className="rounded-full bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                  className="rounded-lg bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 font-bold cursor-pointer"
                 >
-                  ◎ Fechar
+                  ◎ Fechar Perfil
                 </button>
               )}
             </>
           )}
 
-          {/* Chips para RETÂNGULO PARAMÉTRICO (Linha Única Estrita) */}
+          {/* Chips para RETÂNGULO PARAMÉTRICO */}
           {activeTool === "rect" && (
             <>
-              <span className="font-bold text-red-400 px-1 shrink-0">RET:</span>
+              <span className="font-bold text-red-400 mr-1">RETÂNGULO:</span>
               {(
                 [
                   ["corners", "2 Cantos"],
                   ["center", "Centro"],
-                  ["three_point", "3 Pontos"],
+                  ["three_point", "3 Pontos Inclinado"],
                 ] as const
               ).map(([mId, label]) => (
                 <button
@@ -473,12 +368,12 @@ export function ChamferTouchDynamicHud({
                     onChangeRectMode(mId);
                   }}
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
                     rectMode === mId
-                      ? "bg-red-600 text-white shadow-xs"
+                      ? "bg-red-600 text-white"
                       : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
                   )}
                 >
                   {label}
@@ -487,17 +382,17 @@ export function ChamferTouchDynamicHud({
             </>
           )}
 
-          {/* Chips para CÍRCULO TÉCNICO (Linha Única Estrita) */}
+          {/* Chips para CÍRCULO TÉCNICO */}
           {activeTool === "circle" && (
             <>
-              <span className="font-bold text-red-400 px-1 shrink-0">CÍRC:</span>
+              <span className="font-bold text-red-400 mr-1">CÍRCULO:</span>
               {(
                 [
-                  ["center_radius", "Centro-R"],
+                  ["center_radius", "Centro-Raio"],
                   ["center_diameter", "Centro-Ø"],
-                  ["two_point", "2 Pts"],
-                  ["three_point", "3 Pts"],
-                  ["ttr", "TTR"],
+                  ["two_point", "2 Pontos"],
+                  ["three_point", "3 Pontos"],
+                  ["ttr", "Tangente-Tangente-R"],
                 ] as const
               ).map(([mId, label]) => (
                 <button
@@ -508,12 +403,12 @@ export function ChamferTouchDynamicHud({
                     onChangeCircleMode(mId);
                   }}
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
                     circleMode === mId
-                      ? "bg-red-600 text-white shadow-xs"
+                      ? "bg-red-600 text-white"
                       : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
                   )}
                 >
                   {label}
@@ -525,12 +420,12 @@ export function ChamferTouchDynamicHud({
           {/* Chips para POLÍGONO REGULAR / SEXTAVADO (S mm) */}
           {activeTool === "polygon" && (
             <>
-              <span className="font-bold text-red-400 px-1 shrink-0">POLÍG:</span>
+              <span className="font-bold text-red-400 mr-1">POLÍGONO:</span>
               {(
                 [
-                  ["across_flats", `S=${polygonAcrossFlatsMm}`],
-                  ["inscribed", "Insc."],
-                  ["circumscribed", "Circ."],
+                  ["across_flats", `Entre Faces (S=${polygonAcrossFlatsMm}mm)`],
+                  ["inscribed", "Inscrito"],
+                  ["circumscribed", "Circunscrito"],
                 ] as const
               ).map(([mId, label]) => (
                 <button
@@ -541,12 +436,12 @@ export function ChamferTouchDynamicHud({
                     onChangePolygonMode(mId);
                   }}
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
                     polygonMode === mId
-                      ? "bg-red-600 text-white shadow-xs"
+                      ? "bg-red-600 text-white"
                       : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
                   )}
                 >
                   {label}
@@ -555,16 +450,16 @@ export function ChamferTouchDynamicHud({
               <button
                 type="button"
                 onClick={() => openKeypadForField("sides", polygonSides)}
-                className="rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-400 px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
               >
-                {polygonSides}L
+                N = {polygonSides} lados
               </button>
               <button
                 type="button"
                 onClick={() => openKeypadForField("across_flats", polygonAcrossFlatsMm)}
-                className="rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                className="rounded-lg bg-amber-950/80 border border-amber-500/40 text-amber-300 px-2 py-0.5 font-bold cursor-pointer"
               >
-                S:{polygonAcrossFlatsMm}
+                S = {polygonAcrossFlatsMm} mm
               </button>
             </>
           )}
@@ -572,12 +467,12 @@ export function ChamferTouchDynamicHud({
           {/* Chips para RASGO OBLONGO MECÂNICO (SLOT RETO / CURVO) */}
           {activeTool === "slot" && (
             <>
-              <span className="font-bold text-red-400 px-1 shrink-0">SLOT:</span>
+              <span className="font-bold text-red-400 mr-1">SLOT (OBLONGO):</span>
               {(
                 [
-                  ["center_to_center", "Centro-Centro"],
-                  ["overall", "Total"],
-                  ["curved", "Curvo"],
+                  ["center_to_center", "Centro-a-Centro"],
+                  ["overall", "Compr. Total"],
+                  ["curved", "Slot Curvo"],
                 ] as const
               ).map(([mId, label]) => (
                 <button
@@ -588,12 +483,12 @@ export function ChamferTouchDynamicHud({
                     onChangeSlotMode(mId);
                   }}
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
                     slotMode === mId
-                      ? "bg-red-600 text-white shadow-xs"
+                      ? "bg-red-600 text-white"
                       : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
                   )}
                 >
                   {label}
@@ -602,9 +497,9 @@ export function ChamferTouchDynamicHud({
               <button
                 type="button"
                 onClick={() => openKeypadForField("slot_width", slotWidthMm)}
-                className="rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-400 px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
               >
-                Ø {slotWidthMm}mm
+                Largura Ø = {slotWidthMm} mm
               </button>
             </>
           )}
@@ -612,7 +507,7 @@ export function ChamferTouchDynamicHud({
           {/* Chips para EDITAR NÓS (GRIPS MULTI-MODO) */}
           {activeTool === "node" && (
             <>
-              <span className="font-bold text-red-400 px-1 shrink-0">NÓS:</span>
+              <span className="font-bold text-red-400 mr-1">GRIPS (NÓS):</span>
               {(
                 [
                   ["stretch", "Esticar"],
@@ -630,12 +525,12 @@ export function ChamferTouchDynamicHud({
                     onChangeGripMode(mId);
                   }}
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer shrink-0",
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
                     gripMode === mId
-                      ? "bg-red-600 text-white shadow-xs"
+                      ? "bg-red-600 text-white"
                       : isDark
-                        ? "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
-                        : "bg-slate-200/75 text-slate-700 hover:bg-slate-300",
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
                   )}
                 >
                   {label}
@@ -648,26 +543,42 @@ export function ChamferTouchDynamicHud({
                     triggerHaptic("action");
                     onInsertVertexOnSelected();
                   }}
-                  className="rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-400 px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                  className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
                 >
-                  + Vértice
+                  + Inserir Vértice
                 </button>
               )}
             </>
           )}
 
-          {/* TRIM unificado agora usa ChamferSmartTrimControlBar como barra única superior */}
+          {/* Chips para APARAR (TOQUE & SWIPE-TO-TRIM) */}
+          {(activeTool === "smart_trim" || activeTool === "trim") && (
+            <>
+              <span className="font-bold text-red-400 mr-1">APARAR (SWIPE-TO-TRIM):</span>
+              <span className="text-slate-400">Toque ou arraste o dedo cortando segmentos</span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onToggleSmartTrimMode();
+                }}
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
+              >
+                Limite: {smartTrimMode === "real" ? "Encontro Real" : "Projetado"}
+              </button>
+            </>
+          )}
 
           {/* Chips para OFFSET PARALELO */}
           {activeTool === "offset" && (
             <>
-              <span className="font-bold text-red-400 px-1 shrink-0">OFFSET:</span>
+              <span className="font-bold text-red-400 mr-1">OFFSET PARALELO:</span>
               <button
                 type="button"
                 onClick={() => openKeypadForField("offset", offsetDistMm)}
-                className="rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-400 px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
               >
-                d = {offsetDistMm} mm
+                Distância = {offsetDistMm} mm
               </button>
             </>
           )}
@@ -675,30 +586,30 @@ export function ChamferTouchDynamicHud({
           {/* Chips para LINHA DE CONSTRUÇÃO / SPLINE */}
           {activeTool === "construction_line" && (
             <>
-              <span className="font-bold text-amber-400 px-1 shrink-0">EIXO ∞:</span>
-              <span className="text-slate-400 text-[10.5px] shrink-0">2 pontos</span>
+              <span className="font-bold text-amber-400">EIXO / LINHA DE CONSTRUÇÃO INFINITA:</span>
+              <span className="text-slate-400">Toque 2 pontos para definir a direção do eixo</span>
             </>
           )}
 
           {activeTool === "spline" && (
             <>
-              <span className="font-bold text-sky-400 px-1 shrink-0">SPLINE:</span>
+              <span className="font-bold text-sky-400 mr-1">SPLINE SUAVE (≥128 SEG):</span>
               {pendingCount >= 2 && (
                 <button
                   type="button"
                   onClick={() => onFinishPolyline(false)}
-                  className="rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                  className="rounded-lg bg-emerald-600 text-white px-2 py-0.5 font-bold cursor-pointer"
                 >
-                  ✓ Concluir
+                  ✓ Concluir Spline
                 </button>
               )}
               {pendingCount >= 3 && (
                 <button
                   type="button"
                   onClick={() => onFinishPolyline(true)}
-                  className="rounded-full bg-amber-600 text-white px-2 py-0.5 text-[11px] font-semibold cursor-pointer shrink-0"
+                  className="rounded-lg bg-amber-600 text-white px-2 py-0.5 font-bold cursor-pointer"
                 >
-                  ◎ Fechar
+                  ◎ Fechar Spline
                 </button>
               )}
             </>
@@ -710,12 +621,7 @@ export function ChamferTouchDynamicHud({
               triggerHaptic("tap");
               onCancelActiveCommand();
             }}
-            className={cn(
-              "ml-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors cursor-pointer",
-              isDark
-                ? "bg-slate-800/85 hover:bg-red-900/70 text-slate-300 hover:text-white"
-                : "bg-slate-200/85 hover:bg-red-100 text-slate-600 hover:text-red-700",
-            )}
+            className="ml-1 rounded-lg bg-slate-800/80 hover:bg-red-900/60 text-slate-300 hover:text-white px-1.5 py-0.5 font-bold cursor-pointer"
             title="Cancelar comando ativo (Esc)"
           >
             ✕
@@ -723,7 +629,124 @@ export function ChamferTouchDynamicHud({
         </div>
       )}
 
-      {/* 2. PÍLULAS SECUNDÁRIAS E BARRA PUSH/PULL Z REMOVIDAS DEFINITIVAMENTE */}
+      {/* 2. PÍLULAS DIMENSIONAIS TÁTEIS FLUTUANTES (DYNAMIC INPUT TOUCH) */}
+      {showDynamicPills && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute bottom-12 left-1/2 -translate-x-1/2 z-35 flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-mono text-[10.5px] shadow-xl backdrop-blur-md select-none",
+            isDark
+              ? "border-sky-500/40 bg-slate-950/92 text-slate-100"
+              : "border-sky-400 bg-white/95 text-slate-800",
+          )}
+        >
+          {(activeTool === "circle" || activeTool === "arc") ? (
+            <>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("radius", effectiveLength)}
+                className="flex items-center gap-1 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-500/40 px-2 py-0.5 text-sky-300 font-bold cursor-pointer"
+              >
+                <span>R = {effectiveLength.toFixed(1)} mm</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("diameter", effectiveLength * 2)}
+                className="flex items-center gap-1 rounded-lg bg-amber-950/70 hover:bg-amber-900 border border-amber-500/40 px-2 py-0.5 text-amber-300 font-bold cursor-pointer"
+              >
+                <span>Ø = {(effectiveLength * 2).toFixed(1)} mm</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("length", effectiveLength)}
+                className={cn(
+                  "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold cursor-pointer transition-colors",
+                  lockedDims.lockedLengthMm !== null
+                    ? "border-amber-500 bg-amber-950/80 text-amber-300"
+                    : "border-sky-500/40 bg-sky-950/70 text-sky-300 hover:bg-sky-900",
+                )}
+                title="Toque para digitar ou travar o comprimento exato em mm"
+              >
+                {lockedDims.lockedLengthMm !== null && <Lock className="size-3 text-amber-400" />}
+                <span>L = {effectiveLength.toFixed(1)} mm</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openKeypadForField("angle", effectiveAngle)}
+                className={cn(
+                  "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold cursor-pointer transition-colors",
+                  lockedDims.lockedAngleDeg !== null
+                    ? "border-amber-500 bg-amber-950/80 text-amber-300"
+                    : "border-emerald-500/40 bg-emerald-950/70 text-emerald-300 hover:bg-emerald-900",
+                )}
+                title="Toque para digitar ou travar o ângulo polar em graus"
+              >
+                {lockedDims.lockedAngleDeg !== null && <Lock className="size-3 text-amber-400" />}
+                <span>∠ {effectiveAngle.toFixed(1)}°</span>
+              </button>
+
+              {(lockedDims.lockedLengthMm !== null || lockedDims.lockedAngleDeg !== null) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("tap");
+                    onChangeLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+                  }}
+                  className="rounded-lg bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 px-1.5 py-0.5 text-[9.5px] font-bold cursor-pointer"
+                  title="Destravar medidas"
+                >
+                  <Unlock className="size-3" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 3. ALÇA TÁTIL PUSH/PULL Z (EXTRUSÃO / ESPESSURA EM PERFIS FECHADOS) */}
+      {showPushPullZHandle && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute bottom-12 right-4 z-35 flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 font-mono text-[10px] shadow-xl backdrop-blur-md select-none",
+            isDark
+              ? "border-cyan-500/50 bg-slate-950/92 text-cyan-200"
+              : "border-cyan-400 bg-white/95 text-slate-800",
+          )}
+        >
+          <ArrowUpDown className="size-3.5 text-cyan-400 shrink-0" />
+          <span className="font-bold uppercase">Push/Pull Z:</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              onChangeThicknessMm(Math.max(0.5, Number((thicknessMm - 1).toFixed(1))));
+            }}
+            className="rounded bg-slate-800 hover:bg-slate-700 text-white px-1.5 py-0.5 font-bold cursor-pointer"
+          >
+            -1
+          </button>
+          <button
+            type="button"
+            onClick={() => openKeypadForField("extrude_z", thicknessMm)}
+            className="rounded-lg bg-cyan-950/80 border border-cyan-500/40 px-2 py-0.5 font-bold text-cyan-300 cursor-pointer"
+          >
+            Z = {thicknessMm.toFixed(1)} mm
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              onChangeThicknessMm(Math.min(200, Number((thicknessMm + 1).toFixed(1))));
+            }}
+            className="rounded bg-slate-800 hover:bg-slate-700 text-white px-1.5 py-0.5 font-bold cursor-pointer"
+          >
+            +1
+          </button>
+        </div>
+      )}
 
       {/* 4. CHIPS DE DESAMBIGUAÇÃO DE SOBREPOSIÇÃO (QUANDO >= 2 ENTIDADES NO MESMO TOQUE) */}
       {overlappingCandidates.length >= 2 && (
@@ -796,12 +819,12 @@ export function ChamferTouchDynamicHud({
               </button>
             </div>
 
-            {/* Visor numérico + incremento rápido com aceleração exponencial */}
+            {/* Visor numérico + incremento rápido */}
             <div className="flex items-center gap-1.5 mb-2">
               <button
                 type="button"
-                {...minusHoldProps}
-                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95 select-none"
+                onClick={() => handleStepIncrement(-1)}
+                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95"
               >
                 -{keypadField === "sides" ? 1 : stepSize}
               </button>
@@ -819,8 +842,8 @@ export function ChamferTouchDynamicHud({
               />
               <button
                 type="button"
-                {...plusHoldProps}
-                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95 select-none"
+                onClick={() => handleStepIncrement(1)}
+                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95"
               >
                 +{keypadField === "sides" ? 1 : stepSize}
               </button>

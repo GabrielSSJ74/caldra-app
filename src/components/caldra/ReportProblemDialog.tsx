@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Copy, Mail, Bug } from "lucide-react";
 import {
@@ -23,18 +23,13 @@ export function ReportProblemDialog({
   const { plan } = useFeatureAccess();
   const [text, setText] = useState("");
   const [touched, setTouched] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const diagnostic = [
     `Versão: ${APP_VERSION} (${APP_BUILD})`,
-    `Tela: ${mounted ? window.location.pathname : "-"}`,
+    `Tela: ${typeof window !== "undefined" ? window.location.pathname : "-"}`,
     `Plano: ${plan}`,
-    `Navegador: ${mounted ? navigator.userAgent : "-"}`,
-    `Online: ${mounted ? navigator.onLine : "-"}`,
+    `Navegador: ${typeof navigator !== "undefined" ? navigator.userAgent : "-"}`,
+    `Online: ${typeof navigator !== "undefined" ? navigator.onLine : "-"}`,
   ].join("\n");
 
   const report = `RELATÓRIO DE PROBLEMA — CALDRA\n\n${text.trim()}\n\n— Diagnóstico —\n${diagnostic}`;

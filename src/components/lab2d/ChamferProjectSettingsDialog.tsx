@@ -15,24 +15,14 @@ import {
   Check,
   Clock,
   ShieldCheck,
-  Palette,
-  Sun,
-  Moon,
-  Sparkles,
+  X,
 } from "lucide-react";
 import {
   getChamferSettings,
   saveChamferSettings,
   type ChamferSettings,
 } from "@/lib/lab2d/projectSettings";
-import {
-  useSettings,
-  type AccentOption,
-  type AuroraStyleOption,
-  type ThemeOption,
-} from "@/lib/settings/SettingsProvider";
-import { useChamferAppearance } from "./useIntentTheme";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 interface ChamferProjectSettingsDialogProps {
@@ -40,53 +30,17 @@ interface ChamferProjectSettingsDialogProps {
   onOpenChange: (open: boolean) => void;
   projectId?: string | undefined;
   projectName?: string | undefined;
-  onSettingsChange?: (updated: ChamferSettings) => void;
 }
-
-const ACCENT_OPTIONS: { id: AccentOption; label: string; swatch: string }[] = [
-  { id: "blue", label: "Azul", swatch: "#0066FF" },
-  { id: "amber", label: "Âmbar", swatch: "#FF6B00" },
-  { id: "crimson", label: "Carmesim", swatch: "#DC143C" },
-  { id: "magenta", label: "Magenta", swatch: "#E6007E" },
-  { id: "default", label: "Grafite", swatch: "#3B82F6" },
-];
-
-const BG_STYLE_OPTIONS: { id: AuroraStyleOption; label: string; desc: string }[] = [
-  { id: "padrao", label: "Padrão", desc: "Sólido Técnico" },
-  { id: "suave", label: "Fluid Aurora", desc: "Ultra-Silk Boreal" },
-  { id: "fluido", label: "Fluid", desc: "Seda Líquida 12-bit" },
-];
-
-const THEME_OPTIONS: { id: ThemeOption; label: string }[] = [
-  { id: "dark", label: "Escuro (Graphite)" },
-  { id: "light", label: "Claro (Mate)" },
-  { id: "amoled", label: "AMOLED (Preto)" },
-  { id: "system", label: "Sistema" },
-];
 
 export function ChamferProjectSettingsDialog({
   open,
   onOpenChange,
   projectId,
   projectName,
-  onSettingsChange,
 }: ChamferProjectSettingsDialogProps) {
   const [settings, setSettings] = useState<ChamferSettings>(() =>
     getChamferSettings(projectId),
   );
-  const {
-    theme,
-    setTheme,
-    accent,
-    setAccent,
-    auroraStyle,
-    setAuroraStyle,
-    cardOpacity,
-    setCardOpacity,
-    bubbleOpacity,
-    setBubbleOpacity,
-  } = useSettings();
-  const { cssVariables } = useChamferAppearance();
 
   useEffect(() => {
     if (open) {
@@ -97,7 +51,6 @@ export function ChamferProjectSettingsDialog({
   const handleUpdate = (patch: Partial<ChamferSettings>) => {
     const updated = saveChamferSettings(patch, projectId);
     setSettings(updated);
-    onSettingsChange?.(updated);
   };
 
   const handleSaveAndClose = () => {
@@ -107,45 +60,21 @@ export function ChamferProjectSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        style={{
-          ...cssVariables,
-          backgroundColor: "var(--chamfer-popover-bg)",
-          borderColor: "var(--chamfer-border)",
-          color: "var(--chamfer-text-primary)",
-        }}
-        className="max-w-xl max-h-[min(90vh,660px)] overflow-y-auto rounded-2xl border p-5 shadow-2xl backdrop-blur-xl font-mono text-[11px]"
-      >
-        <DialogHeader
-          style={{ borderColor: "var(--chamfer-border)" }}
-          className="border-b pb-3"
-        >
+      <DialogContent className="max-w-xl max-h-[min(90vh,600px)] overflow-y-auto rounded-2xl border border-slate-700/80 bg-slate-950 p-5 text-slate-100 shadow-2xl font-mono text-[11px]">
+        <DialogHeader className="border-b border-slate-800 pb-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div
-                style={{
-                  backgroundColor: "var(--chamfer-accent-soft)",
-                  borderColor: "var(--chamfer-accent-border)",
-                  color: "var(--chamfer-accent)",
-                }}
-                className="grid size-8 place-items-center rounded-xl border"
-              >
+            <div className="flex items-center gap-2">
+              <div className="grid size-8 place-items-center rounded-xl bg-red-600/20 text-red-500 border border-red-500/30">
                 <Sliders className="size-4" />
               </div>
               <div>
-                <DialogTitle
-                  style={{ color: "var(--chamfer-text-primary)" }}
-                  className="font-mono text-sm font-bold uppercase tracking-wider"
-                >
+                <DialogTitle className="font-mono text-sm font-bold uppercase tracking-wider text-slate-100">
                   Configurações · CHAMFER CAD
                 </DialogTitle>
-                <DialogDescription
-                  style={{ color: "var(--chamfer-text-secondary)" }}
-                  className="font-mono text-[10px]"
-                >
+                <DialogDescription className="font-mono text-[10px] text-slate-400">
                   {projectName
                     ? `Preferências do projeto: ${projectName}`
-                    : "Aparência, superfície técnica e preferências do projeto"}
+                    : "Configurações padrão para novos projetos"}
                 </DialogDescription>
               </div>
             </div>
@@ -153,285 +82,44 @@ export function ChamferProjectSettingsDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* SEÇÃO 0: APARÊNCIA, COR DE DESTAQUE, ESTILO DE FUNDO E OPACIDADE */}
-          <div
-            style={{
-              backgroundColor: "var(--chamfer-surface-elevated)",
-              borderColor: "var(--chamfer-border)",
-            }}
-            className="rounded-xl border p-3.5 space-y-3.5"
-          >
-            <div className="flex items-center gap-2">
-              <Palette
-                style={{ color: "var(--chamfer-accent)" }}
-                className="size-4"
-              />
-              <div>
-                <h4
-                  style={{ color: "var(--chamfer-text-primary)" }}
-                  className="font-bold text-[11px] uppercase tracking-wide"
-                >
-                  Aparência, Superfície e Opacidade
-                </h4>
-                <p
-                  style={{ color: "var(--chamfer-text-secondary)" }}
-                  className="text-[9.5px]"
-                >
-                  Aplicado imediatamente às barras, painéis, grade e área de trabalho
-                </p>
-              </div>
-            </div>
-
-            {/* MODO DE TEMA */}
-            <div>
-              <label
-                style={{ color: "var(--chamfer-text-secondary)" }}
-                className="block text-[9.5px] mb-1.5 uppercase tracking-wider"
-              >
-                Modo de Exibição (Tema)
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                {THEME_OPTIONS.map((t) => {
-                  const active = theme === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={(e) => setTheme(t.id, e)}
-                      style={
-                        active
-                          ? {
-                              backgroundColor: "var(--chamfer-accent)",
-                              borderColor: "var(--chamfer-accent)",
-                              color: "var(--chamfer-accent-contrast)",
-                            }
-                          : {
-                              backgroundColor: "var(--chamfer-bar-bg)",
-                              borderColor: "var(--chamfer-border)",
-                              color: "var(--chamfer-text-secondary)",
-                            }
-                      }
-                      className="flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 font-bold text-[9.5px] transition-all cursor-pointer"
-                    >
-                      {t.id === "light" ? (
-                        <Sun className="size-3" />
-                      ) : (
-                        <Moon className="size-3" />
-                      )}
-                      <span>{t.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ESTILO DE FUNDO */}
-            <div>
-              <label
-                style={{ color: "var(--chamfer-text-secondary)" }}
-                className="block text-[9.5px] mb-1.5 uppercase tracking-wider"
-              >
-                Estilo de Fundo da Área de Desenho
-              </label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {BG_STYLE_OPTIONS.map((bg) => {
-                  const active = auroraStyle === bg.id;
-                  return (
-                    <button
-                      key={bg.id}
-                      type="button"
-                      onClick={() => setAuroraStyle(bg.id)}
-                      style={
-                        active
-                          ? {
-                              backgroundColor: "var(--chamfer-accent)",
-                              borderColor: "var(--chamfer-accent)",
-                              color: "var(--chamfer-accent-contrast)",
-                            }
-                          : {
-                              backgroundColor: "var(--chamfer-bar-bg)",
-                              borderColor: "var(--chamfer-border)",
-                              color: "var(--chamfer-text-secondary)",
-                            }
-                      }
-                      className="flex flex-col items-center justify-center rounded-lg border px-2 py-1.5 text-center transition-all cursor-pointer"
-                    >
-                      <span className="font-bold text-[10px] flex items-center gap-1">
-                        <Sparkles className="size-2.5" />
-                        {bg.label}
-                      </span>
-                      <span className="text-[8.5px] opacity-80">{bg.desc}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* COR DE DESTAQUE */}
-            <div>
-              <label
-                style={{ color: "var(--chamfer-text-secondary)" }}
-                className="block text-[9.5px] mb-1.5 uppercase tracking-wider"
-              >
-                Cor de Destaque (Ferramentas Ativas & Seleção de UI)
-              </label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {ACCENT_OPTIONS.map((item) => {
-                  const active = accent === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setAccent(item.id)}
-                      style={
-                        active
-                          ? {
-                              backgroundColor: "var(--chamfer-accent-soft)",
-                              borderColor: item.swatch,
-                              color: "var(--chamfer-text-primary)",
-                            }
-                          : {
-                              backgroundColor: "var(--chamfer-bar-bg)",
-                              borderColor: "var(--chamfer-border)",
-                              color: "var(--chamfer-text-secondary)",
-                            }
-                      }
-                      className="flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 font-bold text-[9.5px] transition-all cursor-pointer"
-                    >
-                      <span
-                        className="size-2.5 rounded-full shrink-0 border border-white/30"
-                        style={{ backgroundColor: item.swatch }}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* OPACIDADE DOS PAINÉIS E BOLHAS */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span
-                    style={{ color: "var(--chamfer-text-secondary)" }}
-                    className="text-[9.5px] uppercase tracking-wider"
-                  >
-                    Opacidade das Barras / Painéis
-                  </span>
-                  <span
-                    style={{ color: "var(--chamfer-accent)" }}
-                    className="font-bold text-[10px]"
-                  >
-                    {cardOpacity}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={25}
-                  max={100}
-                  step={5}
-                  value={cardOpacity}
-                  onChange={(e) => setCardOpacity(Number(e.target.value))}
-                  style={{ accentColor: "var(--chamfer-accent)" }}
-                  className="w-full h-1.5 rounded-lg cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span
-                    style={{ color: "var(--chamfer-text-secondary)" }}
-                    className="text-[9.5px] uppercase tracking-wider"
-                  >
-                    Opacidade de Pílulas / HUDs
-                  </span>
-                  <span
-                    style={{ color: "var(--chamfer-accent)" }}
-                    className="font-bold text-[10px]"
-                  >
-                    {bubbleOpacity}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={20}
-                  max={100}
-                  step={5}
-                  value={bubbleOpacity}
-                  onChange={(e) => setBubbleOpacity(Number(e.target.value))}
-                  style={{ accentColor: "var(--chamfer-accent)" }}
-                  className="w-full h-1.5 rounded-lg cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* SEÇÃO 1: SALVAMENTO AUTOMÁTICO */}
-          <div
-            style={{
-              backgroundColor: "var(--chamfer-surface-elevated)",
-              borderColor: "var(--chamfer-border)",
-            }}
-            className="rounded-xl border p-3.5 space-y-3"
-          >
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Save
-                  style={{ color: "var(--chamfer-accent)" }}
-                  className="size-4"
-                />
+                <Save className="size-4 text-red-400" />
                 <div>
-                  <h4
-                    style={{ color: "var(--chamfer-text-primary)" }}
-                    className="font-bold text-[11px] uppercase tracking-wide"
-                  >
+                  <h4 className="font-bold text-[11px] text-slate-200 uppercase tracking-wide">
                     Salvamento Automático
                   </h4>
-                  <p
-                    style={{ color: "var(--chamfer-text-secondary)" }}
-                    className="text-[9.5px]"
-                  >
+                  <p className="text-[9.5px] text-slate-400">
                     Gravação periódica em segundo plano no armazenamento local do navegador
                   </p>
                 </div>
               </div>
 
               {/* TOGGLE ON / OFF */}
-              <div
-                style={{
-                  backgroundColor: "var(--chamfer-bar-bg)",
-                  borderColor: "var(--chamfer-border)",
-                }}
-                className="flex items-center rounded-lg border p-0.5"
-              >
+              <div className="flex items-center rounded-lg border border-slate-700 bg-slate-950 p-0.5">
                 <button
                   type="button"
                   onClick={() => handleUpdate({ autoSave: true })}
-                  style={
+                  className={cn(
+                    "px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all",
                     settings.autoSave
-                      ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all cursor-pointer"
+                      ? "bg-red-600 text-white shadow-xs"
+                      : "text-slate-400 hover:text-slate-200",
+                  )}
                 >
                   ON
                 </button>
                 <button
                   type="button"
                   onClick={() => handleUpdate({ autoSave: false })}
-                  style={
+                  className={cn(
+                    "px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all",
                     !settings.autoSave
-                      ? {
-                          backgroundColor: "var(--chamfer-border)",
-                          color: "var(--chamfer-text-primary)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all cursor-pointer"
+                      ? "bg-slate-700 text-slate-200 shadow-xs"
+                      : "text-slate-400 hover:text-slate-200",
+                  )}
                 >
                   OFF
                 </button>
@@ -440,27 +128,17 @@ export function ChamferProjectSettingsDialog({
 
             {/* INTERVALO DE SALVAMENTO AUTOMÁTICO */}
             <div
-              style={{ borderColor: "var(--chamfer-border)" }}
               className={cn(
-                "pt-2 border-t transition-opacity",
+                "pt-2 border-t border-slate-800/80 transition-opacity",
                 !settings.autoSave && "opacity-40 pointer-events-none",
               )}
             >
               <div className="flex items-center justify-between mb-2">
-                <span
-                  style={{ color: "var(--chamfer-text-primary)" }}
-                  className="flex items-center gap-1.5 text-[10px]"
-                >
-                  <Clock
-                    style={{ color: "var(--chamfer-text-secondary)" }}
-                    className="size-3.5"
-                  />
+                <span className="flex items-center gap-1.5 text-[10px] text-slate-300">
+                  <Clock className="size-3.5 text-slate-400" />
                   Intervalo de Gravação Automática
                 </span>
-                <span
-                  style={{ color: "var(--chamfer-accent)" }}
-                  className="font-bold text-[10px]"
-                >
+                <span className="font-bold text-red-400 text-[10px]">
                   {settings.autoSaveIntervalSec < 60
                     ? `${settings.autoSaveIntervalSec} segundos`
                     : `${settings.autoSaveIntervalSec / 60} min`}
@@ -474,66 +152,41 @@ export function ChamferProjectSettingsDialog({
                   { sec: 30, label: "30s" },
                   { sec: 60, label: "1 min" },
                   { sec: 120, label: "2 min" },
-                ].map((item) => {
-                  const active = settings.autoSaveIntervalSec === item.sec;
-                  return (
-                    <button
-                      key={item.sec}
-                      type="button"
-                      onClick={() => handleUpdate({ autoSaveIntervalSec: item.sec })}
-                      style={
-                        active
-                          ? {
-                              backgroundColor: "var(--chamfer-accent)",
-                              borderColor: "var(--chamfer-accent)",
-                              color: "var(--chamfer-accent-contrast)",
-                            }
-                          : {
-                              backgroundColor: "var(--chamfer-bar-bg)",
-                              borderColor: "var(--chamfer-border)",
-                              color: "var(--chamfer-text-secondary)",
-                            }
-                      }
-                      className="rounded-lg border px-2 py-1.5 text-center font-bold text-[9.5px] transition-all cursor-pointer"
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
+                ].map((item) => (
+                  <button
+                    key={item.sec}
+                    type="button"
+                    onClick={() => handleUpdate({ autoSaveIntervalSec: item.sec })}
+                    className={cn(
+                      "rounded-lg border px-2 py-1.5 text-center font-bold text-[9.5px] transition-all",
+                      settings.autoSaveIntervalSec === item.sec
+                        ? "border-red-500 bg-red-950/60 text-red-300 shadow-xs"
+                        : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* RECUPERAÇÃO DE SESSÃO */}
-            <div
-              style={{ borderColor: "var(--chamfer-border)" }}
-              className="flex items-center justify-between pt-2 border-t"
-            >
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="size-3.5 text-emerald-500" />
-                <span
-                  style={{ color: "var(--chamfer-text-primary)" }}
-                  className="text-[10px]"
-                >
+                <ShieldCheck className="size-3.5 text-emerald-400" />
+                <span className="text-[10px] text-slate-300">
                   Proteção e Recuperação contra Falhas (Crash Recovery)
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => handleUpdate({ recoveryEnabled: !settings.recoveryEnabled })}
-                style={
+                className={cn(
+                  "size-5 rounded grid place-items-center border transition-all",
                   settings.recoveryEnabled
-                    ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        borderColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
-                      }
-                    : {
-                        backgroundColor: "var(--chamfer-bar-bg)",
-                        borderColor: "var(--chamfer-border)",
-                        color: "transparent",
-                      }
-                }
-                className="size-5 rounded grid place-items-center border transition-all cursor-pointer"
+                    ? "border-emerald-500 bg-emerald-950 text-emerald-400"
+                    : "border-slate-700 bg-slate-900 text-transparent",
+                )}
               >
                 <Check className="size-3.5" />
               </button>
@@ -541,32 +194,17 @@ export function ChamferProjectSettingsDialog({
           </div>
 
           {/* SEÇÃO 2: UNIDADES E PRECISÃO */}
-          <div
-            style={{
-              backgroundColor: "var(--chamfer-surface-elevated)",
-              borderColor: "var(--chamfer-border)",
-            }}
-            className="rounded-xl border p-3.5 space-y-3"
-          >
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 space-y-3">
             <div className="flex items-center gap-2">
-              <Ruler
-                style={{ color: "var(--chamfer-accent)" }}
-                className="size-4"
-              />
-              <h4
-                style={{ color: "var(--chamfer-text-primary)" }}
-                className="font-bold text-[11px] uppercase tracking-wide"
-              >
+              <Ruler className="size-4 text-amber-400" />
+              <h4 className="font-bold text-[11px] text-slate-200 uppercase tracking-wide">
                 Unidades & Precisão Dimensional
               </h4>
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
-                <label
-                  style={{ color: "var(--chamfer-text-secondary)" }}
-                  className="block text-[9.5px] mb-1 uppercase tracking-wider"
-                >
+                <label className="block text-[9.5px] text-slate-400 mb-1 uppercase tracking-wider">
                   Unidade Padrão
                 </label>
                 <div className="grid grid-cols-3 gap-1">
@@ -574,40 +212,26 @@ export function ChamferProjectSettingsDialog({
                     { id: "mm", label: "Milímetro (mm)" },
                     { id: "cm", label: "Centímetro (cm)" },
                     { id: "pol", label: "Polegada (in)" },
-                  ].map((u) => {
-                    const active = settings.unit === u.id;
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => handleUpdate({ unit: u.id as ChamferSettings["unit"] })}
-                        style={
-                          active
-                            ? {
-                                backgroundColor: "var(--chamfer-accent)",
-                                borderColor: "var(--chamfer-accent)",
-                                color: "var(--chamfer-accent-contrast)",
-                              }
-                            : {
-                                backgroundColor: "var(--chamfer-bar-bg)",
-                                borderColor: "var(--chamfer-border)",
-                                color: "var(--chamfer-text-secondary)",
-                              }
-                        }
-                        className="rounded-lg border px-1.5 py-1 text-center font-bold text-[9px] uppercase transition-all cursor-pointer"
-                      >
-                        {u.id}
-                      </button>
-                    );
-                  })}
+                  ].map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => handleUpdate({ unit: u.id as ChamferSettings["unit"] })}
+                      className={cn(
+                        "rounded-lg border px-1.5 py-1 text-center font-bold text-[9px] uppercase transition-all",
+                        settings.unit === u.id
+                          ? "border-amber-500 bg-amber-950/60 text-amber-300"
+                          : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200",
+                      )}
+                    >
+                      {u.id}
+                    </button>
+                  ))}
                 </div>
               </div>
 
               <div>
-                <label
-                  style={{ color: "var(--chamfer-text-secondary)" }}
-                  className="block text-[9.5px] mb-1 uppercase tracking-wider"
-                >
+                <label className="block text-[9.5px] text-slate-400 mb-1 uppercase tracking-wider">
                   Casas Decimais
                 </label>
                 <div className="grid grid-cols-3 gap-1">
@@ -615,100 +239,53 @@ export function ChamferProjectSettingsDialog({
                     { val: 0, label: "0 (1 mm)" },
                     { val: 1, label: "1 (0.1 mm)" },
                     { val: 2, label: "2 (0.01 mm)" },
-                  ].map((p) => {
-                    const active = settings.dimPrecision === p.val;
-                    return (
-                      <button
-                        key={p.val}
-                        type="button"
-                        onClick={() => handleUpdate({ dimPrecision: p.val })}
-                        style={
-                          active
-                            ? {
-                                backgroundColor: "var(--chamfer-accent)",
-                                borderColor: "var(--chamfer-accent)",
-                                color: "var(--chamfer-accent-contrast)",
-                              }
-                            : {
-                                backgroundColor: "var(--chamfer-bar-bg)",
-                                borderColor: "var(--chamfer-border)",
-                                color: "var(--chamfer-text-secondary)",
-                              }
-                        }
-                        className="rounded-lg border px-1.5 py-1 text-center font-bold text-[9px] uppercase transition-all cursor-pointer"
-                      >
-                        {p.val}
-                      </button>
-                    );
-                  })}
+                  ].map((p) => (
+                    <button
+                      key={p.val}
+                      type="button"
+                      onClick={() => handleUpdate({ dimPrecision: p.val })}
+                      className={cn(
+                        "rounded-lg border px-1.5 py-1 text-center font-bold text-[9px] uppercase transition-all",
+                        settings.dimPrecision === p.val
+                          ? "border-amber-500 bg-amber-950/60 text-amber-300"
+                          : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200",
+                      )}
+                    >
+                      {p.val}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
 
           {/* SEÇÃO 3: VISUALIZAÇÃO E INTERFACE */}
-          <div
-            style={{
-              backgroundColor: "var(--chamfer-surface-elevated)",
-              borderColor: "var(--chamfer-border)",
-            }}
-            className="rounded-xl border p-3.5 space-y-3"
-          >
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 space-y-3">
             <div className="flex items-center gap-2">
-              <Grid
-                style={{ color: "var(--chamfer-accent)" }}
-                className="size-4"
-              />
-              <h4
-                style={{ color: "var(--chamfer-text-primary)" }}
-                className="font-bold text-[11px] uppercase tracking-wide"
-              >
-                Preferências de Inicialização CAD
+              <Grid className="size-4 text-blue-400" />
+              <h4 className="font-bold text-[11px] text-slate-200 uppercase tracking-wide">
+                Preferências de Visualização e Interface
               </h4>
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-1">
-              <label
-                style={{
-                  backgroundColor: "var(--chamfer-bar-bg)",
-                  borderColor: "var(--chamfer-border)",
-                }}
-                className="flex items-center justify-between rounded-lg border p-2 cursor-pointer"
-              >
-                <span
-                  style={{ color: "var(--chamfer-text-primary)" }}
-                  className="text-[10px]"
-                >
-                  Grade CAD Inicial Ativa
-                </span>
+              <label className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 p-2 cursor-pointer hover:border-slate-700">
+                <span className="text-[10px] text-slate-300">Grade CAD Inicial Ativa</span>
                 <input
                   type="checkbox"
                   checked={settings.showGridOnLoad}
                   onChange={(e) => handleUpdate({ showGridOnLoad: e.target.checked })}
-                  style={{ accentColor: "var(--chamfer-accent)" }}
-                  className="rounded size-3.5"
+                  className="rounded border-slate-700 accent-red-600 size-3.5"
                 />
               </label>
 
-              <label
-                style={{
-                  backgroundColor: "var(--chamfer-bar-bg)",
-                  borderColor: "var(--chamfer-border)",
-                }}
-                className="flex items-center justify-between rounded-lg border p-2 cursor-pointer"
-              >
-                <span
-                  style={{ color: "var(--chamfer-text-primary)" }}
-                  className="text-[10px]"
-                >
-                  Snap Magnético Inicial
-                </span>
+              <label className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 p-2 cursor-pointer hover:border-slate-700">
+                <span className="text-[10px] text-slate-300">Snap Magnético Inicial</span>
                 <input
                   type="checkbox"
                   checked={settings.snapOnLoad}
                   onChange={(e) => handleUpdate({ snapOnLoad: e.target.checked })}
-                  style={{ accentColor: "var(--chamfer-accent)" }}
-                  className="rounded size-3.5"
+                  className="rounded border-slate-700 accent-red-600 size-3.5"
                 />
               </label>
             </div>
@@ -716,10 +293,7 @@ export function ChamferProjectSettingsDialog({
         </div>
 
         {/* RODAPÉ DO MODAL */}
-        <div
-          style={{ borderColor: "var(--chamfer-border)" }}
-          className="flex items-center justify-between border-t pt-3"
-        >
+        <div className="flex items-center justify-between border-t border-slate-800 pt-3">
           <button
             type="button"
             onClick={() => {
@@ -732,15 +306,9 @@ export function ChamferProjectSettingsDialog({
                 showGridOnLoad: true,
                 snapOnLoad: true,
               });
-              setTheme("dark");
-              setAuroraStyle("padrao");
-              setAccent("blue");
-              setCardOpacity(90);
-              setBubbleOpacity(35);
               toast.info("Configurações redefinidas para os padrões.");
             }}
-            style={{ color: "var(--chamfer-text-secondary)" }}
-            className="flex items-center gap-1.5 text-[10px] hover:opacity-100 opacity-85 cursor-pointer"
+            className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-200"
           >
             <RotateCcw className="size-3" /> Restaurar Padrões
           </button>
@@ -748,12 +316,7 @@ export function ChamferProjectSettingsDialog({
           <button
             type="button"
             onClick={handleSaveAndClose}
-            style={{
-              backgroundColor: "var(--chamfer-accent)",
-              borderColor: "var(--chamfer-accent-border)",
-              color: "var(--chamfer-accent-contrast)",
-            }}
-            className="flex items-center gap-1.5 rounded-xl border px-4 py-2 font-bold uppercase shadow-md transition-opacity hover:opacity-90 cursor-pointer"
+            className="flex items-center gap-1.5 rounded-xl border border-red-500/50 bg-red-600 px-4 py-2 font-bold text-white uppercase shadow-md hover:bg-red-500 transition-colors"
           >
             <Check className="size-3.5" /> Concluir & Salvar
           </button>

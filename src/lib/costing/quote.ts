@@ -91,13 +91,12 @@ export function itemPrice(q: Quote, item: QuoteItem): number {
 
 export const emptyParty = (): QuoteParty => ({ name: "", document: "", contact: "", address: "" });
 
-export function newQuote(region: Region, nowMs?: number): Quote {
-  const ts = typeof nowMs === "number" ? nowMs : Date.now();
-  const now = new Date(ts);
-  const seq = String(ts).slice(-5).padStart(5, "0");
+export function newQuote(region: Region): Quote {
+  const now = new Date();
+  const seq = String(now.getTime()).slice(-5);
   return {
-    number: `${now.getUTCFullYear()}-${seq}`,
-    date: ts,
+    number: `${now.getFullYear()}-${seq}`,
+    date: now.getTime(),
     validityDays: 15,
     supplier: emptyParty(),
     customer: emptyParty(),

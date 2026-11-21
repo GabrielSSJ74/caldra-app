@@ -38,12 +38,8 @@ export function markRecent(slug: string) {
   const s = load();
   commit({ ...s, recent: [slug, ...s.recent.filter((x) => x !== slug)].slice(0, 8) });
 }
-const snapshot = (): State =>
-  !catalogGlobalHydrated || typeof window === "undefined" ? EMPTY : load();
-const getServerSnapshot = (): State => EMPTY;
-
 export function useCatalogPreferences(): State {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(() => catalogGlobalHydrated);
   useEffect(() => {
     if (!catalogGlobalHydrated) {
       catalogGlobalHydrated = true;
@@ -57,8 +53,8 @@ export function useCatalogPreferences(): State {
       ls.add(l);
       return () => ls.delete(l);
     },
-    snapshot,
-    getServerSnapshot,
+    () => (typeof window === "undefined" ? EMPTY : load()),
+    () => EMPTY,
   );
   return mounted ? s : EMPTY;
 }

@@ -915,20 +915,14 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       /*
        * Curva de gomos real: a linha de centro e os planos de corte vêm de
        * `geometry/elbowSegments` — as mesmas peças da planificação.
-       * O ângulo total, a quantidade de gomos e as divisões do traçado são parâmetros.
+       * O ângulo total e a quantidade de gomos são parâmetros.
        */
-      const hasExplicitDivs = typeof raw.divisions === "number" && Number.isFinite(raw.divisions);
-      const targetDivs = hasExplicitDivs ? Math.max(3, Math.round(raw.divisions!)) : 12;
-      const mult = targetDivs < 8 ? 4 : targetDivs <= 12 ? 3 : targetDivs <= 18 ? 2 : 1;
-      const elbowSeg = hasExplicitDivs ? targetDivs * mult : seg;
-      const genStep = hasExplicitDivs ? mult : Math.max(1, Math.round(seg / 12));
-
       const model = elbowModel({
         diameter: p.d2,
         radius: p.d1,
         angleDeg: p.ang,
         gores: p.n,
-        divisions: elbowSeg,
+        divisions: seg,
       });
       const rb = p.d2 / 2;
       const beta = model.beta;
@@ -944,23 +938,15 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const mitred = dirs.length === 2;
         const ax = mitred ? k : 1;
         loops.push(
-          Array.from({ length: elbowSeg }, (_, i) => {
-            const θ = (i / elbowSeg) * Math.PI * 2;
+          Array.from({ length: seg }, (_, i) => {
+            const θ = (i / seg) * Math.PI * 2;
             const s = rb * ax * Math.sin(θ);
             return v(c.x - s * Math.sin(φm), c.y + s * Math.cos(φm), rb * Math.cos(θ));
           }),
         );
       });
       // Loops intermediários são as juntas de corte/solda entre os gomos: JOINT
-      // As geratrizes longitudinais seguem exatamente as divisões do traçado (TRANSITION_GENERATOR)
-      return withAxis(
-        shell(loops, {
-          t,
-          gen: genStep,
-          allGeneratorsAreTransition: true,
-          isJointLoop: (s) => s > 0 && s < loops.length - 1,
-        }),
-      );
+      return withAxis(shell(loops, { t, isJointLoop: (s) => s > 0 && s < loops.length - 1 }));
     }
 
     case "flanges": {

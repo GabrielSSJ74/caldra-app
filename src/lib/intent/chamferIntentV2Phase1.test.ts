@@ -41,14 +41,13 @@ describe("CHAMFER INTENT 2.0 — Fase 1 (Claude): Inventário, Schemas DSL v2, P
       expect(CHAMFER_REAL_INVENTORY.supportsUndoRedo).toBe(true);
     });
 
-    it("Registra todas as ferramentas das 8 famílias da especificação §6.1–§6.8 (incluindo create_cutout)", () => {
-      expect(CHAMFER_DSL_V2_FUNCTION_DECLARATIONS.length).toBe(47);
+    it("Registra todas as 46 ferramentas das 8 famílias da especificação §6.1–§6.8", () => {
+      expect(CHAMFER_DSL_V2_FUNCTION_DECLARATIONS.length).toBe(46);
       const registeredNames = Object.keys(CHAMFER_TOOL_REGISTRY_V2);
-      expect(registeredNames.length).toBe(47);
+      expect(registeredNames.length).toBe(46);
       expect(registeredNames).toContain("create_plate");
       expect(registeredNames).toContain("add_holes");
       expect(registeredNames).toContain("add_cutout");
-      expect(registeredNames).toContain("create_cutout");
       expect(registeredNames).toContain("develop_cylinder");
       expect(registeredNames).toContain("develop_cone");
       expect(registeredNames).toContain("develop_square_to_round");

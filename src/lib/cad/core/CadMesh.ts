@@ -40,7 +40,6 @@ export interface CadPolylineEdge {
   points: Float32Array;
   pointCount: number;
   isSeam?: boolean;
-  isTangentEdge?: boolean;
 }
 
 export interface CadEdgeData {

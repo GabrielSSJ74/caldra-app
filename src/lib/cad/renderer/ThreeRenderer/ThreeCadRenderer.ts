@@ -11,7 +11,6 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { CadMesh } from "../../core/CadTopology";
 import type { CadSelectedEntity, CadSelectionType } from "../../core/CadSelection";
 
@@ -40,7 +39,6 @@ export class ThreeCadRenderer {
   private boundaryLines: THREE.LineSegments | null = null;
   private internalLines: THREE.LineSegments | null = null;
   private selectionMesh: THREE.Mesh | null = null;
-  private envMapTexture: THREE.Texture | null = null;
 
   // Estado atual
   private currentMesh: CadMesh | null = null;
@@ -54,7 +52,7 @@ export class ThreeCadRenderer {
   private onSelectCallback?: (entity: CadSelectedEntity | null, multi: boolean) => void;
 
   // Materiais calibrados
-  private solidMaterial: THREE.MeshPhysicalMaterial;
+  private solidMaterial: THREE.MeshStandardMaterial;
   private wireframeMaterial: THREE.MeshBasicMaterial;
   private boundaryLineMaterial: THREE.LineBasicMaterial;
   private internalLineMaterial: THREE.LineBasicMaterial;
@@ -85,7 +83,7 @@ export class ThreeCadRenderer {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.1;
     container.appendChild(this.renderer.domElement);
 
     // 4. Controles Orbit
@@ -102,22 +100,19 @@ export class ThreeCadRenderer {
     this.modelGroup = new THREE.Group();
     this.scene.add(this.modelGroup);
 
-    // 7. Iluminação técnica de estúdio de engenharia (RoomEnvironment IBL + Camera-Space Rig + World Key Light)
+    // 7. Iluminação técnica de estúdio de engenharia (key + fill + rim + soft ambient)
     this.setupLighting();
 
-    // 8. CaldraMachinedSteelMaterial (Aço Usinado Prata-Claro #ADBDD0 / #F8FAFC + Arestas #F1F5F9)
-    this.solidMaterial = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color("#cbd5e1"),
-      metalness: 0.78,
-      roughness: 0.22,
-      envMapIntensity: 1.35,
-      clearcoat: 0.18,
-      clearcoatRoughness: 0.25,
+    // 8. Materiais
+    this.solidMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color("#64748b"), // Chapa de aço calibrada
+      metalness: 0.25,
+      roughness: 0.55,
       flatShading: false,
       side: THREE.DoubleSide,
       polygonOffset: true,
-      polygonOffsetFactor: 1.5,
-      polygonOffsetUnits: 1.5,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
     });
 
     this.wireframeMaterial = new THREE.MeshBasicMaterial({
@@ -127,21 +122,20 @@ export class ThreeCadRenderer {
       opacity: 0.35,
     });
 
-    // Bordas externas / aberturas SOMB+AR: Branco-Prata Fino e Nítido (#F1F5F9, 1.15px, opacity: 0.90)
+    // Bordas externas / aberturas: BRANCAS NÍTIDAS E PURAS (Regra CALDRA)
     this.boundaryLineMaterial = new THREE.LineBasicMaterial({
-      color: new THREE.Color("#f1f5f9"),
-      linewidth: 1.15,
-      transparent: true,
-      opacity: 0.90,
+      color: new THREE.Color("#ffffff"),
+      linewidth: 1,
+      transparent: false,
       depthTest: true,
     });
 
-    // Geratrizes / divisões técnicas para SOMB+AR: prata claro suave
+    // Geratrizes / divisões técnicas para SOMB+AR: cinza claro suave
     this.internalLineMaterial = new THREE.LineBasicMaterial({
-      color: new THREE.Color("#cbd5e1"),
+      color: new THREE.Color("#94a3b8"),
       linewidth: 1,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.65,
       depthTest: true,
     });
 
@@ -168,36 +162,24 @@ export class ThreeCadRenderer {
   }
 
   private setupLighting(): void {
-    try {
-      const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
-      pmremGenerator.compileEquirectangularShader();
-      this.envMapTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-      this.scene.environment = this.envMapTexture;
-      pmremGenerator.dispose();
-    } catch {
-      // Fallback silencioso
-    }
+    // Luz ambiente suave para não ocultar cavidades
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    this.scene.add(ambientLight);
 
-    // Luz hemisférica fria clara (#F8FAFC / #5C6E85) garantindo zero faces pretas ou chumbo-escuras
-    const hemiLight = new THREE.HemisphereLight(0xf8fafc, 0x5c6e85, 0.95);
-    this.scene.add(hemiLight);
+    // Luz principal técnica (Key Light)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(300, 500, 400);
+    this.scene.add(keyLight);
 
-    // Key Light Principal no Espaço da Câmera (-1.2*R, +1.5*R, +1.8*R)
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
-    keyLight.position.set(-240, 300, 360);
-    this.camera.add(keyLight);
+    // Luz de preenchimento (Fill Light)
+    const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.5);
+    fillLight.position.set(-300, -200, -200);
+    this.scene.add(fillLight);
 
-    // Fill Light Fria no Espaço da Câmera (+1.4*R, -0.8*R, +1.2*R)
-    const fillLight = new THREE.DirectionalLight(0xcbd5e1, 1.15);
-    fillLight.position.set(280, -160, 240);
-    this.camera.add(fillLight);
-
-    this.scene.add(this.camera);
-
-    // World Key Light (Luz Direcional de Referência da Prancheta fixa no mundo)
-    const worldKeyLight = new THREE.DirectionalLight(0xf8fafc, 1.35);
-    worldKeyLight.position.set(400, -300, 800);
-    this.scene.add(worldKeyLight);
+    // Luz de borda / silhueta (Rim Light)
+    const rimLight = new THREE.DirectionalLight(0xe2e8f0, 0.4);
+    rimLight.position.set(0, -500, 300);
+    this.scene.add(rimLight);
   }
 
   private setupEvents(): void {
@@ -449,8 +431,8 @@ export class ThreeCadRenderer {
         this.modelGroup.add(this.internalLines);
       }
     } else {
-      // Caso 2: Fallback automático via EdgesGeometry (ângulo de dobra de aresta 32° para ignorar tesselação cilíndrica)
-      const edgesGeom = new THREE.EdgesGeometry(geometry, 32);
+      // Caso 2: Fallback automático via EdgesGeometry (ângulo de dobra de aresta)
+      const edgesGeom = new THREE.EdgesGeometry(geometry, 25);
       this.boundaryLines = new THREE.LineSegments(edgesGeom, this.boundaryLineMaterial);
       this.boundaryLines.name = "edges_boundary_auto";
       this.modelGroup.add(this.boundaryLines);
@@ -458,7 +440,7 @@ export class ThreeCadRenderer {
   }
 
   /**
-   * Altera o modo de exibição técnica: SÓLIDO (SOMB+AR), SOMB ou ARAME
+   * Altera o modo de exibição técnica: SOMB, SOMB+AR ou ARAME
    */
   setEdgeMode(mode: CadEdgeMode): void {
     this.edgeMode = mode;
@@ -468,18 +450,18 @@ export class ThreeCadRenderer {
   private applyEdgeMode(): void {
     if (!this.solidMesh) return;
 
-    if (this.edgeMode === "shaded-edges") {
-      // SÓLIDO (1º botão = SOMB+AR do Caldra-Code): Superfície sombreada + arestas técnicas de contorno
+    if (this.edgeMode === "shaded") {
+      // SOMB: Superfície sombreada + bordas externas e de corte brancas e nítidas
+      this.solidMesh.material = this.solidMaterial;
+      this.solidMesh.visible = true;
+      if (this.boundaryLines) this.boundaryLines.visible = true;
+      if (this.internalLines) this.internalLines.visible = false;
+    } else if (this.edgeMode === "shaded-edges") {
+      // SOMB+AR: Superfície + bordas brancas + geratrizes/linhas de junção reais
       this.solidMesh.material = this.solidMaterial;
       this.solidMesh.visible = true;
       if (this.boundaryLines) this.boundaryLines.visible = true;
       if (this.internalLines) this.internalLines.visible = true;
-    } else if (this.edgeMode === "shaded") {
-      // SOMB (2º botão = Sólido sombreado puro sem arestas sobrepostas)
-      this.solidMesh.material = this.solidMaterial;
-      this.solidMesh.visible = true;
-      if (this.boundaryLines) this.boundaryLines.visible = false;
-      if (this.internalLines) this.internalLines.visible = false;
     } else if (this.edgeMode === "wireframe") {
       // ARAME: Modo analítico esquelético
       this.solidMesh.material = this.wireframeMaterial;
@@ -673,10 +655,6 @@ export class ThreeCadRenderer {
     el.removeEventListener("pointerdown", this.onPointerDown);
 
     this.clearModel();
-    if (this.envMapTexture) {
-      this.envMapTexture.dispose();
-      this.envMapTexture = null;
-    }
     this.solidMaterial.dispose();
     this.wireframeMaterial.dispose();
     this.boundaryLineMaterial.dispose();

@@ -2,19 +2,16 @@ import { test, expect } from "vitest";
 import {
   readAppearancePreferences,
   persistAppearancePreferences,
+  normalizeThemeMode,
   normalizeAccentColor,
   toInternalAuroraStyle,
   toExternalBgStyle,
-  resolveAccentColorTokens,
   CALDRA_THEME_MODE_KEY,
   CALDRA_ACCENT_COLOR_KEY,
   CALDRA_BG_STYLE_KEY,
-  CALDRA_ORBS_USE_ACCENT_KEY,
+  CALDRA_SETTINGS_KEY,
   CALDRA_PLAN_KEY,
   CALDRA_OFFICIAL_BLUE,
-  CALDRA_CRIMSON_TRIAD,
-  CALDRA_BLUE_TRIAD,
-  CALDRA_AMBER_TRIAD,
   type StorageLike,
 } from "./appearancePreferences.ts";
 
@@ -27,14 +24,13 @@ function createMockStorage(initial: Record<string, string> = {}): StorageLike {
   };
 }
 
-test("Critério 1: Primeiro acesso sem preferências inicia nativamente em Claro, Azul, Padrão (Free) e useAccentInOrbs false", () => {
+test("Critério 1: Primeiro acesso sem preferências inicia nativamente em Claro, Azul e Padrão (Free)", () => {
   const storage = createMockStorage(); // Vazio
   const prefs = readAppearancePreferences(storage, false /* isPro = false */);
 
   expect(prefs.theme).toBe("light");
   expect(prefs.accent).toBe("blue");
   expect(prefs.auroraStyle).toBe("padrao");
-  expect(prefs.useAccentInOrbs).toBe(false);
   expect(prefs.isProViolation).toBe(false);
 });
 
@@ -45,7 +41,6 @@ test("Critério 1 (PRO): Primeiro acesso sem preferências com conta PRO inicia 
   expect(prefs.theme).toBe("light");
   expect(prefs.accent).toBe("blue");
   expect(prefs.auroraStyle).toBe("fluido");
-  expect(prefs.useAccentInOrbs).toBe(false);
   expect(prefs.isProViolation).toBe(false);
 });
 
@@ -85,21 +80,13 @@ test("Critério 3: Validação de Segurança para o Estilo Fluido em contas Não
   expect(storage.getItem(CALDRA_BG_STYLE_KEY)).toBe("default");
 });
 
-test("Normalização de cores e formatos aceita aliases amigáveis e hexadecimais das tríades", () => {
+test("Normalização de cores e formatos aceita aliases amigáveis e hexadecimais", () => {
   expect(normalizeAccentColor("#0066FF")).toBe("blue");
-  expect(normalizeAccentColor("#003471")).toBe("blue");
-  expect(normalizeAccentColor("#00A8FF")).toBe("blue");
-  expect(normalizeAccentColor("#2CA5D6")).toBe("blue");
+  expect(normalizeAccentColor("#00CCFF")).toBe("blue");
   expect(normalizeAccentColor("blue")).toBe("blue");
   expect(normalizeAccentColor("#F59E0B")).toBe("amber");
-  expect(normalizeAccentColor("#D16002")).toBe("amber");
-  expect(normalizeAccentColor("#8A3300")).toBe("amber");
-  expect(normalizeAccentColor("#F7941D")).toBe("amber");
   expect(normalizeAccentColor("amber")).toBe("amber");
   expect(normalizeAccentColor("#B22222")).toBe("crimson");
-  expect(normalizeAccentColor("#D61818")).toBe("crimson");
-  expect(normalizeAccentColor("#E51A4C")).toBe("crimson");
-  expect(normalizeAccentColor("#C11034")).toBe("crimson");
   expect(normalizeAccentColor("magenta")).toBe("crimson");
 
   expect(toInternalAuroraStyle("fluid")).toBe("fluido");
@@ -109,58 +96,3 @@ test("Normalização de cores e formatos aceita aliases amigáveis e hexadecimai
   expect(toExternalBgStyle("fluido")).toBe("fluid");
   expect(toExternalBgStyle("padrao")).toBe("default");
 });
-
-test("Tríades cromáticas oficiais e persistência não-destrutiva de useAccentInOrbs", () => {
-  expect(CALDRA_CRIMSON_TRIAD).toMatchObject({
-    primary: "#D61818",
-    mid: "#E51A4C",
-    deep: "#C11034",
-  });
-  expect(CALDRA_BLUE_TRIAD).toMatchObject({
-    primary: "#003471",
-    light: "#00A8FF",
-    reflect: "#2CA5D6",
-  });
-  expect(CALDRA_AMBER_TRIAD).toMatchObject({
-    primary: "#D16002",
-    deep: "#8A3300",
-    highlight: "#F7941D",
-  });
-
-  const crimsonDark = resolveAccentColorTokens("crimson", true);
-  expect(crimsonDark.accentPrimary).toBe("#D61818");
-  expect(crimsonDark.accentMid).toBe("#E51A4C");
-  expect(crimsonDark.accentDeep).toBe("#C11034");
-
-  const blueDark = resolveAccentColorTokens("blue", true);
-  expect(blueDark.accentPrimary).toBe("#003471");
-  expect(blueDark.accentMid).toBe("#00A8FF");
-  expect(blueDark.accentDeep).toBe("#2CA5D6");
-
-  const amberLight = resolveAccentColorTokens("amber", false);
-  expect(amberLight.accentPrimary).toBe("#D16002");
-  expect(amberLight.accentMid).toBe("#8A3300");
-  expect(amberLight.accentDeep).toBe("#F7941D");
-
-  const storage = createMockStorage();
-  persistAppearancePreferences(storage, {
-    theme: "dark",
-    accent: "crimson",
-    auroraStyle: "suave",
-    useAccentInOrbs: true,
-  });
-
-  expect(storage.getItem(CALDRA_ORBS_USE_ACCENT_KEY)).toBe("true");
-  expect(readAppearancePreferences(storage, true).useAccentInOrbs).toBe(true);
-
-  persistAppearancePreferences(storage, {
-    theme: "dark",
-    accent: "crimson",
-    auroraStyle: "suave",
-    useAccentInOrbs: false,
-  });
-
-  expect(storage.getItem(CALDRA_ORBS_USE_ACCENT_KEY)).toBe("false");
-  expect(readAppearancePreferences(storage, true).useAccentInOrbs).toBe(false);
-});
-

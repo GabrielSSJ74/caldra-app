@@ -142,7 +142,7 @@ export function resetField(projectId: string) {
 let fieldGlobalHydrated = false;
 
 export function useFieldRecord(projectId: string): FieldRecord {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(() => fieldGlobalHydrated);
   useEffect(() => {
     if (!fieldGlobalHydrated) {
       fieldGlobalHydrated = true;
@@ -156,7 +156,7 @@ export function useFieldRecord(projectId: string): FieldRecord {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => (!fieldGlobalHydrated || typeof window === "undefined" ? EMPTY : recordOf(projectId)),
+    () => (typeof window === "undefined" ? EMPTY : recordOf(projectId)),
     () => EMPTY,
   );
   return mounted ? rec : EMPTY;

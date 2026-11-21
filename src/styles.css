@@ -322,55 +322,7 @@
   /* ——— Opacidade Dinâmica da Interface ——— */
   --card-opacity: 0.90;
   --bubble-opacity: 0.35;
-  --bubble-tint-alpha: 0.153;
-  --bubble-border-alpha: 0.326;
   --ui-opacity: 0.90;
-
-  /* ——— SISTEMA CROMÁTICO TRI-TONAL CALDRA (CARMESIM, AZUL E ÂMBAR) ——— */
-  /* Paleta Vermelho Carmesim (3 Estágios) */
-  --crimson-primary: #D61818;
-  --crimson-mid: #E51A4C;
-  --crimson-deep: #C11034;
-  --crimson-rgb: 214, 24, 24;
-  --crimson-mid-rgb: 229, 26, 76;
-  --crimson-deep-rgb: 193, 16, 52;
-
-  /* Paleta Azul (3 Estágios) */
-  --blue-primary: #003471;
-  --blue-light: #00A8FF;
-  --blue-reflect: #2CA5D6;
-  --blue-rgb: 0, 52, 113;
-  --blue-light-rgb: 0, 168, 255;
-  --blue-reflect-rgb: 44, 165, 214;
-
-  /* Paleta Âmbar (3 Estágios) */
-  --amber-primary: #D16002;
-  --amber-deep: #8A3300;
-  --amber-highlight: #F7941D;
-  --amber-rgb: 209, 96, 2;
-  --amber-deep-rgb: 138, 51, 0;
-  --amber-highlight-rgb: 247, 148, 29;
-
-  /* Gradientes Suaves das 3 Paletas */
-  --crimson-gradient: linear-gradient(135deg, #D61818 0%, #D61818 42%, #E51A4C 74%, #C11034 100%);
-  --blue-gradient: linear-gradient(135deg, #003471 0%, #003471 45%, #00A8FF 78%, #2CA5D6 100%);
-  --amber-gradient: linear-gradient(135deg, #8A3300 0%, #D16002 38%, #D16002 68%, #F7941D 100%);
-
-  /* Tokens Derivados de Superfície, Borda, Brilho e Hover */
-  --crimson-border: rgba(229, 26, 76, 0.34);
-  --crimson-surface: rgba(214, 24, 24, 0.14);
-  --crimson-glow: 0 10px 28px rgba(214, 24, 24, 0.28);
-  --crimson-hover: #E51A4C;
-
-  --blue-border: rgba(0, 168, 255, 0.32);
-  --blue-surface: rgba(0, 52, 113, 0.20);
-  --blue-glow: 0 10px 28px rgba(0, 168, 255, 0.24);
-  --blue-hover: #00A8FF;
-
-  --amber-border: rgba(247, 148, 29, 0.34);
-  --amber-surface: rgba(209, 96, 2, 0.15);
-  --amber-glow: 0 10px 28px rgba(209, 96, 2, 0.26);
-  --amber-hover: #F7941D;
 
   /* modo claro */
   --background: oklch(0.982 0.004 250);
@@ -379,31 +331,24 @@
   --card-foreground: oklch(0.24 0.021 250);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.24 0.021 250);
-  --primary: var(--amber-primary);
+  --primary: oklch(0.66 0.15 62);
   --primary-foreground: oklch(0.99 0.003 80);
   --secondary: oklch(0.95 0.005 80);
   --secondary-foreground: oklch(0.3 0.01 80);
   --muted: oklch(0.95 0.005 80);
   --muted-foreground: oklch(0.52 0.01 80);
-  --accent: var(--amber-primary);
-  --accent-color: #D16002;
-  --accent-rgb: 209, 96, 2;
-  --accent-primary: #D16002;
-  --accent-mid: #F7941D;
-  --accent-deep: #8A3300;
-  --accent-gradient: var(--amber-gradient);
-  --accent-border: var(--amber-border);
-  --accent-surface: var(--amber-surface);
-  --accent-glow: var(--amber-glow);
+  --accent: oklch(0.66 0.15 62);
+  --accent-color: #D97706;
+  --accent-rgb: 245, 158, 11;
   --accent-foreground: oklch(0.99 0.003 80);
   --accent2: oklch(0.55 0.1 180);
-  --warn: var(--amber-primary);
-  --destructive: var(--crimson-primary);
+  --warn: oklch(0.68 0.15 70);
+  --destructive: oklch(0.58 0.2 25);
   --destructive-foreground: oklch(0.99 0.003 80);
   --border: oklch(0.9 0.005 80);
   --line: oklch(0.9 0.005 80);
   --input: oklch(0.9 0.005 80);
-  --ring: var(--amber-primary);
+  --ring: oklch(0.66 0.15 62);
 
   /* PRO — segue o acento da interface (sem cor própria). */
   --gradient-pro: var(--gradient-brand);
@@ -456,31 +401,24 @@
   --card-foreground: oklch(0.935 0.004 80);
   --popover: oklch(0.188 0.006 60);
   --popover-foreground: oklch(0.935 0.004 80);
-  --primary: var(--amber-highlight);
+  --primary: oklch(0.77 0.163 70);
   --primary-foreground: oklch(0.145 0.006 60);
   --secondary: oklch(0.225 0.006 60);
   --secondary-foreground: oklch(0.935 0.004 80);
   --muted: oklch(0.225 0.006 60);
   --muted-foreground: oklch(0.66 0.008 75);
-  --accent: var(--amber-highlight); /* âmbar reflexo #F7941D no escuro + base #D16002 */
-  --accent-color: #F7941D;
-  --accent-rgb: 209, 96, 2;
-  --accent-primary: #D16002;
-  --accent-mid: #F7941D;
-  --accent-deep: #8A3300;
-  --accent-gradient: var(--amber-gradient);
-  --accent-border: var(--amber-border);
-  --accent-surface: var(--amber-surface);
-  --accent-glow: var(--amber-glow);
+  --accent: oklch(0.77 0.163 70); /* âmbar #F59E0B */
+  --accent-color: #F59E0B;
+  --accent-rgb: 245, 158, 11;
   --accent-foreground: oklch(0.145 0.006 60);
   --accent2: oklch(0.78 0.11 178); /* turquesa secundária */
-  --warn: var(--amber-highlight);
-  --destructive: var(--crimson-mid);
+  --warn: oklch(0.79 0.155 70);
+  --destructive: oklch(0.64 0.19 25);
   --destructive-foreground: oklch(0.98 0.003 80);
   --border: oklch(0.27 0.006 60);
   --line: oklch(0.27 0.006 60);
   --input: oklch(0.27 0.006 60);
-  --ring: var(--amber-highlight);
+  --ring: oklch(0.77 0.163 70);
 
   --gradient-pro: var(--gradient-brand);
 
@@ -781,20 +719,13 @@
   color: var(--muted-foreground);
 }
 
-/* ——— acento cromático selecionável (Tríades: Âmbar / Azul / Vermelho Carmesim / Neutro) ——— */
+/* ——— acento cromático selecionável (Âmbar / Azul Real / Magenta) ——— */
 .accent-default {
   --primary: var(--foreground);
   --primary-foreground: var(--background);
   --accent: var(--foreground);
   --accent-color: #0F172A;
   --accent-rgb: 15, 23, 42;
-  --accent-primary: #0F172A;
-  --accent-mid: #334155;
-  --accent-deep: #64748B;
-  --accent-gradient: linear-gradient(135deg, #0F172A 0%, #334155 68%, #64748B 100%);
-  --accent-border: rgba(51, 65, 85, 0.34);
-  --accent-surface: rgba(15, 23, 42, 0.12);
-  --accent-glow: 0 10px 28px rgba(15, 23, 42, 0.22);
   --accent-foreground: var(--background);
   --accent2: var(--muted-foreground);
   --ring: var(--foreground);
@@ -805,162 +736,59 @@
 .dark .accent-default {
   --accent-color: #F1F5F9;
   --accent-rgb: 241, 245, 249;
-  --accent-primary: #F1F5F9;
-  --accent-mid: #94A3B8;
-  --accent-deep: #475569;
-  --accent-gradient: linear-gradient(135deg, #F1F5F9 0%, #94A3B8 68%, #475569 100%);
 }
 
-/* Paleta Âmbar Caldeiraria Tri-Tonal (#D16002 -> #8A3300 -> #F7941D) */
-.accent-amber {
-  --primary: var(--amber-primary);
-  --primary-foreground: #ffffff;
-  --accent: var(--amber-primary);
-  --accent-color: var(--amber-primary);
-  --accent-rgb: var(--amber-rgb);
-  --accent-primary: var(--amber-primary);
-  --accent-mid: var(--amber-highlight);
-  --accent-deep: var(--amber-deep);
-  --accent-gradient: var(--amber-gradient);
-  --accent-border: var(--amber-border);
-  --accent-surface: var(--amber-surface);
-  --accent-glow: var(--amber-glow);
-  --accent-foreground: #ffffff;
-  --accent2: var(--amber-highlight);
-  --ring: var(--amber-primary);
-  --gradient-brand: var(--amber-gradient);
-}
-
-.dark.accent-amber,
-.dark .accent-amber {
-  --primary: var(--amber-primary);
-  --primary-foreground: #ffffff;
-  --accent: var(--amber-highlight);
-  --accent-color: var(--amber-highlight);
-  --accent-rgb: var(--amber-rgb);
-  --accent-primary: var(--amber-primary);
-  --accent-mid: var(--amber-highlight);
-  --accent-deep: var(--amber-deep);
-  --accent-gradient: var(--amber-gradient);
-  --accent-border: var(--amber-border);
-  --accent-surface: var(--amber-surface);
-  --accent-glow: var(--amber-glow);
-  --accent-foreground: #090D16;
-  --accent2: var(--amber-primary);
-  --ring: var(--amber-highlight);
-  --gradient-brand: var(--amber-gradient);
-}
-
-/* Paleta Azul Técnico Tri-Tonal (#003471 -> #00A8FF -> #2CA5D6) */
+/* Azul Oficial CALDRA #0066FF — vívido e de alto contraste em modo claro, luminoso em modo escuro */
 .accent-blue {
-  --primary: var(--blue-primary);
+  --primary: #0066FF;
   --primary-foreground: #ffffff;
-  --accent: var(--blue-primary);
-  --accent-color: var(--blue-primary);
-  --accent-rgb: var(--blue-rgb);
-  --accent-primary: var(--blue-primary);
-  --accent-mid: var(--blue-light);
-  --accent-deep: var(--blue-reflect);
-  --accent-gradient: var(--blue-gradient);
-  --accent-border: var(--blue-border);
-  --accent-surface: var(--blue-surface);
-  --accent-glow: var(--blue-glow);
+  --accent: #0066FF;
+  --accent-color: #0066FF;
+  --accent-rgb: 0, 102, 255;
   --accent-foreground: #ffffff;
-  --accent2: var(--blue-light);
-  --ring: var(--blue-light);
-  --gradient-brand: var(--blue-gradient);
+  --accent2: #0099FF;
+  --ring: #0066FF;
+  --gradient-brand: linear-gradient(120deg, #0066FF, #00C8FF);
 }
 
 .dark.accent-blue,
 .dark .accent-blue {
-  --primary: var(--blue-primary);
+  --primary: #0066FF;
   --primary-foreground: #ffffff;
-  --accent: var(--blue-light);
-  --accent-color: var(--blue-light);
-  --accent-rgb: var(--blue-light-rgb);
-  --accent-primary: var(--blue-primary);
-  --accent-mid: var(--blue-light);
-  --accent-deep: var(--blue-reflect);
-  --accent-gradient: var(--blue-gradient);
-  --accent-border: var(--blue-border);
-  --accent-surface: var(--blue-surface);
-  --accent-glow: var(--blue-glow);
+  --accent: #38BDF8;
+  --accent-color: #3B82F6;
+  --accent-rgb: 0, 102, 255;
   --accent-foreground: #090D16;
-  --accent2: var(--blue-reflect);
-  --ring: var(--blue-light);
-  --gradient-brand: var(--blue-gradient);
+  --accent2: #00CCFF;
+  --ring: #38BDF8;
+  --gradient-brand: linear-gradient(120deg, #0066FF, #38BDF8);
 }
 
-/* Paleta Vermelho Carmesim Tri-Tonal (#D61818 -> #E51A4C -> #C11034) */
+/* Vermelho Carmesim #B22222 — sólido para controles; no escuro o acento ganha luminosidade (#E53935). */
 .accent-crimson,
 .accent-magenta {
-  --primary: var(--crimson-primary);
+  --primary: #B22222;
   --primary-foreground: #ffffff;
-  --accent: var(--crimson-primary);
-  --accent-color: var(--crimson-primary);
-  --accent-rgb: var(--crimson-rgb);
-  --accent-primary: var(--crimson-primary);
-  --accent-mid: var(--crimson-mid);
-  --accent-deep: var(--crimson-deep);
-  --accent-gradient: var(--crimson-gradient);
-  --accent-border: var(--crimson-border);
-  --accent-surface: var(--crimson-surface);
-  --accent-glow: var(--crimson-glow);
+  --accent: #B22222;
+  --accent-color: #B22222;
+  --accent-rgb: 178, 34, 34;
   --accent-foreground: #ffffff;
-  --accent2: var(--crimson-mid);
-  --ring: var(--crimson-primary);
-  --gradient-brand: var(--crimson-gradient);
+  --accent2: #D32F2F;
+  --ring: #B22222;
+  --gradient-brand: linear-gradient(120deg, #B22222, #D32F2F);
 }
 
 .dark.accent-crimson,
-.dark.accent-magenta,
-.dark .accent-crimson,
-.dark .accent-magenta {
-  --primary: var(--crimson-primary);
+.dark.accent-magenta {
+  --primary: #B22222;
   --primary-foreground: #ffffff;
-  --accent: var(--crimson-mid);
-  --accent-color: var(--crimson-mid);
-  --accent-rgb: var(--crimson-rgb);
-  --accent-primary: var(--crimson-primary);
-  --accent-mid: var(--crimson-mid);
-  --accent-deep: var(--crimson-deep);
-  --accent-gradient: var(--crimson-gradient);
-  --accent-border: var(--crimson-border);
-  --accent-surface: var(--crimson-surface);
-  --accent-glow: var(--crimson-glow);
+  --accent: #E53935; /* Carmesim luminoso legível como texto e realce no escuro */
+  --accent-color: #EF4444;
+  --accent-rgb: 239, 68, 68;
   --accent-foreground: #ffffff;
-  --accent2: var(--crimson-deep);
-  --ring: var(--crimson-mid);
-  --gradient-brand: var(--crimson-gradient);
-}
-
-/* Transição lenta e contínua (8s–12s) entre os 3 estágios tonais da paleta ativa */
-@keyframes caldra-triad-flow {
-  0%, 100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-.caldra-triad-surface {
-  background-image: var(--accent-gradient);
-  background-size: 200% 200%;
-  animation: caldra-triad-flow 10s ease-in-out infinite;
-  box-shadow: var(--accent-glow);
-  transition:
-    background-color 600ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 600ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 600ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 400ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .caldra-triad-surface {
-    animation: none !important;
-    background-position: 0% 50% !important;
-  }
+  --accent2: #EF5350;
+  --ring: #E53935;
+  --gradient-brand: linear-gradient(120deg, #B22222, #E53935);
 }
 
 /* ——— render sólido 3D (estilo CAD metálico natural clássico) ——— */
@@ -1137,26 +965,11 @@
   --aurora-blur: 130px;
 
   /* FLUID AURORA — DEEP SPACE LIGHT FIELD */
-  --space-opacity-mult: 1;
+  --space-opacity-mult: 0.76;
 }
 
 .aurora-root {
   display: block;
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-  opacity: 1;
-  transition: opacity 650ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.aurora-root[data-aurora-visible="true"] {
-  opacity: 1;
-}
-
-.aurora-root[data-aurora-visible="false"] {
-  opacity: 0;
 }
 
 .dark {
@@ -1173,7 +986,7 @@
   --aurora-blur: 120px;
 
   /* FLUID AURORA — DEEP SPACE LIGHT FIELD */
-  --space-opacity-mult: 1;
+  --space-opacity-mult: 0.88;
 }
 
 /* AMOLED: preto puro é a identidade — o espaço mantém contraste abissal */
@@ -1181,14 +994,14 @@
   --aurora-base-a: #000000;
   --aurora-base-b: #000000;
   --aurora-blob-opacity: 0.1;
-  --space-opacity-mult: 0.85;
+  --space-opacity-mult: 0.60;
 }
 
 /* Modo Oficina / alto contraste: luminosidade suave reduzida */
 .oficina .aurora-root,
 .high-contrast .aurora-root {
   --aurora-blob-opacity: 0.16;
-  --space-opacity-mult: 0.65;
+  --space-opacity-mult: 0.55;
 }
 
 /* =========================================================================
@@ -1325,7 +1138,7 @@
   );
 }
 
-/* Massas orgânicas persistentes no DOM — Transparência rgba() nativa sem mix-blend-mode para evitar conflito com backdrop-filter */
+/* Massas orgânicas persistentes no DOM */
 .organic-mass,
 .deep-space-field {
   position: absolute;
@@ -1336,19 +1149,13 @@
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
-  mix-blend-mode: normal;
   transition: top 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               left 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               width 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               height 2.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-:root:not(.dark) .organic-mass,
-:root:not(.dark) .deep-space-field {
-  mix-blend-mode: normal;
-}
-
-/* Corpo da massa: deforma organicamente em 4 estágios (0% -> 33% -> 66% -> 100%) */
+/* Corpo da massa: deforma organicamente e interpola as 6 cores */
 .mass-body,
 .field-body {
   position: absolute;
@@ -1393,45 +1200,42 @@
 }
 
 /* =========================================================================
-   1. ENTIDADE DELTA — PLANO 3: Massa de Ancoragem Profunda (Base / Continue Trabalhando e Dock)
-   Difusão horizontal larga e suave (92vmax × 58vmax), blur(110px), ciclo primo 41s (delay -31s).
-   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
+   1. ENTIDADE DELTA — O Oceano Abissal (Fundo Perene Azul & Verde Esmeralda)
+   Tamanho: 76vmax, período: 44s. Ancoragem de profundidade atmosférica estável.
    ========================================================================= */
 .mass-delta,
 .field-entity-delta {
   top: 0;
   left: 0;
-  width: 92vmax;
-  height: 58vmax;
+  width: 76vmax;
+  height: 62vmax;
 }
 
 .body-delta,
 .field-body-delta {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(29, 78, 216, 0.40) 0%,      /* 100% do núcleo — Azul Real */
-    rgba(14, 165, 233, 0.30) 22%,    /* 75% do núcleo — Azul */
-    rgba(16, 185, 129, 0.168) 48%,   /* 42% do núcleo — Verde */
-    rgba(12, 20, 50, 0.056) 74%,     /* 14% do núcleo — Profundidade */
-    rgba(12, 20, 50, 0) 100%         /* 0% — Cauda de difusão atmosférica */
+    rgba(29, 78, 216, 0.40) 0%,     /* Azul Real */
+    rgba(14, 165, 233, 0.30) 28%,    /* Azul */
+    rgba(16, 185, 129, 0.18) 55%,    /* Verde */
+    rgba(12, 20, 50, 0.08) 78%,      /* Profundidade */
+    transparent 86%
   );
-  filter: blur(52px);
+  filter: blur(28px);
   animation:
-    organic-morph-delta 41s cubic-bezier(0.37, 0, 0.63, 1) -31s infinite,
-    chroma-delta 54s linear -31s infinite;
+    organic-morph-delta 44s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
+    chroma-delta 54s linear infinite;
 }
 
 .inner-delta,
 .field-inner-delta {
   background: radial-gradient(
     ellipse at 52% 48%,
-    rgba(29, 78, 216, 0.24) 0%,      /* 100% — Azul Real */
-    rgba(29, 78, 216, 0.18) 22%,     /* 75% — Azul Real */
-    rgba(14, 165, 233, 0.101) 48%,   /* 42% — Azul */
-    rgba(14, 165, 233, 0.034) 74%,   /* 14% — Azul */
-    rgba(14, 165, 233, 0) 100%       /* 0% */
+    rgba(29, 78, 216, 0.24) 0%,     /* Azul Real */
+    rgba(14, 165, 233, 0.12) 48%,    /* Azul */
+    transparent 70%
   );
-  animation: organic-inner-delta 18s cubic-bezier(0.37, 0, 0.63, 1) -13s infinite;
+  animation: organic-inner-delta 18s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
 .core-delta,
@@ -1443,55 +1247,50 @@
   background: radial-gradient(
     ellipse at 50% 50%,
     rgba(96, 165, 250, 0.32) 0%,
-    rgba(96, 165, 250, 0.24) 22%,
-    rgba(30, 64, 175, 0.134) 48%,
-    rgba(30, 64, 175, 0.045) 74%,
-    rgba(30, 64, 175, 0) 100%
+    rgba(30, 64, 175, 0.14) 40%,
+    transparent 70%
   );
-  filter: blur(28px);
-  animation: organic-core-delta 23s cubic-bezier(0.37, 0, 0.63, 1) -9s infinite;
+  filter: blur(16px);
+  animation: organic-core-delta 12s cubic-bezier(0.40, 0.05, 0.60, 0.95) infinite;
 }
 
 /* =========================================================================
-   2. ENTIDADE BETA — PLANO 2: Massa de Ritmo e Transição (Zona Central / Especialização)
-   Tamanho médio (62vmax × 52vmax), blur(80px), ciclo primo 23s (delay -11s).
-   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
+   2. ENTIDADE BETA — A Nebulosa Violeta & Magenta (Roxo, Magenta, Carmesim, Rosa)
+   Tamanho: 60vmax. Sobe, funde dinamicamente e explora todo o campo.
    ========================================================================= */
 .mass-beta,
 .field-entity-beta {
   top: 0;
   left: 0;
-  width: 62vmax;
-  height: 52vmax;
+  width: 60vmax;
+  height: 50vmax;
 }
 
 .body-beta,
 .field-body-beta {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(124, 58, 237, 0.45) 0%,     /* 100% do núcleo — Roxo */
-    rgba(217, 70, 239, 0.338) 22%,   /* 75% do núcleo — Magenta */
-    rgba(153, 27, 27, 0.189) 48%,    /* 42% do núcleo — Vermelho Carmesim */
-    rgba(244, 63, 94, 0.063) 74%,    /* 14% do núcleo — Rosa */
-    rgba(244, 63, 94, 0) 100%        /* 0% — Cauda de difusão atmosférica */
+    rgba(124, 58, 237, 0.45) 0%,    /* Roxo */
+    rgba(217, 70, 239, 0.34) 28%,   /* Magenta */
+    rgba(153, 27, 27, 0.22) 54%,    /* Vermelho Carmesim */
+    rgba(244, 63, 94, 0.12) 72%,    /* Rosa */
+    transparent 86%
   );
-  filter: blur(45px);
+  filter: blur(22px);
   animation:
-    organic-morph-beta 23s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite,
-    chroma-beta 42s linear -11s infinite;
+    organic-morph-beta 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
+    chroma-beta 42s linear infinite;
 }
 
 .inner-beta,
 .field-inner-beta {
   background: radial-gradient(
     ellipse at 44% 56%,
-    rgba(232, 121, 249, 0.28) 0%,    /* 100% — Magenta Claro */
-    rgba(232, 121, 249, 0.21) 22%,   /* 75% — Magenta Claro */
-    rgba(147, 51, 234, 0.118) 48%,   /* 42% — Roxo */
-    rgba(147, 51, 234, 0.039) 74%,   /* 14% — Roxo */
-    rgba(147, 51, 234, 0) 100%       /* 0% */
+    rgba(232, 121, 249, 0.28) 0%,   /* Magenta Claro */
+    rgba(147, 51, 234, 0.14) 44%,   /* Roxo */
+    transparent 68%
   );
-  animation: organic-inner-beta 23s cubic-bezier(0.37, 0, 0.63, 1) -7s infinite;
+  animation: organic-inner-beta 10.5s cubic-bezier(0.45, 0.04, 0.55, 0.96) infinite;
 }
 
 .core-beta-1,
@@ -1502,14 +1301,12 @@
   height: 44%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(244, 114, 182, 0.40) 0%,    /* Rosa */
-    rgba(244, 114, 182, 0.30) 22%,
-    rgba(168, 85, 247, 0.168) 48%,   /* Roxo */
-    rgba(168, 85, 247, 0.056) 74%,
-    rgba(168, 85, 247, 0) 100%
+    rgba(244, 114, 182, 0.40) 0%,   /* Rosa */
+    rgba(168, 85, 247, 0.20) 38%,   /* Roxo */
+    transparent 70%
   );
-  filter: blur(24px);
-  animation: organic-core-beta-1 18s cubic-bezier(0.37, 0, 0.63, 1) -5s infinite;
+  filter: blur(14px);
+  animation: organic-core-beta-1 7.6s cubic-bezier(0.40, 0.06, 0.60, 0.94) infinite;
 }
 
 .core-beta-2,
@@ -1520,56 +1317,51 @@
   height: 36%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(217, 70, 239, 0.38) 0%,     /* Magenta */
-    rgba(217, 70, 239, 0.285) 22%,
-    rgba(153, 27, 27, 0.16) 48%,     /* Vermelho Carmesim */
-    rgba(153, 27, 27, 0.053) 74%,
-    rgba(153, 27, 27, 0) 100%
+    rgba(217, 70, 239, 0.38) 0%,    /* Magenta */
+    rgba(153, 27, 27, 0.18) 36%,    /* Vermelho Carmesim */
+    transparent 70%
   );
-  filter: blur(22px);
-  animation: organic-core-beta-2 29s cubic-bezier(0.37, 0, 0.63, 1) -14s infinite;
+  filter: blur(12px);
+  animation: organic-core-beta-2 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
 /* =========================================================================
-   3. ENTIDADE ALFA — PLANO 1: Massa Protagonista (Foco Superior / Boas-vindas)
-   Halo amplo e envolvente (78vmax × 64vmax), blur(95px), ciclo primo 34s (delay -23s).
-   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
+   3. ENTIDADE ALFA — O Coração Azul Real & Ciano (Azul Real, Azul, Verde, Amarelo)
+   Tamanho: 56vmax. Grandes travessias transversais e diagonais completas.
    ========================================================================= */
 .mass-alpha,
 .field-entity-alpha {
   top: 0;
   left: 0;
-  width: 78vmax;
-  height: 64vmax;
+  width: 56vmax;
+  height: 46vmax;
 }
 
 .body-alpha,
 .field-body-alpha {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(0, 102, 255, 0.46) 0%,      /* 100% do núcleo — Azul Real */
-    rgba(14, 165, 233, 0.345) 22%,   /* 75% do núcleo — Azul */
-    rgba(16, 185, 129, 0.193) 48%,   /* 42% do núcleo — Verde */
-    rgba(250, 204, 21, 0.064) 74%,   /* 14% do núcleo — Amarelo */
-    rgba(250, 204, 21, 0) 100%       /* 0% — Cauda de difusão atmosférica */
+    rgba(0, 102, 255, 0.46) 0%,     /* Azul Real */
+    rgba(14, 165, 233, 0.35) 30%,   /* Azul */
+    rgba(16, 185, 129, 0.20) 58%,   /* Verde */
+    rgba(250, 204, 21, 0.10) 74%,   /* Amarelo */
+    transparent 86%
   );
-  filter: blur(50px);
+  filter: blur(20px);
   animation:
-    organic-morph-alpha 34s cubic-bezier(0.37, 0, 0.63, 1) -23s infinite,
-    chroma-alpha 46s linear -23s infinite;
+    organic-morph-alpha 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
+    chroma-alpha 46s linear infinite;
 }
 
 .inner-alpha,
 .field-inner-alpha {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(56, 189, 248, 0.36) 0%,     /* 100% — Azul */
-    rgba(56, 189, 248, 0.27) 22%,    /* 75% — Azul */
-    rgba(0, 102, 255, 0.151) 48%,    /* 42% — Azul Real */
-    rgba(0, 102, 255, 0.05) 74%,     /* 14% — Azul Real */
-    rgba(0, 102, 255, 0) 100%        /* 0% */
+    rgba(56, 189, 248, 0.36) 0%,    /* Azul */
+    rgba(0, 102, 255, 0.18) 36%,    /* Azul Real */
+    transparent 70%
   );
-  animation: organic-inner-alpha 34s cubic-bezier(0.37, 0, 0.63, 1) -19s infinite;
+  animation: organic-inner-alpha 10.2s cubic-bezier(0.40, 0.02, 0.60, 0.98) infinite;
 }
 
 .core-alpha-1,
@@ -1580,14 +1372,12 @@
   height: 48%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(165, 243, 252, 0.45) 0%,    /* Ciano */
-    rgba(165, 243, 252, 0.338) 22%,
-    rgba(14, 165, 233, 0.189) 48%,   /* Azul */
-    rgba(14, 165, 233, 0.063) 74%,
-    rgba(14, 165, 233, 0) 100%
+    rgba(165, 243, 252, 0.45) 0%,   /* Ciano */
+    rgba(14, 165, 233, 0.25) 38%,   /* Azul */
+    transparent 72%
   );
-  filter: blur(24px);
-  animation: organic-core-alpha-1 23s cubic-bezier(0.37, 0, 0.63, 1) -8s infinite;
+  filter: blur(14px);
+  animation: organic-core-alpha-1 6.8s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
 }
 
 .core-alpha-2,
@@ -1598,56 +1388,51 @@
   height: 38%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(52, 211, 153, 0.38) 0%,     /* Verde Esmeralda */
-    rgba(52, 211, 153, 0.285) 22%,
-    rgba(250, 204, 21, 0.16) 48%,    /* Amarelo */
-    rgba(250, 204, 21, 0.053) 74%,
-    rgba(250, 204, 21, 0) 100%
+    rgba(52, 211, 153, 0.38) 0%,    /* Verde Esmeralda */
+    rgba(250, 204, 21, 0.18) 36%,   /* Amarelo */
+    transparent 70%
   );
-  filter: blur(22px);
-  animation: organic-core-alpha-2 34s cubic-bezier(0.37, 0, 0.63, 1) -16s infinite;
+  filter: blur(12px);
+  animation: organic-core-alpha-2 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
 /* =========================================================================
-   4. ENTIDADE GAMA — PLANO 2: Massa de Ritmo e Transição (Zona Central / Especialização)
-   Tamanho médio (58vmax × 48vmax), blur(85px), ciclo primo 29s (delay -17s).
-   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
+   4. ENTIDADE GAMA — O Manto Carmesim, Rosa & Âmbar (Vermelho Carmesim, Âmbar, Rosa)
+   Tamanho: 50vmax. Viagens completas borda a borda e diagonais livres.
    ========================================================================= */
 .mass-gama,
 .field-entity-gama {
   top: 0;
   left: 0;
-  width: 58vmax;
-  height: 48vmax;
+  width: 50vmax;
+  height: 42vmax;
 }
 
 .body-gama,
 .field-body-gama {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(153, 27, 27, 0.46) 0%,      /* 100% do núcleo — Vermelho Carmesim */
-    rgba(239, 68, 68, 0.345) 22%,    /* 75% do núcleo — Vermelho */
-    rgba(245, 158, 11, 0.193) 48%,   /* 42% do núcleo — Âmbar */
-    rgba(244, 63, 94, 0.064) 74%,    /* 14% do núcleo — Rosa */
-    rgba(244, 63, 94, 0) 100%        /* 0% — Cauda de difusão atmosférica */
+    rgba(153, 27, 27, 0.46) 0%,     /* Vermelho Carmesim */
+    rgba(239, 68, 68, 0.32) 28%,    /* Vermelho */
+    rgba(245, 158, 11, 0.24) 52%,   /* Âmbar */
+    rgba(244, 63, 94, 0.16) 72%,    /* Rosa */
+    transparent 86%
   );
-  filter: blur(46px);
+  filter: blur(22px);
   animation:
-    organic-morph-gama 29s cubic-bezier(0.37, 0, 0.63, 1) -17s infinite,
-    chroma-gama 40s linear -17s infinite;
+    organic-morph-gama 36s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite,
+    chroma-gama 40s linear infinite;
 }
 
 .inner-gama,
 .field-inner-gama {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(251, 113, 133, 0.26) 0%,    /* 100% — Rosa */
-    rgba(251, 113, 133, 0.195) 22%,  /* 75% — Rosa */
-    rgba(153, 27, 27, 0.109) 48%,    /* 42% — Vermelho Carmesim */
-    rgba(153, 27, 27, 0.036) 74%,    /* 14% — Vermelho Carmesim */
-    rgba(153, 27, 27, 0) 100%        /* 0% */
+    rgba(251, 113, 133, 0.26) 0%,   /* Rosa */
+    rgba(153, 27, 27, 0.14) 46%,    /* Vermelho Carmesim */
+    transparent 68%
   );
-  animation: organic-inner-gama 29s cubic-bezier(0.37, 0, 0.63, 1) -12s infinite;
+  animation: organic-inner-gama 12s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
 }
 
 .core-gama-1,
@@ -1658,14 +1443,12 @@
   height: 46%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(253, 164, 175, 0.36) 0%,    /* Rosa claro */
-    rgba(253, 164, 175, 0.27) 22%,
-    rgba(239, 68, 68, 0.151) 48%,    /* Vermelho */
-    rgba(239, 68, 68, 0.05) 74%,
-    rgba(239, 68, 68, 0) 100%
+    rgba(253, 164, 175, 0.36) 0%,   /* Rosa claro */
+    rgba(239, 68, 68, 0.18) 38%,    /* Vermelho */
+    transparent 70%
   );
-  filter: blur(24px);
-  animation: organic-core-gama-1 18s cubic-bezier(0.37, 0, 0.63, 1) -6s infinite;
+  filter: blur(14px);
+  animation: organic-core-gama-1 9.2s cubic-bezier(0.44, 0.05, 0.56, 0.95) infinite;
 }
 
 .core-gama-2,
@@ -1676,56 +1459,51 @@
   height: 38%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(245, 158, 11, 0.34) 0%,     /* Âmbar */
-    rgba(245, 158, 11, 0.255) 22%,
-    rgba(250, 204, 21, 0.143) 48%,   /* Amarelo */
-    rgba(250, 204, 21, 0.048) 74%,
-    rgba(250, 204, 21, 0) 100%
+    rgba(245, 158, 11, 0.34) 0%,    /* Âmbar */
+    rgba(250, 204, 21, 0.18) 36%,   /* Amarelo */
+    transparent 70%
   );
-  filter: blur(22px);
-  animation: organic-core-gama-2 29s cubic-bezier(0.37, 0, 0.63, 1) -15s infinite;
+  filter: blur(12px);
+  animation: organic-core-gama-2 36s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite;
 }
 
 /* =========================================================================
-   5. ENTIDADE ÉPSILON — PLANO 1 (Auxiliar Superior): Centelha Dourada & Celeste
-   Tamanho (44vmax × 36vmax), blur(65px), ciclo primo 18s (delay -5s).
-   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
+   5. ENTIDADE ÉPSILON — A Centelha Dourada & Celeste (Âmbar, Amarelo, Magenta, Azul Real)
+   Tamanho: 34vmax. Voo livre transversal ágil e luminoso.
    ========================================================================= */
 .mass-epsilon,
 .field-entity-epsilon {
   top: 0;
   left: 0;
-  width: 44vmax;
-  height: 36vmax;
+  width: 34vmax;
+  height: 28vmax;
 }
 
 .body-epsilon,
 .field-body-epsilon {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(245, 158, 11, 0.50) 0%,     /* 100% do núcleo — Âmbar */
-    rgba(250, 204, 21, 0.375) 22%,   /* 75% do núcleo — Amarelo */
-    rgba(217, 70, 239, 0.21) 48%,    /* 42% do núcleo — Magenta */
-    rgba(29, 78, 216, 0.07) 74%,     /* 14% do núcleo — Azul Real */
-    rgba(29, 78, 216, 0) 100%        /* 0% — Cauda de difusão atmosférica */
+    rgba(245, 158, 11, 0.50) 0%,    /* Âmbar */
+    rgba(250, 204, 21, 0.36) 26%,   /* Amarelo */
+    rgba(217, 70, 239, 0.24) 50%,   /* Magenta */
+    rgba(29, 78, 216, 0.16) 72%,    /* Azul Real */
+    transparent 85%
   );
-  filter: blur(42px);
+  filter: blur(16px);
   animation:
-    organic-morph-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -5s infinite,
-    chroma-epsilon 28s linear -5s infinite;
+    organic-morph-epsilon 22s cubic-bezier(0.44, 0.04, 0.56, 0.96) infinite,
+    chroma-epsilon 28s linear infinite;
 }
 
 .inner-epsilon,
 .field-inner-epsilon {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(254, 240, 138, 0.34) 0%,    /* 100% — Amarelo claro */
-    rgba(254, 240, 138, 0.255) 22%,  /* 75% — Amarelo claro */
-    rgba(245, 158, 11, 0.143) 48%,   /* 42% — Âmbar */
-    rgba(245, 158, 11, 0.048) 74%,   /* 14% — Âmbar */
-    rgba(245, 158, 11, 0) 100%       /* 0% */
+    rgba(254, 240, 138, 0.34) 0%,   /* Amarelo claro */
+    rgba(245, 158, 11, 0.16) 38%,   /* Âmbar */
+    transparent 65%
   );
-  animation: organic-inner-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -4s infinite;
+  animation: organic-inner-epsilon 6.2s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
 .core-epsilon,
@@ -1737,25 +1515,23 @@
   background: radial-gradient(
     ellipse at 50% 50%,
     rgba(254, 240, 138, 0.44) 0%,
-    rgba(254, 240, 138, 0.33) 22%,
-    rgba(56, 189, 248, 0.185) 48%,   /* Azul */
-    rgba(56, 189, 248, 0.062) 74%,
-    rgba(56, 189, 248, 0) 100%
+    rgba(56, 189, 248, 0.24) 36%,   /* Azul */
+    transparent 70%
   );
-  filter: blur(20px);
-  animation: organic-core-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -9s infinite;
+  filter: blur(10px);
+  animation: organic-core-epsilon 4.8s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
 /* =========================================================================
-   VINHETA CINEMATOGRÁFICA + CAMADA DE POLIMENTO ÓPTICO ANTI-BANDING (blur 24px)
+   VINHETA CINEMATOGRÁFICA DE ALTO CONTRASTE E LEGIBILIDADE
    ========================================================================= */
 .organic-field-vignette,
 .deep-space-vignette {
   background: radial-gradient(
     ellipse 115% 95% at 50% 50%,
     transparent 46%,
-    rgba(4, 6, 10, 0.42) 78%,
-    rgba(3, 4, 8, 0.74) 100%
+    rgba(4, 6, 10, 0.45) 78%,
+    rgba(3, 4, 8, 0.78) 100%
   );
   z-index: 2;
 }
@@ -1902,291 +1678,448 @@
 }
 
 /* =========================================================================
-   KEYFRAMES DE INTERPOLAÇÃO CROMÁTICA CONTÍNUA COM BLUR PROGRESSIVO (65px a 110px)
+   KEYFRAMES DE INTERPOLAÇÃO CROMÁTICA CONTÍNUA (10 CORES VIVAS E ORGÂNICAS)
+   100% Acelerado no Fragment Shader GPU via hue-rotate contínuo (zero flicker).
+   Paleta: VERDE, AZUL, AZUL REAL, ROXO, MAGENTA, ROSA, VERMELHO,
+           VERMELHO CARMESIM, AMARELO, ÂMBAR.
    ========================================================================= */
 
 @keyframes chroma-alpha {
   0% {
-    filter: hue-rotate(0deg) blur(50px);
+    /* AZUL REAL & AZUL */
+    filter: hue-rotate(0deg) blur(20px);
   }
   18% {
-    filter: hue-rotate(36deg) blur(50px);
+    /* AZUL → AZUL REAL → ROXO */
+    filter: hue-rotate(36deg) blur(20px);
   }
   38% {
-    filter: hue-rotate(96deg) blur(50px);
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(96deg) blur(20px);
   }
   56% {
-    filter: hue-rotate(152deg) blur(50px);
+    /* VERMELHO → VERMELHO CARMESIM */
+    filter: hue-rotate(152deg) blur(20px);
   }
   74% {
-    filter: hue-rotate(224deg) blur(50px);
+    /* AMARELO → ÂMBAR */
+    filter: hue-rotate(224deg) blur(20px);
   }
   88% {
-    filter: hue-rotate(300deg) blur(50px);
+    /* ÂMBAR → VERDE */
+    filter: hue-rotate(300deg) blur(20px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(50px);
+    filter: hue-rotate(360deg) blur(20px);
   }
 }
 
 @keyframes chroma-beta {
   0% {
-    filter: hue-rotate(0deg) blur(45px);
+    /* ROXO & MAGENTA */
+    filter: hue-rotate(0deg) blur(22px);
   }
   20% {
-    filter: hue-rotate(42deg) blur(45px);
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(42deg) blur(22px);
   }
   42% {
-    filter: hue-rotate(90deg) blur(45px);
+    /* VERMELHO → VERMELHO CARMESIM → MAGENTA */
+    filter: hue-rotate(90deg) blur(22px);
   }
   62% {
-    filter: hue-rotate(164deg) blur(45px);
+    /* AMARELO → ÂMBAR → VERMELHO */
+    filter: hue-rotate(164deg) blur(22px);
   }
   82% {
-    filter: hue-rotate(264deg) blur(45px);
+    /* VERDE → AMARELO → ÂMBAR */
+    filter: hue-rotate(264deg) blur(22px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(45px);
+    filter: hue-rotate(360deg) blur(22px);
   }
 }
 
 @keyframes chroma-gama {
   0% {
-    filter: hue-rotate(0deg) blur(46px);
+    /* VERMELHO CARMESIM & ÂMBAR */
+    filter: hue-rotate(0deg) blur(22px);
   }
   22% {
-    filter: hue-rotate(48deg) blur(46px);
+    /* VERMELHO → VERMELHO CARMESIM → MAGENTA */
+    filter: hue-rotate(48deg) blur(22px);
   }
   44% {
-    filter: hue-rotate(114deg) blur(46px);
+    /* VERDE → AMARELO → ÂMBAR */
+    filter: hue-rotate(114deg) blur(22px);
   }
   66% {
-    filter: hue-rotate(204deg) blur(46px);
+    /* AZUL → AZUL REAL → ROXO */
+    filter: hue-rotate(204deg) blur(22px);
   }
   86% {
-    filter: hue-rotate(292deg) blur(46px);
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(292deg) blur(22px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(46px);
+    filter: hue-rotate(360deg) blur(22px);
   }
 }
 
 @keyframes chroma-delta {
   0% {
-    filter: hue-rotate(0deg) blur(52px);
+    /* AZUL REAL & AZUL profundo */
+    filter: hue-rotate(0deg) blur(26px);
   }
   30% {
-    filter: hue-rotate(52deg) blur(52px);
+    /* AZUL REAL → ROXO */
+    filter: hue-rotate(52deg) blur(26px);
   }
   60% {
-    filter: hue-rotate(178deg) blur(52px);
+    /* VERDE esmeralda & ÂMBAR abissal */
+    filter: hue-rotate(178deg) blur(26px);
   }
   84% {
-    filter: hue-rotate(290deg) blur(52px);
+    /* AZUL & AZUL REAL oceânico */
+    filter: hue-rotate(290deg) blur(26px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(52px);
+    filter: hue-rotate(360deg) blur(26px);
   }
 }
 
 @keyframes chroma-epsilon {
   0% {
-    filter: hue-rotate(0deg) blur(42px);
+    /* ÂMBAR & AMARELO radiante */
+    filter: hue-rotate(0deg) blur(16px);
   }
   22% {
-    filter: hue-rotate(58deg) blur(42px);
+    /* VERDE → AMARELO → ÂMBAR */
+    filter: hue-rotate(58deg) blur(16px);
   }
   44% {
-    filter: hue-rotate(144deg) blur(42px);
+    /* AZUL → AZUL REAL → ROXO */
+    filter: hue-rotate(144deg) blur(16px);
   }
   66% {
-    filter: hue-rotate(234deg) blur(42px);
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(234deg) blur(16px);
   }
   85% {
-    filter: hue-rotate(312deg) blur(42px);
+    /* VERMELHO → VERMELHO CARMESIM */
+    filter: hue-rotate(312deg) blur(16px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(42px);
+    filter: hue-rotate(360deg) blur(16px);
   }
 }
 
 /* =========================================================================
-   KEYFRAMES AUTÔNOMOS EM 4 ESTÁGIOS (0% -> 33% -> 66% -> 100%)
-   Trajetória fluida translate3d + respiração escalar (0.92 a 1.12) + rotate sutil
+   KEYFRAMES MACRO DE TRAJETÓRIAS — VIAJAM POR TODA A TELA (COORDENADAS SEGURAS)
+   Zero perda de tiles, zero tela preta, zero resets bruscos.
    ========================================================================= */
 
+/* ALFA (32s): noroeste -> centro (FUSÃO COM BETA) -> nordeste -> borda superior */
 @keyframes organic-voyage-alpha {
   0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.86;
-  }
-  33% {
-    transform: translate3d(14vw, 9vh, 0) scale(1.10);
-    opacity: 0.92;
-  }
-  66% {
-    transform: translate3d(-10vw, 5vh, 0) scale(0.94);
+    transform: translate3d(0, 0, 0);
     opacity: 0.82;
   }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.86;
+  16% {
+    transform: translate3d(7vw, 5vh, 0);
+    opacity: 0.85;
   }
-}
-
-/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Alfa (34s) */
-@keyframes organic-morph-alpha {
-  0% {
-    transform: translate3d(0, 0, 0) scale(0.96) rotate(0deg);
-  }
-  33% {
-    transform: translate3d(4vw, 3vh, 0) scale(1.12) rotate(4deg);
-  }
-  66% {
-    transform: translate3d(-4vw, -2vh, 0) scale(0.92) rotate(-3deg);
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(0.96) rotate(0deg);
-  }
-}
-
-@keyframes organic-voyage-beta {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.82;
-  }
-  33% {
-    transform: translate3d(-12vw, -8vh, 0) scale(1.08);
-    opacity: 0.90;
-  }
-  66% {
-    transform: translate3d(10vw, 6vh, 0) scale(0.93);
-    opacity: 0.78;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.82;
-  }
-}
-
-/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Beta (23s) */
-@keyframes organic-morph-beta {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1.00) rotate(0deg);
-  }
-  33% {
-    transform: translate3d(-3.5vw, 3vh, 0) scale(1.11) rotate(-5deg);
-  }
-  66% {
-    transform: translate3d(3.5vw, -2.5vh, 0) scale(0.92) rotate(4deg);
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1.00) rotate(0deg);
-  }
-}
-
-@keyframes organic-voyage-gama {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.80;
-  }
-  33% {
-    transform: translate3d(14vw, -6vh, 0) scale(1.09);
+  26% {
+    /* Aproximação de Beta no centro */
+    transform: translate3d(14vw, 13vh, 0);
     opacity: 0.88;
   }
-  66% {
-    transform: translate3d(-10vw, 7vh, 0) scale(0.94);
+  36% {
+    /* Contato e Fusão com Beta no Centro da tela */
+    transform: translate3d(19vw, 20vh, 0);
+    opacity: 0.94;
+  }
+  48% {
+    /* Supermassa unificada */
+    transform: translate3d(20vw, 21vh, 0);
+    opacity: 0.94;
+  }
+  58% {
+    /* Início da separação para o nordeste */
+    transform: translate3d(25vw, 10vh, 0);
+    opacity: 0.86;
+  }
+  72% {
+    /* Viagem livre pela orla superior/nordeste */
+    transform: translate3d(22vw, -4vh, 0);
+    opacity: 0.78;
+  }
+  86% {
+    /* Curva descendente de retorno */
+    transform: translate3d(9vw, -2vh, 0);
+    opacity: 0.80;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
+  }
+}
+
+/* DEFORMAÇÃO E MORFOLOGIA DE FUSÃO DE ALFA (32s) */
+@keyframes organic-morph-alpha {
+  0% {
+    transform: scale(1, 1);
+  }
+  16% {
+    transform: scale(1.05, 0.96);
+  }
+  26% {
+    /* Tensão fluida de aproximação: estica na direção de Beta */
+    transform: scale(1.24, 0.82);
+  }
+  36%, 46% {
+    /* Expansão compartilhada na supermassa */
+    transform: scale(1.36, 1.28);
+  }
+  54% {
+    /* Estiramento elástico na separação */
+    transform: scale(0.84, 1.28);
+  }
+  68% {
+    /* Recoil pós-separação */
+    transform: scale(1.12, 0.92);
+  }
+  84% {
+    transform: scale(0.96, 1.05);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* BETA (32s): sudeste -> centro (FUSÃO COM ALFA) -> sudoeste -> encontro com Gama */
+@keyframes organic-voyage-beta {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.78;
+  }
+  16% {
+    transform: translate3d(-5vw, -6vh, 0);
+    opacity: 0.82;
+  }
+  26% {
+    /* Aproximação de Alfa */
+    transform: translate3d(-12vw, -13vh, 0);
+    opacity: 0.86;
+  }
+  36% {
+    /* Contato no centro */
+    transform: translate3d(-17vw, -18vh, 0);
+    opacity: 0.94;
+  }
+  48% {
+    /* Supermassa unificada */
+    transform: translate3d(-18vw, -19vh, 0);
+    opacity: 0.94;
+  }
+  58% {
+    /* Separação para a direção oposta (sudoeste) */
+    transform: translate3d(-24vw, -8vh, 0);
+    opacity: 0.86;
+  }
+  72% {
+    /* Encontro tangencial com a Entidade Gama no sul */
+    transform: translate3d(-20vw, 4vh, 0);
+    opacity: 0.88;
+  }
+  86% {
+    /* Retorno suave em arco pelo sul */
+    transform: translate3d(-8vw, 2vh, 0);
+    opacity: 0.80;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.78;
+  }
+}
+
+/* DEFORMAÇÃO E MORFOLOGIA DE FUSÃO DE BETA (32s) */
+@keyframes organic-morph-beta {
+  0% {
+    transform: scale(1, 1);
+  }
+  16% {
+    transform: scale(0.96, 1.05);
+  }
+  26% {
+    /* Tensão fluida vertical de atração */
+    transform: scale(0.82, 1.24);
+  }
+  36%, 46% {
+    /* Expansão compartilhada na supermassa */
+    transform: scale(1.34, 1.30);
+  }
+  54% {
+    /* Estiramento no eixo de fuga */
+    transform: scale(1.26, 0.84);
+  }
+  72% {
+    /* Deformação ao cruzar com Gama */
+    transform: scale(1.15, 0.88);
+  }
+  86% {
+    transform: scale(0.96, 1.05);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* GAMA (36s): travessia sul oeste -> leste -> tangência com Beta -> centro */
+@keyframes organic-voyage-gama {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.76;
+  }
+  20% {
+    transform: translate3d(12vw, -2vh, 0);
+    opacity: 0.80;
+  }
+  38% {
+    /* Interação com Beta no sul */
+    transform: translate3d(24vw, 3vh, 0);
+    opacity: 0.88;
+  }
+  56% {
+    /* Subida diagonal pelo centro-leste */
+    transform: translate3d(18vw, -16vh, 0);
+    opacity: 0.80;
+  }
+  76% {
+    /* Travessia pelo centro-norte */
+    transform: translate3d(6vw, -12vh, 0);
+    opacity: 0.74;
+  }
+  88% {
+    transform: translate3d(-2vw, -4vh, 0);
     opacity: 0.76;
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.80;
+    transform: translate3d(0, 0, 0);
+    opacity: 0.76;
   }
 }
 
-/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Gama (29s) */
 @keyframes organic-morph-gama {
   0% {
-    transform: translate3d(0, 0, 0) scale(0.95) rotate(0deg);
+    transform: scale(1, 1);
   }
-  33% {
-    transform: translate3d(3.5vw, -3vh, 0) scale(1.10) rotate(5deg);
+  20% {
+    transform: scale(1.08, 0.94);
   }
-  66% {
-    transform: translate3d(-3vw, 2.5vh, 0) scale(0.92) rotate(-4deg);
+  38% {
+    /* Deformação de confluência ao tocar a passagem de Beta */
+    transform: scale(1.24, 0.82);
+  }
+  56% {
+    transform: scale(0.92, 1.10);
+  }
+  76% {
+    transform: scale(1.08, 0.94);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(0.95) rotate(0deg);
+    transform: scale(1, 1);
   }
 }
 
+/* DELTA (44s): O Oceano Abissal — ampla, serena e atmosférica */
 @keyframes organic-voyage-delta {
   0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.84;
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
   }
-  33% {
-    transform: translate3d(8vw, 3vh, 0) scale(1.08);
-    opacity: 0.90;
+  24% {
+    transform: translate3d(5vw, 4vh, 0);
+    opacity: 0.85;
   }
-  66% {
-    transform: translate3d(-7vw, -3vh, 0) scale(0.94);
-    opacity: 0.80;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.84;
-  }
-}
-
-/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Delta (41s) */
-@keyframes organic-morph-delta {
-  0% {
-    transform: translate3d(0, 0, 0) scale(0.98) rotate(0deg);
-  }
-  33% {
-    transform: translate3d(4vw, 2vh, 0) scale(1.12) rotate(3deg);
-  }
-  66% {
-    transform: translate3d(-4vw, -2vh, 0) scale(0.93) rotate(-3deg);
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(0.98) rotate(0deg);
-  }
-}
-
-@keyframes organic-voyage-epsilon {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.80;
-  }
-  33% {
-    transform: translate3d(-14vw, 8vh, 0) scale(1.10);
+  50% {
+    transform: translate3d(8vw, 6vh, 0);
     opacity: 0.88;
   }
-  66% {
-    transform: translate3d(12vw, -5vh, 0) scale(0.92);
-    opacity: 0.78;
+  74% {
+    transform: translate3d(3vw, 9vh, 0);
+    opacity: 0.82;
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.80;
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
   }
 }
 
-/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Épsilon (18s) */
-@keyframes organic-morph-epsilon {
+@keyframes organic-morph-delta {
   0% {
-    transform: translate3d(0, 0, 0) scale(0.94) rotate(0deg);
+    transform: scale(1, 1);
   }
-  33% {
-    transform: translate3d(-3vw, 2.5vh, 0) scale(1.12) rotate(-6deg);
+  28% {
+    transform: scale(1.05, 0.96);
   }
-  66% {
-    transform: translate3d(3vw, -2vh, 0) scale(0.92) rotate(5deg);
+  54% {
+    transform: scale(0.96, 1.05);
+  }
+  78% {
+    transform: scale(1.04, 0.97);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(0.94) rotate(0deg);
+    transform: scale(1, 1);
+  }
+}
+
+/* ÉPSILON (22s): Centelha Celeste ágil em voo livre */
+@keyframes organic-voyage-epsilon {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.78;
+  }
+  22% {
+    /* Mergulha na orla de Alfa */
+    transform: translate3d(-14vw, 10vh, 0);
+    opacity: 0.86;
+  }
+  44% {
+    /* Corta o centro da tela */
+    transform: translate3d(-24vw, 26vh, 0);
+    opacity: 0.80;
+  }
+  68% {
+    /* Sobe para o oeste */
+    transform: translate3d(-34vw, 12vh, 0);
+    opacity: 0.84;
+  }
+  86% {
+    transform: translate3d(-15vw, -4vh, 0);
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.78;
+  }
+}
+
+@keyframes organic-morph-epsilon {
+  0% {
+    transform: scale(1, 1);
+  }
+  25% {
+    transform: scale(1.15, 0.86);
+  }
+  50% {
+    transform: scale(0.88, 1.18);
+  }
+  75% {
+    transform: scale(1.10, 0.92);
+  }
+  100% {
+    transform: scale(1, 1);
   }
 }
 
@@ -2387,7 +2320,23 @@
 /* =========================================================================
    CONTROLE DE ACESSIBILIDADE E ECONOMIA DE RECURSOS
    ========================================================================= */
-/* Movimento sempre vivo para Fluid e Fluid Aurora (sem congelamento por prefers-reduced-motion) */
+@media (prefers-reduced-motion: reduce) {
+  .organic-mass,
+  .deep-space-field,
+  .mass-body,
+  .field-body,
+  .mass-inner,
+  .field-inner,
+  .mass-core,
+  .field-core-primary,
+  .field-core-secondary,
+  .ai-processing-crest,
+  .ai-processing-waves {
+    animation: none !important;
+    will-change: auto;
+  }
+}
+
 .aurora-root[data-animated="off"] .organic-mass,
 .aurora-root[data-animated="off"] .deep-space-field,
 .aurora-root[data-animated="off"] .mass-body,
@@ -2398,26 +2347,17 @@
 .aurora-root[data-animated="off"] .field-core-primary,
 .aurora-root[data-animated="off"] .field-core-secondary,
 .aurora-root[data-animated="off"] .ai-processing-crest,
-.aurora-root[data-animated="off"] .ai-processing-waves,
-.aurora-root[data-animated="off"] .aurora-autonomous-orb,
-.aurora-root[data-animated="off"] .aurora-autonomous-orb-secondary {
-  animation-play-state: paused !important;
+.aurora-root[data-animated="off"] .ai-processing-waves {
+  animation: none !important;
+  will-change: auto;
 }
 
-/* Rota sem Aurora (editor CHAMFER): oculto e desativado no compositor GPU. */
+/* Rota sem Aurora (editor CHAMFER): oculto sem destruir o contexto WebGL. */
 .aurora-root[data-active="off"] {
   visibility: hidden;
-  display: none !important;
-  content-visibility: hidden;
-}
-.aurora-root[data-active="off"] .liquid-silk-field,
-.aurora-root[data-active="off"] .fluid-aurora-veil,
-.aurora-root[data-active="off"] .aurora-autonomous-orb,
-.aurora-root[data-active="off"] .aurora-autonomous-orb-secondary {
-  animation-play-state: paused !important;
 }
 
-/* AURORA 3.0 — 7 MASSAS LUMINOSAS AUTÔNOMAS ("FLUID" & "FLUID AURORA") */
+/* AURORA 2.0 — FLUIDO usa o shader; SUAVE usa o motor CSS Fluid Aurora (Deep Space Light Field). */
 .aurora-root[data-style="fluido"] .aurora-css {
   display: none;
 }
@@ -2430,472 +2370,6 @@
 }
 .aurora-root .aurora-gl {
   transition: opacity 320ms ease;
-}
-
-/* =========================================================================
-   ECOSSISTEMA DO FUNDO (LUZ VIVA) — COSMOS RADIAL & ORBES VIVOS
-   - Base de Espaço Profundo: #060911 (#020408 no AMOLED / #F3F6FC no tema claro)
-   - Diâmetro Base: width: 44vmin; height: 44vmin; border-radius: 50%; pointer-events: none;
-   - COSMOS RADIAL (data-style="suave"):
-     * High-Energy Radial Core (6 Paradas): 0% (0.96) -> 18% (0.82) -> 36% (0.56) -> 58% (0.28) -> 78% (0.09) -> 100% (transparent)
-     * Desfoque Calibrado: filter: blur(34px)
-     * Secundária (dominance ≈ 0): scale = 0.78, opacity = 0.38
-     * Prioritária Máxima (dominance ➔ 1.0): scale = 2.25, opacity = 0.78 (~40% da tela)
-   - ORBES VIVOS (data-style="fluido"):
-     * filter: blur(42px), scale 0.72 -> 2.25, opacity 0.22 -> 0.56
-   - Zero @keyframes CSS: Controle 100% via requestAnimationFrame + acumuladores de fase (dt)
-   ========================================================================= */
-
-.aurora-root {
-  background-color: #060911;
-}
-
-:root:not(.dark) .aurora-root {
-  background-color: #F3F6FC;
-}
-
-.amoled .aurora-root {
-  background-color: #020408;
-}
-
-.aurora-autonomous-orb-stage {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  isolation: isolate;
-  transform: translate3d(0, 0, 0);
-}
-
-.aurora-autonomous-orb {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 44vmin;
-  height: 44vmin;
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(34px);
-  mix-blend-mode: screen;
-  animation: none !important;
-  transition: none !important;
-  will-change: transform, opacity;
-  transform: translate3d(calc(50vw - 50%), calc(50vh - 50%), 0) scale(0.78);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-
-.aurora-root[data-style="fluido"] .aurora-autonomous-orb {
-  filter: blur(42px);
-}
-
-:root:not(.dark) .aurora-autonomous-orb {
-  mix-blend-mode: normal;
-  filter: blur(34px);
-}
-
-:root:not(.dark) .aurora-root[data-style="fluido"] .aurora-autonomous-orb {
-  filter: blur(42px);
-}
-
-/* 1. Massa 1 — Vermelho Carmesim (#E11D48) | baseSpeedX = 0.058, baseSpeedY = 0.049 */
-.aurora-orb-1-crimson {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(225, 29, 72, 0.96) 0%,
-    rgba(225, 29, 72, 0.82) 18%,
-    rgba(225, 29, 72, 0.56) 36%,
-    rgba(225, 29, 72, 0.28) 58%,
-    rgba(225, 29, 72, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* 2. Massa 2 — Rosa Magenta (#EC4899) | baseSpeedX = 0.074, baseSpeedY = 0.063 */
-.aurora-orb-2-magenta {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(236, 72, 153, 0.96) 0%,
-    rgba(236, 72, 153, 0.82) 18%,
-    rgba(236, 72, 153, 0.56) 36%,
-    rgba(236, 72, 153, 0.28) 58%,
-    rgba(236, 72, 153, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* 3. Massa 3 — Azul Técnico (#3B82F6) | baseSpeedX = 0.048, baseSpeedY = 0.056 */
-.aurora-orb-3-cobalt {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(59, 130, 246, 0.96) 0%,
-    rgba(59, 130, 246, 0.82) 18%,
-    rgba(59, 130, 246, 0.56) 36%,
-    rgba(59, 130, 246, 0.28) 58%,
-    rgba(59, 130, 246, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* 4. Massa 4 — Verde Esmeralda (#10B981) | baseSpeedX = 0.082, baseSpeedY = 0.068 */
-.aurora-orb-4-emerald {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(16, 185, 129, 0.96) 0%,
-    rgba(16, 185, 129, 0.82) 18%,
-    rgba(16, 185, 129, 0.56) 36%,
-    rgba(16, 185, 129, 0.28) 58%,
-    rgba(16, 185, 129, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* 5. Massa 5 — Âmbar Ouro (#F59E0B) | baseSpeedX = 0.052, baseSpeedY = 0.044 */
-.aurora-orb-5-amber {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(245, 158, 11, 0.96) 0%,
-    rgba(245, 158, 11, 0.82) 18%,
-    rgba(245, 158, 11, 0.56) 36%,
-    rgba(245, 158, 11, 0.28) 58%,
-    rgba(245, 158, 11, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* 6. Massa 6 — Roxo Violeta (#A855F7) | baseSpeedX = 0.067, baseSpeedY = 0.076 */
-.aurora-orb-6-violet {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(168, 85, 247, 0.96) 0%,
-    rgba(168, 85, 247, 0.82) 18%,
-    rgba(168, 85, 247, 0.56) 36%,
-    rgba(168, 85, 247, 0.28) 58%,
-    rgba(168, 85, 247, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* 7. Massa 7 — Ciano Boreal (#06B6D4) | baseSpeedX = 0.043, baseSpeedY = 0.051 */
-.aurora-orb-7-cyan {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(6, 182, 212, 0.96) 0%,
-    rgba(6, 182, 212, 0.82) 18%,
-    rgba(6, 182, 212, 0.56) 36%,
-    rgba(6, 182, 212, 0.28) 58%,
-    rgba(6, 182, 212, 0.09) 78%,
-    transparent 100%
-  );
-}
-
-/* =========================================================================
-   ESTÁGIOS COMPLEMENTARES "FLUID" E "FLUID AURORA"
-   Calibrados com Base #060911, Blur 42px e Núcleo Concentrado de 5 Paradas
-   ========================================================================= */
-
-.silk-light-generator-bleed {
-  position: absolute;
-  inset: -20%;
-  pointer-events: none;
-  contain: layout style paint;
-  isolation: isolate;
-  transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-
-.liquid-silk-fluid-stage {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  isolation: isolate;
-  background: #060911;
-  transform: translate3d(0, 0, 0);
-}
-
-:root:not(.dark) .liquid-silk-fluid-stage {
-  background: #F3F6FC;
-}
-
-.amoled .liquid-silk-fluid-stage {
-  background: #020408;
-}
-
-.liquid-silk-field {
-  position: absolute;
-  width: min(72vw, 340px);
-  height: min(72vw, 340px);
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(42px);
-  mix-blend-mode: screen;
-  transform: translate3d(0, 0, 0);
-  will-change: transform, opacity;
-}
-
-:root:not(.dark) .liquid-silk-field {
-  filter: blur(42px);
-  mix-blend-mode: normal;
-}
-
-/* Campo 1 — Vermelho Carmesim (#E11D48) com 5 paradas concentradas */
-.liquid-silk-field-1 {
-  top: 8%;
-  left: 6%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(225, 29, 72, 0.78) 0%,
-    rgba(225, 29, 72, 0.58) 22%,
-    rgba(225, 29, 72, 0.30) 48%,
-    rgba(225, 29, 72, 0.10) 72%,
-    rgba(225, 29, 72, 0.00) 100%
-  );
-  animation: liquid-silk-drift-1 19s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
-}
-
-/* Campo 2 — Azul Técnico / Cobalto (#3B82F6) com 5 paradas concentradas */
-.liquid-silk-field-2 {
-  top: 28%;
-  right: 8%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(59, 130, 246, 0.78) 0%,
-    rgba(59, 130, 246, 0.58) 22%,
-    rgba(59, 130, 246, 0.30) 48%,
-    rgba(59, 130, 246, 0.10) 72%,
-    rgba(59, 130, 246, 0.00) 100%
-  );
-  animation: liquid-silk-drift-2 23s cubic-bezier(0.45, 0.05, 0.55, 0.95) -7s infinite alternate;
-}
-
-/* Campo 3 — Verde Esmeralda (#10B981) com 5 paradas concentradas */
-.liquid-silk-field-3 {
-  bottom: 12%;
-  left: 16%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(16, 185, 129, 0.78) 0%,
-    rgba(16, 185, 129, 0.58) 22%,
-    rgba(16, 185, 129, 0.30) 48%,
-    rgba(16, 185, 129, 0.10) 72%,
-    rgba(16, 185, 129, 0.00) 100%
-  );
-  animation: liquid-silk-drift-3 29s cubic-bezier(0.45, 0.05, 0.55, 0.95) -13s infinite alternate;
-}
-
-@keyframes liquid-silk-drift-1 {
-  0% {
-    transform: translate3d(-10%, 4%, 0) scale(0.65);
-    opacity: 0.35;
-  }
-  50% {
-    transform: translate3d(42%, 34%, 0) scale(1.75);
-    opacity: 0.65;
-  }
-  100% {
-    transform: translate3d(18%, 68%, 0) scale(0.72);
-    opacity: 0.35;
-  }
-}
-
-@keyframes liquid-silk-drift-2 {
-  0% {
-    transform: translate3d(8%, -6%, 0) scale(1.70);
-    opacity: 0.65;
-  }
-  50% {
-    transform: translate3d(-44%, 28%, 0) scale(0.62);
-    opacity: 0.35;
-  }
-  100% {
-    transform: translate3d(-16%, 54%, 0) scale(1.25);
-    opacity: 0.48;
-  }
-}
-
-@keyframes liquid-silk-drift-3 {
-  0% {
-    transform: translate3d(-8%, 6%, 0) scale(0.60);
-    opacity: 0.35;
-  }
-  50% {
-    transform: translate3d(38%, -36%, 0) scale(1.78);
-    opacity: 0.65;
-  }
-  100% {
-    transform: translate3d(-14%, -52%, 0) scale(0.70);
-    opacity: 0.35;
-  }
-}
-
-/* 3. ARQUITETURA VISUAL "FLUID AURORA" — MASSAS RADIAIS CONTIDAS + BLUR 42PX */
-.fluid-aurora-veils-bleed {
-  position: absolute;
-  inset: -20%;
-  pointer-events: none;
-  contain: layout style paint;
-  isolation: isolate;
-  transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-
-.fluid-aurora-veil {
-  position: absolute;
-  width: min(72vw, 340px);
-  height: min(72vw, 340px);
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(42px);
-  mix-blend-mode: screen;
-  transform: translate3d(0, 0, 0);
-  will-change: transform, opacity;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-
-:root:not(.dark) .fluid-aurora-veil {
-  filter: blur(42px);
-  mix-blend-mode: normal;
-}
-
-/* Véu 1 — Âmbar Caldeiraria / Ouro (#F59E0B) com 5 Paradas Concentradas */
-.fluid-aurora-veil-amber {
-  top: 8%;
-  left: 8%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(245, 158, 11, 0.78) 0%,
-    rgba(245, 158, 11, 0.58) 22%,
-    rgba(245, 158, 11, 0.30) 48%,
-    rgba(245, 158, 11, 0.10) 72%,
-    rgba(245, 158, 11, 0.00) 100%
-  );
-  animation: aurora-veil-flow-amber 23s cubic-bezier(0.45, 0.05, 0.55, 0.95) -5s infinite alternate;
-}
-
-/* Véu 2 — Vermelho Carmesim & Magenta (#E11D48 / #EC4899) com 5 Paradas Concentradas */
-.fluid-aurora-veil-coral {
-  top: 16%;
-  right: 10%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(225, 29, 72, 0.78) 0%,
-    rgba(236, 72, 153, 0.58) 22%,
-    rgba(225, 29, 72, 0.30) 48%,
-    rgba(236, 72, 153, 0.10) 72%,
-    rgba(225, 29, 72, 0.00) 100%
-  );
-  animation: aurora-veil-flow-coral 17s cubic-bezier(0.45, 0.05, 0.55, 0.95) -9s infinite alternate;
-}
-
-/* Véu 3 — Ciano Boreal & Verde Esmeralda (#06B6D4 / #10B981) com 5 Paradas Concentradas */
-.fluid-aurora-veil-cyan {
-  bottom: 18%;
-  right: 12%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(6, 182, 212, 0.78) 0%,
-    rgba(16, 185, 129, 0.58) 22%,
-    rgba(6, 182, 212, 0.30) 48%,
-    rgba(16, 185, 129, 0.10) 72%,
-    rgba(6, 182, 212, 0.00) 100%
-  );
-  animation: aurora-veil-flow-cyan 29s cubic-bezier(0.45, 0.05, 0.55, 0.95) -14s infinite alternate;
-}
-
-/* Véu 4 — Roxo / Violeta & Azul Cobalto (#A855F7 / #3B82F6) com 5 Paradas Concentradas */
-.fluid-aurora-veil-violet {
-  bottom: 10%;
-  left: 12%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(168, 85, 247, 0.78) 0%,
-    rgba(59, 130, 246, 0.58) 22%,
-    rgba(168, 85, 247, 0.30) 48%,
-    rgba(59, 130, 246, 0.10) 72%,
-    rgba(168, 85, 247, 0.00) 100%
-  );
-  animation: aurora-veil-flow-violet 31s cubic-bezier(0.45, 0.05, 0.55, 0.95) -19s infinite alternate;
-}
-
-@keyframes aurora-veil-flow-amber {
-  0% {
-    transform: translate3d(-8%, 0%, 0) scale(0.65);
-    opacity: 0.35;
-  }
-  50% {
-    transform: translate3d(36%, 28%, 0) scale(1.75);
-    opacity: 0.65;
-  }
-  100% {
-    transform: translate3d(14%, 56%, 0) scale(0.72);
-    opacity: 0.35;
-  }
-}
-
-@keyframes aurora-veil-flow-coral {
-  0% {
-    transform: translate3d(6%, -4%, 0) scale(1.72);
-    opacity: 0.65;
-  }
-  50% {
-    transform: translate3d(-38%, 32%, 0) scale(0.62);
-    opacity: 0.35;
-  }
-  100% {
-    transform: translate3d(-12%, 58%, 0) scale(1.20);
-    opacity: 0.48;
-  }
-}
-
-@keyframes aurora-veil-flow-cyan {
-  0% {
-    transform: translate3d(4%, 6%, 0) scale(0.60);
-    opacity: 0.35;
-  }
-  50% {
-    transform: translate3d(-36%, -32%, 0) scale(1.78);
-    opacity: 0.65;
-  }
-  100% {
-    transform: translate3d(-10%, -54%, 0) scale(0.68);
-    opacity: 0.35;
-  }
-}
-
-@keyframes aurora-veil-flow-violet {
-  0% {
-    transform: translate3d(-6%, 4%, 0) scale(1.68);
-    opacity: 0.65;
-  }
-  50% {
-    transform: translate3d(38%, -28%, 0) scale(0.64);
-    opacity: 0.35;
-  }
-  100% {
-    transform: translate3d(16%, -52%, 0) scale(1.15);
-    opacity: 0.48;
-  }
-}
-
-/* 4. SEM RUÍDO OU DITHERING ARTIFICIAL — LUZ PURA E GRADIENTES LISOS */
-.silk-micro-dither {
-  display: none !important;
-  background-image: none !important;
-}
-
-.aurora-canvas {
-  image-rendering: auto;
-}
-
-.aurora-root[data-animated="off"] .liquid-silk-field,
-.aurora-root[data-animated="off"] .fluid-aurora-veil,
-[data-paused="true"] .liquid-silk-field,
-[data-paused="true"] .fluid-aurora-veil {
-  animation-play-state: paused !important;
 }
 
 /* ═══════════ DESIGN SYSTEM CALDRA — Parte 2 ═══════════
@@ -3068,192 +2542,144 @@
 }
 
 /* =========================================================================
-   SISTEMA DE TEMAS, HOME E NAVEGAÇÃO CALIBRADOS CALDRA (CLARO & ESCURO)
+   SISTEMA DE TEMAS E OPACIDADE DINÂMICA CALDRA
    ========================================================================= */
 
-:root {
-  --caldra-home-bg: #E9F0F8;
-  --caldra-home-surface-sec: #F1F5FB;
-  --caldra-home-card: #FFFFFF;
-  --caldra-home-card-elevated: #FAFBFD;
-  --caldra-home-border: #D7E1EC;
-  --caldra-home-text: #172334;
-  --caldra-home-text-muted: #637185;
-  --caldra-home-amber: var(--amber-primary);
-  --caldra-home-amber-soft: #FFF3D5;
-  --caldra-home-on-amber: #291B05;
-  --caldra-home-blue: var(--blue-primary);
-  --caldra-home-cyan: var(--blue-reflect);
-  --caldra-home-green: #059669;
-  --caldra-home-red: var(--crimson-primary);
-}
-
-.dark {
-  --caldra-home-bg: #080F12;
-  --caldra-home-surface-sec: #0D141B;
-  --caldra-home-card: #111820;
-  --caldra-home-card-elevated: #151D26;
-  --caldra-home-border: #293642;
-  --caldra-home-text: #F1F5F9;
-  --caldra-home-text-muted: #A1AFBF;
-  --caldra-home-amber: var(--amber-highlight);
-  --caldra-home-amber-soft: #30230D;
-  --caldra-home-on-amber: #211704;
-  --caldra-home-blue: var(--blue-light);
-  --caldra-home-cyan: var(--blue-reflect);
-  --caldra-home-green: #34D399;
-  --caldra-home-red: var(--crimson-mid);
-}
-
-.amoled {
-  --caldra-home-bg: #04080A;
-  --caldra-home-surface-sec: #090E13;
-  --caldra-home-card: #0D131A;
-  --caldra-home-card-elevated: #111820;
-  --caldra-home-border: #222E3A;
-}
-
-/* Superfície geral da Home */
-.caldra-home-screen {
-  background-color: var(--caldra-home-bg);
-  color: var(--caldra-home-text);
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-/* Cartões principais (#FFFFFF no Claro / #111820 no Escuro) — reativos a --card-opacity (Zero backdrop-filter para evitar GPU Layer Drop) */
+/* Cartões com transparência controlada por --card-opacity */
 .caldra-card {
-  background-color: rgba(255, 255, 255, var(--card-opacity, 0.90));
-  border: 1px solid #D7E1EC;
-  box-shadow: 0 2px 10px -2px rgba(23, 35, 52, 0.05), 0 1px 3px rgba(23, 35, 52, 0.03);
-  color: #172334;
+  background-color: color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+  box-shadow: 0 4px 18px -2px oklch(0 0 0 / 6%), 0 2px 6px -1px oklch(0 0 0 / 3%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--foreground);
 }
 
 .dark .caldra-card {
-  background-color: rgba(17, 24, 32, var(--card-opacity, 0.90));
-  border: 1px solid #293642;
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.48), 0 1px 2px rgba(0, 0, 0, 0.28);
-  color: #F1F5F9;
+  background-color: color-mix(in oklab, #16181D calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 8%);
+  box-shadow: 0 12px 32px -10px oklch(0 0 0 / 60%), 0 1px 3px oklch(0 0 0 / 25%);
+  color: var(--foreground);
 }
 
 .amoled .caldra-card {
-  background-color: rgba(13, 19, 26, var(--card-opacity, 0.90));
-  border: 1px solid #222E3A;
-  box-shadow: 0 4px 16px -6px rgba(0, 0, 0, 0.65);
+  background-color: color-mix(in oklab, #000000 calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 12%);
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 4%);
 }
 
-/* Card Principal Elevado — Abrir CHAMFER CAD */
+/* Área de apresentação Hero */
 .caldra-hero {
   background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, var(--card-opacity, 0.90)) 0%,
-    rgba(250, 251, 253, var(--card-opacity, 0.90)) 65%,
-    rgba(241, 245, 251, var(--card-opacity, 0.90)) 100%
+    135deg,
+    color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #F1F5F9 calc(var(--card-opacity, 0.90) * 100%), transparent)
   );
-  border: 1px solid #D7E1EC;
-  box-shadow: 0 6px 20px -6px rgba(23, 35, 52, 0.07), 0 1px 3px rgba(23, 35, 52, 0.04);
-  color: #172334;
+  border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+  box-shadow: 0 10px 30px -4px oklch(0 0 0 / 7%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .dark .caldra-hero {
   background: linear-gradient(
-    145deg,
-    rgba(21, 29, 38, var(--card-opacity, 0.90)) 0%,
-    rgba(17, 24, 32, var(--card-opacity, 0.90)) 65%,
-    rgba(13, 20, 27, var(--card-opacity, 0.90)) 100%
+    135deg,
+    color-mix(in oklab, #181A20 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #141519 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #0E0F12 calc(var(--card-opacity, 0.90) * 100%), transparent)
   );
-  border: 1px solid #293642;
-  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
-  color: #F1F5F9;
+  border: 1px solid oklch(1 0 0 / 8%);
+  box-shadow: 0 16px 40px -10px oklch(0 0 0 / 70%);
 }
 
 .amoled .caldra-hero {
-  background: linear-gradient(
-    145deg,
-    rgba(17, 24, 32, var(--card-opacity, 0.90)) 0%,
-    rgba(13, 19, 26, var(--card-opacity, 0.90)) 100%
-  );
-  border: 1px solid #222E3A;
+  background: color-mix(in oklab, #060709 calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 12%);
 }
 
-/* Faixa de Especialização — Superfície elevada equilibrada */
+/* Faixa Especialização */
 .caldra-specialization {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, var(--card-opacity, 0.90)) 0%,
-    rgba(250, 251, 253, var(--card-opacity, 0.90)) 60%,
-    rgba(255, 249, 235, var(--card-opacity, 0.90)) 100%
+    color-mix(in oklab, #FFFBEB calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #FEF3C7 calc(var(--card-opacity, 0.90) * 100%), transparent)
   );
-  border: 1px solid #D7E1EC;
-  box-shadow: 0 3px 12px -3px rgba(23, 35, 52, 0.05);
+  border: 1px solid color-mix(in oklab, #F59E0B 40%, transparent);
+  box-shadow: 0 6px 20px -2px oklch(0.7 0.15 70 / 12%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .dark .caldra-specialization {
   background: linear-gradient(
     90deg,
-    rgba(17, 24, 32, var(--card-opacity, 0.90)) 0%,
-    rgba(21, 29, 38, var(--card-opacity, 0.90)) 65%,
-    rgba(31, 27, 18, var(--card-opacity, 0.90)) 100%
+    color-mix(in oklab, #181A20 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #1C1E26 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #25201A calc(var(--card-opacity, 0.90) * 100%), transparent)
   );
-  border: 1px solid #293642;
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  border: 1px solid oklch(0.77 0.163 70 / 25%);
+  box-shadow: 0 12px 30px -8px oklch(0 0 0 / 50%);
 }
 
 .amoled .caldra-specialization {
   background: linear-gradient(
     90deg,
-    rgba(13, 19, 26, var(--card-opacity, 0.90)) 0%,
-    rgba(23, 19, 11, var(--card-opacity, 0.90)) 100%
+    color-mix(in oklab, #000000 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #17120A calc(var(--card-opacity, 0.90) * 100%), transparent)
   );
-  border: 1px solid #222E3A;
+  border: 1px solid oklch(0.77 0.163 70 / 35%);
 }
 
-/* Barra inferior de navegação — Modo Minimalista Apenas Ícones + Sincronização em Tempo Real */
+/* Barra inferior de navegação em Pílula Flutuante com Cápsula Deslizante Tonal (Vinculada à Cor de Destaque do CALDRA) */
 .caldra-floating-nav {
   position: fixed;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 40;
+  z-index: 50;
   width: calc(100% - 32px);
-  max-width: 340px;
-  height: 56px;
-  padding: 0 12px;
+  max-width: 380px;
+  height: 62px;
   border-radius: 9999px;
-  background-color: rgba(255, 255, 255, var(--card-opacity, 0.92));
-  border: 1px solid rgba(215, 225, 236, 0.85);
+  background-color: rgba(255, 255, 255, var(--ui-opacity, 0.90));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow:
-    0 10px 26px -4px rgba(23, 35, 52, 0.11),
-    0 2px 6px rgba(23, 35, 52, 0.05);
+    0 12px 32px rgba(15, 23, 42, 0.14),
+    0 2px 6px rgba(15, 23, 42, 0.06);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
   pointer-events: auto;
   transition:
-    background-color 80ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease;
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .dark .caldra-floating-nav {
-  background-color: rgba(14, 20, 28, var(--card-opacity, 0.92));
-  border: 1px solid rgba(43, 55, 69, 0.9);
+  background-color: rgba(20, 24, 33, var(--ui-opacity, 0.90));
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    0 12px 30px -4px rgba(0, 0, 0, 0.55),
-    0 2px 8px rgba(0, 0, 0, 0.35);
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .amoled .caldra-floating-nav {
-  background-color: rgba(5, 8, 12, var(--card-opacity, 0.92));
-  border: 1px solid rgba(43, 55, 69, 0.9);
+  background-color: rgba(0, 0, 0, var(--ui-opacity, 0.90));
+  border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
-    0 12px 30px -4px rgba(0, 0, 0, 0.72),
-    0 2px 8px rgba(0, 0, 0, 0.45);
+    0 12px 32px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* Barras de ferramentas CAD reativas à opacidade */
 .caldra-cad-toolbar {
   background-color: rgba(255, 255, 255, var(--ui-opacity, 0.94));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .dark .caldra-cad-toolbar {
   background-color: rgba(15, 23, 42, var(--ui-opacity, 0.92));
@@ -3262,37 +2688,42 @@
   background-color: rgba(0, 0, 0, var(--ui-opacity, 0.92));
 }
 
-/* Cápsula do Item Ativo da Barra Inferior — Translúcida Calibrada (0.10 a 0.38) */
+/* Cápsula Deslizante Tonal (Sliding Pill) — Modo Claro */
 .caldra-nav-sliding-pill {
-  width: 48px;
-  height: 40px;
+  width: calc(100% - 12px);
+  max-width: 56px;
+  min-width: 44px;
+  height: 44px;
   border-radius: 9999px;
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  box-shadow: none;
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), 0.12);
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   pointer-events: none;
   flex-shrink: 0;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
   transition:
-    background-color 80ms ease,
-    border-color 80ms ease;
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
+/* Cápsula Deslizante Tonal (Sliding Pill) — Modo Escuro & AMOLED */
 .dark .caldra-nav-sliding-pill,
 .amoled .caldra-nav-sliding-pill {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  box-shadow: none;
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), 0.18);
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), 0.30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-/* Botões e ícones das 5 seções da barra flutuante (Modo Apenas Ícones) */
+/* Botões e ícones da barra flutuante com resposta a 500Hz / 2ms */
 .caldra-nav-item-btn {
   position: relative;
   z-index: 10;
   display: flex;
   flex: 1 1 20%;
   width: 20%;
-  min-width: 52px;
-  height: 44px;
+  height: 100%;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -3304,66 +2735,40 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
   color: #64748B;
-  opacity: 1;
+  opacity: 0.72;
   transition:
     transform 60ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 0.12s ease;
+    color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .caldra-nav-item-btn:active {
-  transform: scale(0.94);
+  transform: scale(0.92) translate3d(0, 0, 0);
 }
 
 .dark .caldra-nav-item-btn,
 .amoled .caldra-nav-item-btn {
   color: #94A3B8;
+  opacity: 0.72;
 }
 
-.caldra-nav-item-icon {
-  position: relative;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  color: #64748B;
-  flex-shrink: 0;
+.caldra-nav-item-btn:hover:not([data-active="true"]) {
+  opacity: 0.94;
+}
+
+.caldra-nav-item-btn[data-active="true"] {
+  color: var(--accent-color, var(--accent));
   opacity: 1;
-  transition:
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.12s ease;
 }
 
-.dark .caldra-nav-item-icon,
-.amoled .caldra-nav-item-icon {
-  color: #94A3B8;
-}
-
-.caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-icon {
-  color: #172334;
-}
-
-.dark .caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-icon,
-.amoled .caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-icon {
-  color: #F1F5F9;
-}
-
-/* Estado Ativo da Navegação — 100% da Cor de Destaque ativa do usuário */
-.caldra-nav-item-btn[data-active="true"],
-.dark .caldra-nav-item-btn[data-active="true"],
-.amoled .caldra-nav-item-btn[data-active="true"] {
-  color: var(--accent-color, var(--accent));
-}
-
-.caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon,
-.dark .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon,
-.amoled .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon {
-  color: var(--accent-color, var(--accent));
-  transform: scale(1.06);
-}
-
-/* Keep-Alive Tab Layering sem transform global (preserva rasterização em tiles da viewport) */
+/* Keep-Alive Tab Layering com interpolação acelerada por GPU */
 .caldra-tab-layer {
   width: 100%;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
@@ -3372,274 +2777,128 @@
   display: block;
   opacity: 1;
   pointer-events: auto;
+  transform: scale(1) translate3d(0, 0, 0);
+  transition: transform 100ms cubic-bezier(0.16, 1, 0.3, 1), opacity 100ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .caldra-tab-layer[data-active="false"] {
   display: none !important;
   opacity: 0;
   pointer-events: none;
+  transform: scale(0.98) translate3d(0, 0, 0);
 }
 
-/* Impede que qualquer backdrop-blur dentro das abas principais crie Backdrop Root e apague elementos no mobile */
-#caldra-main-tabs-keepalive [class*="backdrop-blur"] {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+.caldra-nav-item-icon {
+  width: 22px;
+  height: 22px;
+  transform: scale(1);
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.25s ease;
+  will-change: transform;
 }
 
-/* Bolhas de ícones e anéis funcionais controlados — reativos a --bubble-tint-alpha (0.10 a 0.38) */
+.caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon {
+  transform: scale(1.06);
+}
+
+/* Bolhas de ícones e acentos controladas por --bubble-opacity */
 .caldra-bubble-base {
-  position: relative;
   border-radius: 9999px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.1s ease, border-color 0.1s ease, color 0.12s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.caldra-bubble-base > * {
-  position: relative;
-  z-index: 2;
-  opacity: 1;
-  flex-shrink: 0;
+/* Bolha Vermelha CALDRA */
+.caldra-bubble-red {
+  background-color: color-mix(in oklab, #FEE2E2 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #EF4444 38%, transparent);
+  color: #DC2626;
+}
+.dark .caldra-bubble-red {
+  background-color: color-mix(in oklab, #450A0A calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.64 0.19 25 / 32%);
+  color: #EF4444;
 }
 
-/* Bolha Âmbar Principal (Novo Projeto / Ação Principal) — Tríade Âmbar (#D16002 / #8A3300 / #F7941D) */
-.caldra-bubble-amber-primary {
-  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-border-alpha, 0.326));
-  color: var(--amber-primary, #D16002);
-}
-.dark .caldra-bubble-amber-primary {
-  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--amber-highlight-rgb, 247, 148, 29), var(--bubble-border-alpha, 0.326));
-  color: var(--amber-highlight, #F7941D);
-}
-
-/* Bolha Âmbar Secundária (Ferramentas) — Tríade Âmbar */
-.caldra-bubble-amber {
-  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-border-alpha, 0.326));
-  color: var(--amber-primary, #D16002);
-}
-.dark .caldra-bubble-amber {
-  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--amber-highlight-rgb, 247, 148, 29), var(--bubble-border-alpha, 0.326));
-  color: var(--amber-highlight, #F7941D);
-}
-
-/* Bolha Azul/Ciano Técnico (Projetos & Engenharia) — Tríade Azul (#003471 / #00A8FF / #2CA5D6) */
+/* Bolha Azul CAD */
 .caldra-bubble-sky {
-  background-color: rgba(var(--blue-rgb, 0, 52, 113), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--blue-primary, #003471);
+  background-color: color-mix(in oklab, #E0F2FE calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #0284C7 38%, transparent);
+  color: #0284C7;
 }
 .dark .caldra-bubble-sky {
-  background-color: rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--blue-light, #00A8FF);
+  background-color: color-mix(in oklab, #082F49 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.7 0.14 230 / 32%);
+  color: #38BDF8;
 }
 
-/* Bolha Verde de Confirmação (Orçamentos) */
+/* Bolha Âmbar Técnica */
+.caldra-bubble-amber {
+  background-color: color-mix(in oklab, #FEF3C7 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #D97706 40%, transparent);
+  color: #D97706;
+}
+.dark .caldra-bubble-amber {
+  background-color: color-mix(in oklab, #451A03 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.77 0.163 70 / 32%);
+  color: #FBBF24;
+}
+
+/* Bolha Verde Orçamentos */
 .caldra-bubble-emerald {
-  background-color: rgba(5, 150, 105, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(5, 150, 105, var(--bubble-border-alpha, 0.326));
+  background-color: color-mix(in oklab, #D1FAE5 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #059669 40%, transparent);
   color: #059669;
 }
 .dark .caldra-bubble-emerald {
-  background-color: rgba(52, 211, 153, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(52, 211, 153, var(--bubble-border-alpha, 0.326));
+  background-color: color-mix(in oklab, #022C22 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.7 0.15 150 / 32%);
   color: #34D399;
 }
 
-/* Bolha Vermelha de Alerta/Erro Crítico — Tríade Carmesim (#D61818 / #E51A4C / #C11034) */
-.caldra-bubble-red {
-  background-color: rgba(var(--crimson-rgb, 214, 24, 24), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--crimson-mid-rgb, 229, 26, 76), var(--bubble-border-alpha, 0.326));
-  color: var(--crimson-primary, #D61818);
-}
-.dark .caldra-bubble-red {
-  background-color: rgba(var(--crimson-mid-rgb, 229, 26, 76), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--crimson-mid-rgb, 229, 26, 76), var(--bubble-border-alpha, 0.326));
-  color: var(--crimson-mid, #E51A4C);
-}
-
-/* Bolha Ciano/Azul Complementar (Especialização / Técnico) — Estágio Final Azul (#2CA5D6) */
+/* Bolha Índigo / Roxa Especialização */
 .caldra-bubble-indigo {
-  background-color: rgba(var(--blue-reflect-rgb, 44, 165, 214), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--blue-primary, #003471);
+  background-color: color-mix(in oklab, #EEF2FF calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #6366F1 40%, transparent);
+  color: #4F46E5;
 }
 .dark .caldra-bubble-indigo {
-  background-color: rgba(var(--blue-reflect-rgb, 44, 165, 214), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--blue-reflect, #2CA5D6);
+  background-color: color-mix(in oklab, #1E1B4B calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.65 0.16 270 / 32%);
+  color: #A5B4FC;
 }
 
-/* Bolha de Ação no Topo (Botões de pesquisa, Fluid AURORA e perfil no cabeçalho) — reativa a --bubble-tint-alpha e --accent-color */
+/* Bolha Neutra (Botões de cabeçalho, atalhos, etc.) */
 .caldra-bubble-neutral {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), calc(var(--bubble-tint-alpha, 0.153) * 0.55));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  color: #172334;
+  background-color: color-mix(in oklab, var(--card) calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  color: var(--foreground);
 }
 .dark .caldra-bubble-neutral {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), calc(var(--bubble-tint-alpha, 0.153) * 0.65));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  color: #F1F5F9;
+  background-color: color-mix(in oklab, #1E2028 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 10%);
+  color: oklch(0.85 0.005 80);
 }
 .amoled .caldra-bubble-neutral {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), calc(var(--bubble-tint-alpha, 0.153) * 0.65));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  color: #F1F5F9;
+  background-color: color-mix(in oklab, #111114 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 14%);
 }
 
-/* Bolha Central / Destaque Ativo */
+/* Bolha Central do Logotipo CALDRA (Botão Home na barra inferior) */
 .caldra-bubble-center {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--accent-color, var(--accent));
+  background-color: color-mix(in oklab, #FFFFFF calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .dark .caldra-bubble-center {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--accent-color, var(--accent));
+  background-color: color-mix(in oklab, #16181D calc(var(--bubble-opacity, 0.35) * 100%), transparent);
 }
 .amoled .caldra-bubble-center {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
-  color: var(--accent-color, var(--accent));
+  background-color: color-mix(in oklab, #000000 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
 }
 
-/* =====================================================================
- * CHAMFER — SISTEMA PREMIUM DE TRANSIÇÃO DE TEMAS (SEAMLESS CHROMATIC MORPH)
- * Tokens semânticos por data-theme + View Transitions API (cinematic / standard)
- * ===================================================================== */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg-0: #0B0D11;
-  --bg-1: #0E1116;
-  --bg-2: #11141A;
-  --bg-3: #161A22;
-  --fg-1: #ECEFF4;
-  --fg-2: #9AA4B2;
-  --fg-3: #647080;
-  --line-1: #232A35;
-  --line-2: #2F3847;
-  --accent: #0066FF;
-  --accent-soft: rgba(0, 102, 255, 0.16);
-  --cad-canvas: #0E1116;
-  --cad-grid-major: rgba(148, 163, 184, 0.08);
-  --cad-grid-minor: rgba(148, 163, 184, 0.035);
-  --cad-axis-x: #D97706;
-  --cad-axis-y: #059669;
-  --cad-selection: #38BDF8;
-  --cad-snap: #F59E0B;
-  --cad-dim: #93C5FD;
-  --cad-hidden: #64748B;
-}
-
-:root[data-theme="amoled"] {
-  color-scheme: dark;
-  --bg-0: #000000;
-  --bg-1: #05070A;
-  --bg-2: #080A0E;
-  --bg-3: #0E1117;
-  --fg-1: #F1F5F9;
-  --fg-2: #94A3B8;
-  --fg-3: #64748B;
-  --line-1: #161C24;
-  --line-2: #222B38;
-  --accent: #0066FF;
-  --accent-soft: rgba(0, 102, 255, 0.20);
-  --cad-canvas: #000000;
-  --cad-grid-major: rgba(148, 163, 184, 0.075);
-  --cad-grid-minor: rgba(148, 163, 184, 0.03);
-  --cad-axis-x: #D97706;
-  --cad-axis-y: #059669;
-  --cad-selection: #38BDF8;
-  --cad-snap: #F59E0B;
-  --cad-dim: #93C5FD;
-  --cad-hidden: #64748B;
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg-0: #EAEEF3;
-  --bg-1: #F3F5F8;
-  --bg-2: #F8FAFC;
-  --bg-3: #FFFFFF;
-  --fg-1: #0F141A;
-  --fg-2: #4B5563;
-  --fg-3: #6B7280;
-  --line-1: #D5DCE4;
-  --line-2: #B8C2CC;
-  --accent: #0066FF;
-  --accent-soft: rgba(0, 102, 255, 0.12);
-  --cad-canvas: #F3F5F8;
-  --cad-grid-major: rgba(15, 23, 42, 0.09);
-  --cad-grid-minor: rgba(15, 23, 42, 0.04);
-  --cad-axis-x: #B45309;
-  --cad-axis-y: #047857;
-  --cad-selection: #0284C7;
-  --cad-snap: #D97706;
-  --cad-dim: #1D4ED8;
-  --cad-hidden: #64748B;
-}
-
-::view-transition {
-  pointer-events: none;
-}
-
-::view-transition-image-pair(root) {
-  isolation: isolate;
-}
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-  display: block;
-}
-
-::view-transition-old(root) {
-  z-index: 1;
-}
-
-::view-transition-new(root) {
-  z-index: 2;
-  will-change: clip-path, mask-size, mask-position, opacity;
-}
-
-/* Tier standard: corte circular nítido acelerado por compositor */
-html[data-vt-tier="standard"]::view-transition-new(root) {
-  clip-path: circle(0px at var(--vt-x, 50vw) var(--vt-y, 50vh));
-}
-
-/* Tier cinematic: máscara radial com penumbra suave */
-html[data-vt-tier="cinematic"]::view-transition-new(root) {
-  -webkit-mask-image: radial-gradient(
-    circle,
-    #000 0%,
-    #000 calc((1 - var(--vt-feather, 0.16)) * 70%),
-    transparent 71%
-  );
-  mask-image: radial-gradient(
-    circle,
-    #000 0%,
-    #000 calc((1 - var(--vt-feather, 0.16)) * 70%),
-    transparent 71%
-  );
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: 0px 0px;
-  mask-size: 0px 0px;
-  -webkit-mask-position: var(--vt-x, 50vw) var(--vt-y, 50vh);
-  mask-position: var(--vt-x, 50vw) var(--vt-y, 50vh);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-}

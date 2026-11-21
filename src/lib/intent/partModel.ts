@@ -134,21 +134,15 @@ function computePolylineMetrics(pts: Array<{ x: number; y: number }>, closed: bo
   area: number;
   perimeter: number;
 } {
-  const validPts = Array.isArray(pts)
-    ? pts.filter(
-        (p): p is { x: number; y: number } =>
-          Boolean(p && typeof p.x === "number" && typeof p.y === "number"),
-      )
-    : [];
-  if (validPts.length < 2) return { area: 0, perimeter: 0 };
+  if (pts.length < 2) return { area: 0, perimeter: 0 };
   let perimeter = 0;
   let signedArea2 = 0;
-  for (let i = 0; i < validPts.length; i++) {
-    const a = validPts[i]!;
-    const b = validPts[(i + 1) % validPts.length];
-    if (!b || (i === validPts.length - 1 && !closed)) break;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]!;
+    const b = pts[(i + 1) % pts.length];
+    if (!b || (i === pts.length - 1 && !closed)) break;
     perimeter += Math.hypot(b.x - a.x, b.y - a.y);
-    if (closed && validPts.length >= 3) {
+    if (closed && pts.length >= 3) {
       signedArea2 += a.x * b.y - b.x * a.y;
     }
   }
@@ -194,19 +188,18 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
   // 1. Se houver uma feature paramétrica ativa (ex: plate_1, flange_1, bracket_1),
   // verifica se suas entidades ainda existem no canvas e reconcilia suas dimensões reais
   if (activeFeature) {
-    const contourIds = Array.isArray(activeFeature.contourEntityIds)
-      ? activeFeature.contourEntityIds
-      : [];
-    const contourEntities = entities.filter((e) => contourIds.includes(e.id));
+    const contourEntities = entities.filter((e) =>
+      activeFeature.contourEntityIds.includes(e.id),
+    );
     if (contourEntities.length > 0) {
       const cBox = bbox(contourEntities);
       const liveW = cBox ? Number((cBox.maxX - cBox.minX).toFixed(2)) : activeFeature.width;
       const liveH = cBox ? Number((cBox.maxY - cBox.minY).toFixed(2)) : activeFeature.height;
-      const liveX = cBox ? Number(cBox.minX.toFixed(2)) : Number(activeFeature.origin?.x ?? 0);
-      const liveY = cBox ? Number(cBox.minY.toFixed(2)) : Number(activeFeature.origin?.y ?? 0);
+      const liveX = cBox ? Number(cBox.minX.toFixed(2)) : activeFeature.origin.x;
+      const liveY = cBox ? Number(cBox.minY.toFixed(2)) : activeFeature.origin.y;
 
       for (const ce of contourEntities) consumedEntityIds.add(ce.id);
-      for (const clId of activeFeature.centerlineEntityIds ?? []) consumedEntityIds.add(clId);
+      for (const clId of activeFeature.centerlineEntityIds) consumedEntityIds.add(clId);
 
       const plateFeatureId = activeFeature.partId || "plate_1";
 
@@ -233,20 +226,14 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
                 ]
               : modelBbox,
           },
-          rawEntityIds: [...contourIds],
+          rawEntityIds: [...activeFeature.contourEntityIds],
         });
       } else {
-        const radii = activeFeature.cornerRadii ?? {
-          top_left: 0,
-          top_right: 0,
-          bottom_right: 0,
-          bottom_left: 0,
-        };
         const maxR = Math.max(
-          radii.top_left ?? 0,
-          radii.top_right ?? 0,
-          radii.bottom_right ?? 0,
-          radii.bottom_left ?? 0,
+          activeFeature.cornerRadii.top_left,
+          activeFeature.cornerRadii.top_right,
+          activeFeature.cornerRadii.bottom_right,
+          activeFeature.cornerRadii.bottom_left,
         );
         const chSize = activeFeature.cornerChamfer ?? 0;
         summaries.push({
@@ -262,7 +249,7 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
               size: maxR > 0 ? maxR : chSize,
               which: activeFeature.cornerSelector,
             },
-            corner_radii: radii,
+            corner_radii: activeFeature.cornerRadii,
             corner_chamfer: chSize,
             corner_selector: activeFeature.cornerSelector,
           },
@@ -271,16 +258,15 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
             area_mm2: Number((liveW * liveH).toFixed(2)),
             perimeter_mm: Number((2 * (liveW + liveH)).toFixed(2)),
           },
-          rawEntityIds: [...contourIds],
+          rawEntityIds: [...activeFeature.contourEntityIds],
         });
       }
 
       // Grupos de furação vinculados à peça ativa (reconciliados com os círculos vivos no canvas)
-      (activeFeature.holeGroups ?? []).forEach((hg, idx) => {
-        const hgEntityIds = Array.isArray(hg?.entityIds) ? hg.entityIds : [];
+      activeFeature.holeGroups.forEach((hg, idx) => {
         const liveHoles = entities.filter(
           (e): e is Extract<Entity, { type: "circle" }> =>
-            e.type === "circle" && hgEntityIds.includes(e.id),
+            e.type === "circle" && hg.entityIds.includes(e.id),
         );
         if (liveHoles.length > 0) {
           for (const lh of liveHoles) consumedEntityIds.add(lh.id);
@@ -314,9 +300,8 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
       });
 
       // Grupos de rasgos oblongos vinculados à peça ativa
-      (activeFeature.slotGroups ?? []).forEach((sg, idx) => {
-        const sgEntityIds = Array.isArray(sg?.entityIds) ? sg.entityIds : [];
-        const liveSlots = entities.filter((e) => sgEntityIds.includes(e.id));
+      activeFeature.slotGroups.forEach((sg, idx) => {
+        const liveSlots = entities.filter((e) => sg.entityIds.includes(e.id));
         if (liveSlots.length > 0) {
           for (const ls of liveSlots) consumedEntityIds.add(ls.id);
           summaries.push({
@@ -325,10 +310,7 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
             layer: liveSlots[0]!.layer,
             parent: plateFeatureId,
             params: {
-              center: [
-                Number((sg.center?.x ?? 0).toFixed(2)),
-                Number((sg.center?.y ?? 0).toFixed(2)),
-              ],
+              center: [Number(sg.center.x.toFixed(2)), Number(sg.center.y.toFixed(2))],
               length: sg.length,
               width: sg.width,
               angle_deg: sg.angleDeg,
@@ -396,47 +378,20 @@ export function buildPartModelFromCanvas(options: BuildPartModelOptions): PartMo
     summaries.push(summarizeSingleEntity(ent));
   }
 
-  // 3. Resumo das cotas associativas (defensivo contra referências legadas/incompletas)
-  const formatRef = (r?: unknown): string => {
-    if (!r) return "origin";
-    if (typeof r === "string") return r;
-    if (Array.isArray(r) && r.length >= 2) {
-      const rx = Number(r[0]);
-      const ry = Number(r[1]);
-      if (Number.isFinite(rx) && Number.isFinite(ry)) {
-        return `(${rx.toFixed(1)},${ry.toFixed(1)})`;
-      }
-      return "origin";
-    }
-    if (typeof r === "object") {
-      const obj = r as Record<string, unknown>;
-      if (obj.kind === "entity" || typeof obj.id === "string") {
-        const idStr = String(obj.id ?? "entity");
-        return typeof obj.anchor === "string" && obj.anchor ? `${idStr}.${obj.anchor}` : idStr;
-      }
-      const pt =
-        obj.p && typeof obj.p === "object"
-          ? (obj.p as { x?: unknown; y?: unknown })
-          : (obj as { x?: unknown; y?: unknown });
-      const px = Number(pt?.x);
-      const py = Number(pt?.y);
-      if (Number.isFinite(px) && Number.isFinite(py)) {
-        return `(${px.toFixed(1)},${py.toFixed(1)})`;
-      }
-    }
-    return "origin";
-  };
-
-  const safeDimensions = Array.isArray(dimensions) ? dimensions.filter(Boolean) : [];
-  const dimSummaries: PartModelDimensionSummary[] = safeDimensions.map((d) => {
+  // 3. Resumo das cotas associativas
+  const dimSummaries: PartModelDimensionSummary[] = dimensions.map((d) => {
     const formatted = formatDimension(d, entities) ?? "0";
     const numericVal = parseFloat(formatted.replace(/[^\d.,-]/g, "").replace(",", ".")) || 0;
-    const refs = Array.isArray(d?.refs) ? d.refs : [];
-    const fromRef = refs[0];
-    const toRef = refs[1];
+    const fromRef = d.refs[0];
+    const toRef = d.refs[1];
+    const formatRef = (r?: Dimension["refs"][number]) => {
+      if (!r) return "origin";
+      if (r.kind === "entity") return r.anchor ? `${r.id}.${r.anchor}` : r.id;
+      return `(${r.p.x.toFixed(1)},${r.p.y.toFixed(1)})`;
+    };
     return {
-      id: d.id ?? "dim",
-      type: d.kind ?? "linear",
+      id: d.id,
+      type: d.kind,
       from: formatRef(fromRef),
       to: toRef ? formatRef(toRef) : undefined,
       value: Number(numericVal.toFixed(2)),

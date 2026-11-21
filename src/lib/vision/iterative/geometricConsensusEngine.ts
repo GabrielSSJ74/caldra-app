@@ -46,159 +46,25 @@ export class GeometricConsensusEngine {
     const circles = allPrimsWithWeight.filter((pw) => pw.prim.kind === "circle");
     const consensusCircles = this.fuseCircles(circles, geomTol);
 
-    // 2. Processa e consolida Arcos (excluindo arcos que já fazem parte de um círculo consensual)
+    // 2. Processa e consolida Arcos
     const arcs = allPrimsWithWeight.filter((pw) => pw.prim.kind === "arc");
-    const consensusArcs = this.fuseArcs(arcs, geomTol).filter(
-      (arc) => !this.isCoveredByCircles(arc, consensusCircles, Math.max(3.0, geomTol * 1.8)),
-    );
+    const consensusArcs = this.fuseArcs(arcs, geomTol);
 
-    // 3. Processa e consolida Linhas (excluindo cordas que já pertencem a círculos ou arcos consensuais)
+    // 3. Processa e consolida Linhas
     const lines = allPrimsWithWeight.filter((pw) => pw.prim.kind === "line");
-    const consensusLines = this.fuseLines(lines, geomTol, angTolRad).filter(
-      (ln) =>
-        !this.isCoveredByCircles(ln, consensusCircles, Math.max(3.0, geomTol * 1.8)) &&
-        !this.isCoveredByArcs(ln, consensusArcs, Math.max(3.0, geomTol * 1.8)),
-    );
+    const consensusLines = this.fuseLines(lines, geomTol, angTolRad);
 
-    // 4. Polilinhas (deduplica entre si e descarta polilinhas já representadas por círculos, arcos ou linhas)
-    const rawPolylines = allPrimsWithWeight
+    // 4. Polilinhas (mantém as melhores de candidatos com alto score)
+    const polylines = allPrimsWithWeight
       .filter((pw) => pw.prim.kind === "polyline")
       .sort((a, b) => b.weight - a.weight)
       .map((pw) => pw.prim);
-    const consensusPolylines = this.deduplicatePolylines(
-      rawPolylines,
-      consensusCircles,
-      consensusArcs,
-      consensusLines,
-      Math.max(3.0, geomTol * 1.8),
-    );
 
-    // Combina todas as entidades consensuais sem sobreposição entre tipos
-    const merged: Prim[] = [
-      ...consensusCircles,
-      ...consensusArcs,
-      ...consensusLines,
-      ...consensusPolylines,
-    ];
+    // Combina todas as entidades consensuais
+    const merged: Prim[] = [...consensusCircles, ...consensusArcs, ...consensusLines, ...polylines];
 
     // 5. Aplica TechnicalGeometryPrior (snap de extremidades e ortogonalização)
     return this.applyTechnicalPrior(merged, coincTol, angTolRad);
-  }
-
-  private static samplePrimPoints(p: Prim): { x: number; y: number }[] {
-    if (p.kind === "line") {
-      const pts: { x: number; y: number }[] = [];
-      for (let i = 0; i <= 8; i++) {
-        const t = i / 8;
-        pts.push({ x: p.x1 + (p.x2 - p.x1) * t, y: p.y1 + (p.y2 - p.y1) * t });
-      }
-      return pts;
-    }
-    if (p.kind === "arc") {
-      const pts: { x: number; y: number }[] = [];
-      let span = p.a1 - p.a0;
-      while (span < 0) span += Math.PI * 2;
-      for (let i = 0; i <= 12; i++) {
-        const a = p.a0 + (span * i) / 12;
-        pts.push({ x: p.cx + p.r * Math.cos(a), y: p.cy + p.r * Math.sin(a) });
-      }
-      return pts;
-    }
-    if (p.kind === "polyline") {
-      return p.pts;
-    }
-    return [];
-  }
-
-  private static isCoveredByCircles(prim: Prim, circles: Prim[], tol: number): boolean {
-    if (circles.length === 0) return false;
-    const pts = this.samplePrimPoints(prim);
-    if (pts.length === 0) return false;
-    let covered = 0;
-    for (const pt of pts) {
-      const nearAny = circles.some((c) => {
-        if (c.kind !== "circle") return false;
-        return Math.abs(Math.hypot(pt.x - c.cx, pt.y - c.cy) - c.r) <= tol;
-      });
-      if (nearAny) covered++;
-    }
-    return covered / pts.length >= 0.8;
-  }
-
-  private static isCoveredByArcs(prim: Prim, arcs: Prim[], tol: number): boolean {
-    if (arcs.length === 0) return false;
-    const pts = this.samplePrimPoints(prim);
-    if (pts.length === 0) return false;
-    let covered = 0;
-    for (const pt of pts) {
-      const nearAny = arcs.some((a) => {
-        if (a.kind !== "arc") return false;
-        const radErr = Math.abs(Math.hypot(pt.x - a.cx, pt.y - a.cy) - a.r);
-        return radErr <= tol;
-      });
-      if (nearAny) covered++;
-    }
-    return covered / pts.length >= 0.8;
-  }
-
-  private static pointToSegmentDist(
-    px: number,
-    py: number,
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-  ): number {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const lenSq = dx * dx + dy * dy;
-    const t = lenSq > 1e-9 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq)) : 0;
-    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-  }
-
-  private static deduplicatePolylines(
-    polylines: Prim[],
-    circles: Prim[],
-    arcs: Prim[],
-    lines: Prim[],
-    tol: number,
-  ): Prim[] {
-    const accepted: Prim[] = [];
-    for (const poly of polylines) {
-      if (poly.kind !== "polyline" || poly.pts.length < 2) continue;
-      if (this.isCoveredByCircles(poly, circles, tol)) continue;
-      if (this.isCoveredByArcs(poly, arcs, tol)) continue;
-
-      // Verifica se já está coberta por linhas ou por outra polilinha já aceita
-      let coveredCount = 0;
-      for (const pt of poly.pts) {
-        const nearLine = lines.some(
-          (l) => l.kind === "line" && this.pointToSegmentDist(pt.x, pt.y, l.x1, l.y1, l.x2, l.y2) <= tol,
-        );
-        const nearAcceptedPoly = accepted.some((ap) => {
-          if (ap.kind !== "polyline") return false;
-          for (let i = 0; i < ap.pts.length - 1; i++) {
-            if (
-              this.pointToSegmentDist(
-                pt.x,
-                pt.y,
-                ap.pts[i]!.x,
-                ap.pts[i]!.y,
-                ap.pts[i + 1]!.x,
-                ap.pts[i + 1]!.y,
-              ) <= tol
-            ) {
-              return true;
-            }
-          }
-          return false;
-        });
-        if (nearLine || nearAcceptedPoly) coveredCount++;
-      }
-      if (coveredCount / poly.pts.length >= 0.8) continue;
-      accepted.push(poly);
-    }
-    return accepted;
   }
 
   /**

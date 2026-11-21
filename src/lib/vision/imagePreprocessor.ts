@@ -198,7 +198,7 @@ export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   const cw = Math.max(1, Math.round(rw * crop.w));
   const ch = Math.max(1, Math.round(rh * crop.h));
 
-  const max = opt.maxSize ?? 900;
+  const max = opt.maxSize ?? 1400;
   const up = Math.max(1, Math.min(4, opt.upscale ?? 1));
   const scale = Math.min(up, (max * up) / Math.max(cw, ch));
   const W = Math.max(1, Math.round(cw * scale));
@@ -338,10 +338,7 @@ export function gaussianBlur(image: ImageData, radius: number): ImageData {
   pass(src, tmp, true);
   pass(tmp, src, false);
 
-  const out =
-    typeof ImageData !== "undefined"
-      ? new ImageData(w, h)
-      : ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) } as ImageData);
+  const out = new ImageData(w, h);
   for (let i = 0; i < out.data.length; i++) out.data[i] = Math.round(src[i]!);
   return out;
 }
@@ -500,10 +497,7 @@ export function resampleImageData(image: ImageData, factor: number): ImageData {
   const { width: w, height: h, data } = image;
   const nw = Math.max(1, Math.round(w * f));
   const nh = Math.max(1, Math.round(h * f));
-  const out =
-    typeof ImageData !== "undefined"
-      ? new ImageData(nw, nh)
-      : ({ width: nw, height: nh, data: new Uint8ClampedArray(nw * nh * 4) } as ImageData);
+  const out = new ImageData(nw, nh);
   for (let y = 0; y < nh; y++) {
     const sy = Math.min(h - 1, (y + 0.5) / f - 0.5);
     const y0 = Math.max(0, Math.floor(sy));

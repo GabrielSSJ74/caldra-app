@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 
 export type BoilermakingModelId =
   | "cone"

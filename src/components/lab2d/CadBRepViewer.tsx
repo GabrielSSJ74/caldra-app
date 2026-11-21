@@ -92,15 +92,10 @@ import { CaldraFlatPatternDialog } from "@/components/lab2d/CaldraFlatPatternDia
 import { CaldraDraftingDialog } from "@/components/lab2d/CaldraDraftingDialog";
 import { CaldraWeldmentDialog } from "@/components/lab2d/CaldraWeldmentDialog";
 import { useSettings } from "@/lib/settings/SettingsProvider";
-import { registerThemeBridge } from "@/lib/settings/themeTransitionEngine";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/lab2d/chamferNotify";
+import { toast } from "sonner";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
-import {
-  CHAMFER_SECTION_PLANE_EVENT,
-  type ChamferSectionPlaneEventDetail,
-} from "./ChamferParametricOrchestrator";
 
 export interface CadBRepViewerProps {
   className?: string;
@@ -469,15 +464,7 @@ export function CadBRepViewer({
     renderer.setTheme(isDarkTheme ? "dark" : "light");
     rendererRef.current = renderer;
 
-    const handleSectionPlaneEvent = (rawEv: Event) => {
-      const ev = rawEv as CustomEvent<ChamferSectionPlaneEventDetail>;
-      if (!ev.detail) return;
-      rendererRef.current?.setSectionPlane(ev.detail);
-    };
-    window.addEventListener(CHAMFER_SECTION_PLANE_EVENT, handleSectionPlaneEvent);
-
     return () => {
-      window.removeEventListener(CHAMFER_SECTION_PLANE_EVENT, handleSectionPlaneEvent);
       renderer.dispose();
       rendererRef.current = null;
     };
@@ -502,17 +489,6 @@ export function CadBRepViewer({
   useEffect(() => {
     rendererRef.current?.setTheme(isDarkTheme ? "dark" : "light");
   }, [isDarkTheme]);
-
-  useEffect(() => {
-    return registerThemeBridge("chamfer-3d-brep-viewer", {
-      applyTheme: (theme) => {
-        rendererRef.current?.setTheme(theme === "light" ? "light" : "dark");
-      },
-      renderNow: () => {
-        rendererRef.current?.renderImmediate();
-      },
-    });
-  }, []);
 
   useEffect(() => {
     rendererRef.current?.setEdgeMode(edgeMode);

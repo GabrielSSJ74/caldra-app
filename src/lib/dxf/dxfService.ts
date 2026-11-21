@@ -13,7 +13,7 @@
  * emitidas: LWPOLYLINE/SPLINE/XDATA exigem formato moderno (AC1018/R2004).
  */
 
-export type DxfPoint = { x: number; y: number; bulge?: number };
+export type DxfPoint = { x: number; y: number };
 
 /** Par bruto de dados estendidos (XDATA) dentro de um APPID. */
 export type DxfXdataPair = { code: number; value: string | number };
@@ -36,30 +36,12 @@ export type DxfEntity =
       endAngle: number;
     } & WithMeta)
   | ({
-      type: "ELLIPSE";
-      layer: string;
-      center: DxfPoint;
-      majorEnd: DxfPoint;
-      axisRatio: number;
-      startParam?: number;
-      endParam?: number;
-    } & WithMeta)
-  | ({
       /** Spline cúbica em forma de Bézier por partes. */
       type: "SPLINE";
       layer: string;
       /** 3n+1 pontos de controle. */
       controls: DxfPoint[];
       closed: boolean;
-    } & WithMeta)
-  | ({
-      /** Texto de anotação opcional (excluído por padrão em DXF Laser CNC). */
-      type: "TEXT";
-      layer: string;
-      position: DxfPoint;
-      height: number;
-      text: string;
-      rotation?: number;
     } & WithMeta);
 
 export type DxfLayer = { name: string; color: number; trueColor?: number };
@@ -78,9 +60,7 @@ const SUBCLASS: Record<DxfEntity["type"], string[]> = {
   LWPOLYLINE: ["AcDbPolyline"],
   CIRCLE: ["AcDbCircle"],
   ARC: ["AcDbCircle", "AcDbArc"],
-  ELLIPSE: ["AcDbEllipse"],
   SPLINE: ["AcDbSpline"],
-  TEXT: ["AcDbText"],
 };
 
 function writeXdata(e: DxfEntity): string {
@@ -107,14 +87,7 @@ function writeBody(e: DxfEntity): string {
       return (
         g(90, e.points.length) +
         g(70, e.closed ? 1 : 0) +
-        e.points
-          .map(
-            (p) =>
-              g(10, p.x.toFixed(4)) +
-              g(20, p.y.toFixed(4)) +
-              (p.bulge !== undefined && Math.abs(p.bulge) > 1e-7 ? g(42, p.bulge.toFixed(6)) : ""),
-          )
-          .join("")
+        e.points.map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4))).join("")
       );
     case "CIRCLE":
       return (
@@ -134,18 +107,6 @@ function writeBody(e: DxfEntity): string {
         g(50, e.startAngle.toFixed(4)) +
         g(51, e.endAngle.toFixed(4))
       );
-    case "ELLIPSE":
-      return (
-        g(10, e.center.x.toFixed(4)) +
-        g(20, e.center.y.toFixed(4)) +
-        g(30, "0.0") +
-        g(11, e.majorEnd.x.toFixed(4)) +
-        g(21, e.majorEnd.y.toFixed(4)) +
-        g(31, "0.0") +
-        g(40, e.axisRatio.toFixed(6)) +
-        g(41, (e.startParam ?? 0).toFixed(6)) +
-        g(42, (e.endParam ?? Math.PI * 2).toFixed(6))
-      );
     case "SPLINE": {
       const n = Math.max(1, Math.floor((e.controls.length - 1) / 3));
       // nós de Bézier por partes: 0,0,0,0, 1,1,1, ..., n,n,n,n
@@ -163,18 +124,6 @@ function writeBody(e: DxfEntity): string {
         g(74, 0) +
         knots.map((k) => g(40, k.toFixed(4))).join("") +
         e.controls.map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4)) + g(30, "0.0")).join("")
-      );
-    }
-    case "TEXT": {
-      const cleanText = e.text.replace(/[\r\n]+/g, " ").trim() || " ";
-      return (
-        g(10, e.position.x.toFixed(4)) +
-        g(20, e.position.y.toFixed(4)) +
-        g(30, "0.0") +
-        g(40, Math.max(0.5, e.height).toFixed(4)) +
-        g(1, cleanText) +
-        (e.rotation ? g(50, e.rotation.toFixed(4)) : "") +
-        g(100, "AcDbText")
       );
     }
   }
@@ -198,11 +147,7 @@ function writeEntity(e: DxfEntity, handle: string): string {
  */
 export function dxfVersionFor(doc: DxfDocument): "AC1018" | "AC1009" {
   const modern = doc.entities.some(
-    (e) =>
-      e.type === "LWPOLYLINE" ||
-      e.type === "SPLINE" ||
-      e.type === "ELLIPSE" ||
-      (e.xdata?.length ?? 0) > 0,
+    (e) => e.type === "LWPOLYLINE" || e.type === "SPLINE" || (e.xdata?.length ?? 0) > 0,
   );
   return modern || (doc.appIds?.length ?? 0) > 0 ? "AC1018" : "AC1009";
 }
@@ -301,7 +246,7 @@ export function importDxf(text: string): DxfDocument {
   const layers = new Map<string, DxfLayer>();
 
   let inEntities = false;
-  let current: { type: string; data: Map<number, string[]>; lwPoints: DxfPoint[] } | null = null;
+  let current: { type: string; data: Map<number, string[]> } | null = null;
 
   const flush = () => {
     if (!current) return;
@@ -340,26 +285,11 @@ export function importDxf(text: string): DxfDocument {
           endAngle: num(51),
         });
         break;
-      case "ELLIPSE":
-        entities.push({
-          type: "ELLIPSE",
-          layer,
-          center: { x: num(10), y: num(20) },
-          majorEnd: { x: num(11), y: num(21) },
-          axisRatio: num(40, 0, 1),
-          startParam: num(41, 0, 0),
-          endParam: num(42, 0, Math.PI * 2),
-        });
-        break;
       case "LWPOLYLINE":
       case "POLYLINE": {
-        const points =
-          current.lwPoints.length > 0
-            ? current.lwPoints
-            : (d.get(10) ?? []).map((x, i) => ({
-                x: Number(x),
-                y: Number((d.get(20) ?? [])[i] ?? 0),
-              }));
+        const xs = d.get(10) ?? [];
+        const ys = d.get(20) ?? [];
+        const points = xs.map((x, i) => ({ x: Number(x), y: Number(ys[i] ?? 0) }));
         if (points.length >= 2) {
           entities.push({
             type: "LWPOLYLINE",
@@ -378,25 +308,13 @@ export function importDxf(text: string): DxfDocument {
           entities.push({ type: "SPLINE", layer, controls, closed: (num(70) & 1) === 1 });
         break;
       }
-      case "TEXT": {
-        const txt = d.get(1)?.[0] ?? "";
-        entities.push({
-          type: "TEXT",
-          layer,
-          position: { x: num(10), y: num(20) },
-          height: num(40, 0, 3.5),
-          text: txt,
-          ...(d.has(50) ? { rotation: num(50) } : {}),
-        });
-        break;
-      }
       default:
-        break; // INSERT: suporte futuro
+        break; // TEXT, INSERT: suporte futuro
     }
     current = null;
   };
 
-  const SUPPORTED = ["LINE", "CIRCLE", "ARC", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE", "TEXT"];
+  const SUPPORTED = ["LINE", "CIRCLE", "ARC", "LWPOLYLINE", "POLYLINE", "SPLINE"];
 
   for (let i = 0; i < pairs.length; i++) {
     const { code, value } = pairs[i]!;
@@ -416,22 +334,10 @@ export function importDxf(text: string): DxfDocument {
     if (code === 0) {
       flush();
       if (v === "VERTEX") continue; // vértices agregam na polilinha anterior
-      if (SUPPORTED.includes(v)) current = { type: v, data: new Map(), lwPoints: [] };
+      if (SUPPORTED.includes(v)) current = { type: v, data: new Map() };
       continue;
     }
     if (current) {
-      if (current.type === "LWPOLYLINE" || current.type === "POLYLINE") {
-        if (code === 10) {
-          current.lwPoints.push({ x: Number(v), y: 0 });
-        } else if (code === 20 && current.lwPoints.length > 0) {
-          current.lwPoints[current.lwPoints.length - 1]!.y = Number(v);
-        } else if (code === 42 && current.lwPoints.length > 0) {
-          const b = Number(v);
-          if (Math.abs(b) > 1e-7) {
-            current.lwPoints[current.lwPoints.length - 1]!.bulge = b;
-          }
-        }
-      }
       const arr = current.data.get(code) ?? [];
       arr.push(v);
       current.data.set(code, arr);

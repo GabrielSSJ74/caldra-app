@@ -1,12 +1,9 @@
-import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { toast, notify } from "@/lib/lab2d/chamferNotify";
-import { ChamferCompactToastHost } from "@/components/lab2d/ChamferCompactToastHost";
+import { toast } from "sonner";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import {
   ArrowLeft,
-  ArrowLeftRight,
   Circle as CircleIcon,
   Copy,
   Crosshair,
@@ -22,9 +19,7 @@ import {
   Minimize,
   Minus,
   MoreHorizontal,
-  Move,
   MousePointer2,
-  Hash,
   PenLine,
   Redo2,
   RotateCw,
@@ -66,19 +61,9 @@ import {
   Sliders,
   Sparkles,
   Zap,
-  Calculator,
 } from "lucide-react";
 import { getChamferSettings, type ChamferSettings } from "@/lib/lab2d/projectSettings";
 import { useSettings } from "@/lib/settings/SettingsProvider";
-import {
-  registerThemeBridge,
-  type ThemeOriginInput,
-} from "@/lib/settings/themeTransitionEngine";
-import {
-  useChamferAppearance,
-  buildChamferThemeColors,
-} from "@/components/lab2d/useIntentTheme";
-import { ChamferProjectSettingsDialog } from "@/components/lab2d/ChamferProjectSettingsDialog";
 import {
   Dialog,
   DialogContent,
@@ -94,9 +79,15 @@ import { useDeclareImmersive } from "@/lib/ui/immersive";
 import type { VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
 
-import { ExportDialog } from "@/components/lab2d/ExportDialog";
-import { ImportDialog } from "@/components/lab2d/ImportDialog";
-import { VisionDialog } from "@/components/lab2d/VisionDialog";
+const ExportDialog = lazy(() =>
+  import("@/components/lab2d/ExportDialog").then((m) => ({ default: m.ExportDialog })),
+);
+const ImportDialog = lazy(() =>
+  import("@/components/lab2d/ImportDialog").then((m) => ({ default: m.ImportDialog })),
+);
+const VisionDialog = lazy(() =>
+  import("@/components/lab2d/VisionDialog").then((m) => ({ default: m.VisionDialog })),
+);
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -172,7 +163,6 @@ import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
 import {
-  WORKSPACE_INDUSTRIAL_PRESETS,
   centerOffset,
   fitsInFrame,
   frameBox,
@@ -216,113 +206,8 @@ import {
   ChamferSmartTrimSvgOverlay,
   ChamferSmartTrimControlBar,
 } from "./ChamferSmartTrimOverlay";
-import {
-  ChamferPolarReferenceSvgOverlay,
-  ChamferPolarReferenceControlBar,
-  type LivePolarRefPreview,
-} from "./ChamferPolarReferenceOverlay";
-import {
-  ChamferTracePartSvgOverlay,
-  ChamferTracePartControlBar,
-} from "./ChamferTracePartOverlay";
+import { type ScaleBasePointType } from "./ChamferScaleDialog";
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
-import { ChamferArrayHUD } from "./ChamferArrayHUD";
-import {
-  computeUniversalFillet2D,
-  detectDirectFilletCorner,
-  findFilletTargetAtPoint,
-  filletArcToSvgPath,
-  type FilletTargetHit,
-  type UniversalFilletResult,
-} from "@/chamfer/tools/universalFillet2D";
-import {
-  hitTestTrimSubPiece,
-  collectTrimSubPiecesCrossedByFence,
-  buildTrimBatchPreview,
-  commitTrimBatch,
-  trimPrimitiveToSvgPath,
-  type TrimSubPiece,
-  type TrimBatchPreview,
-} from "@/chamfer/tools/trimEngine2D";
-import {
-  buildTracePartPreview,
-  collectTraceSubPiecesCrossedByFence,
-  commitTracePartToRealEntities,
-  countReferenceGuideEntities,
-  hitTestTraceSubPiece,
-  removeAllReferenceGuides,
-  type TracePartPreview,
-} from "@/chamfer/tools/tracePartEngine2D";
-import {
-  detectPolarRefOrigin,
-  evaluateLivePolarReference,
-  createPolarReferenceItem,
-  findNearestPolarRefSnap,
-  computeCenterRadiusLineGeometry,
-  createPolarPointerArbiterState,
-  polarArbiterPointerDown,
-  polarArbiterPointerMove,
-  polarArbiterPointerUp,
-  polarArbiterPointerCancel,
-  type PolarReferenceItem,
-  type PolarRefOriginAnchor,
-} from "@/chamfer/tools/polarReferenceEngine";
-import {
-  ChamferPortraitTopBar,
-  ChamferPortraitCanvasMicroPill,
-  ChamferPortraitCompactDrawer,
-  ChamferPortraitBottomBars,
-} from "@/components/lab2d/ChamferPortraitLightroomUI";
-import {
-  createConcentricEyeletEntities,
-  createIndustrialHoleEntity,
-  createThreadedHoleEntities,
-  createSerratedTeethEntities,
-  createPocket2DEntity,
-  createTangentBridgeEntities,
-  applyColorAndLayerToEntities,
-  type ChamferTechnicalColorOption,
-} from "@/lib/lab2d/chamferCommandRegistry";
-import {
-  shouldAutoCollapseDrawerOnCanvasTouch,
-  useVerticalLayout,
-} from "@/lib/lab2d/useVerticalLayout";
-import {
-  detectHostPart,
-  computeInstances,
-  validateArray,
-  getGroupCenter,
-  getEntityArraySpec,
-  findEnclosedAndConnectedAssembly,
-  applyArrayAutoTrim,
-  type ArrayType,
-  type PolarArrayParams,
-  type LinearArrayParams,
-  type HostDetectionResult,
-  type ArraySpec,
-} from "@/lib/lab2d/cadArrayEngine";
-import {
-  inferAssociativeMarkFromPoint,
-  inferValidGeometricMarkCandidate,
-  clearGeometricMarksFromEntities,
-  isGeometricMarkEntity,
-  getGeometricMarkSpec,
-  buildRelationalGeometricMarks,
-  syncAssociativeGeometricMarks,
-  createPersistentDatumEntity,
-  convertDatumToCadLines,
-  isPersistentDatumEntity,
-  getPersistentDatumSpec,
-  ReferenceService,
-  evaluateSmartPick,
-  type SmartPickCandidate,
-  type ReferenceServiceState,
-  type RelationalSynthesisMode,
-  type PersistentDatumSpec,
-} from "@/lib/lab2d/cadGeometricMarks";
-import { ChamferGeometricAnchorOverlay } from "./ChamferGeometricAnchorOverlay";
-import { ChamferGeometricAnchorBar } from "./ChamferGeometricAnchorBar";
-import type { RelationalPickItem } from "./ChamferLiveDimensionsOverlay";
 
 import {
   MorphTransitionController,
@@ -331,9 +216,15 @@ import {
   type MorphTransitionState,
 } from "@/lib/cad/sketch/sketch3dBridge";
 
-import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
-import { ChamferCenterDialog } from "./ChamferCenterDialog";
-import { ChamferScaleDialog } from "./ChamferScaleDialog";
+const Cad3DStage = lazy(() =>
+  import("@/components/lab2d/Cad3DStage").then((m) => ({ default: m.Cad3DStage })),
+);
+const ChamferCenterDialog = lazy(() =>
+  import("./ChamferCenterDialog").then((m) => ({ default: m.ChamferCenterDialog })),
+);
+const ChamferScaleDialog = lazy(() =>
+  import("./ChamferScaleDialog").then((m) => ({ default: m.ChamferScaleDialog })),
+);
 import {
   findCornerAtPoint,
   findAllCornersInEntities,
@@ -349,24 +240,8 @@ import { canDivideEntity, divideEntity, type DivideOptions } from "@/lib/lab2d/c
 import {
   findSmartSnap,
   extractEntitySmartReferences,
-  extractIntersections,
-  buildUnifiedSnapResult,
   type SmartReferencePoint,
 } from "@/lib/lab2d/cadReferenceSnaps";
-import {
-  CRIMSON_RED_CENTER,
-  CRIMSON_RED_RING,
-  computeFlowDashOffset,
-  loadInteractionGuideMode,
-  saveInteractionGuideMode,
-  validateDimensionalConstraint,
-  applyDimensionalConstraintsToPoint,
-  applyEntityNodeConstraint,
-  type InteractionGuideMode,
-  type TouchInteractionState,
-  type DimensionalConstraints,
-  type ConstrainableMeasureKind,
-} from "@/lib/lab2d/cadInteractionGuides";
 import {
   centerShapes,
   type CenterOptions,
@@ -408,46 +283,10 @@ import {
 } from "@/lib/lab2d/globalClipboard";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
-import {
-  ChamferDraftConfirmationBubble,
-  createPendingDraftShapeState,
-  createSelectedEntityDraftState,
-  getPendingDraftShapeGrips,
-  applyPendingDraftGripDrag,
-  type PendingDraftShapeState,
-} from "./ChamferDraftConfirmationBubble";
 import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
 import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
-import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
-import {
-  computeAdaptiveZoomMetrics,
-  computeCharacteristicPartRadiusMm,
-  createPinchGestureSessionState,
-  evaluateAdaptivePanStep,
-  evaluateAdaptiveZoomStep,
-  isHudInteractiveElement,
-  loadZoomSensitivityConfig,
-  PINCH_DEADZONE_PX,
-  saveZoomSensitivityConfig,
-  type PinchGestureSessionState,
-  type ZoomSensitivityConfig,
-} from "@/lib/lab2d/chamferAdaptiveZoom";
-import {
-  loadBRepWireframeLayerConfig,
-  saveBRepWireframeLayerConfig,
-  type BRepWireframeLayerConfig,
-} from "@/lib/lab2d/chamferBRepWireframe3D";
-
 import { ChamferUnified3DViewport } from "./ChamferUnified3DViewport";
-import {
-  buildDirectTopology3DScene,
-  consolidateStitchedLoopsInEntities2D,
-  formatSubElementTelemetry3D,
-  hitTestSubElement3DInScreenSpace,
-  type DirectModeling3DTool,
-  type SubElementSelectionState3D,
-  type DirectFace3D,
-} from "@/lib/lab2d/cadDirectModeling3D";
+import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 import {
   applyOrbitDragDelta,
   computeSmartOrbitPivot,
@@ -464,7 +303,6 @@ import {
 import {
   ChamferTechnicalCursorSvg,
   ChamferNudgeControlHUD,
-  TOUCH_CURSOR_OFFSET_PX,
   shouldUseTouchOffset,
   computeTouchCursorScreenAndWorld,
   computeNudgeDelta,
@@ -488,16 +326,6 @@ import { DynamicDimensionInteraction, DimensionInteractionEngine, type LiveDimen
 import { GeometricConstraintResolver } from "@/lib/lab2d/cadConstraintResolver";
 import { ChamferLiveDimensionsOverlay } from "./ChamferLiveDimensionsOverlay";
 import {
-  createDefaultRevEngPlanData,
-  sanitizeRevEngPlanData,
-  type RevEngPlanData,
-  type RevEngCategoryId,
-  type RevEngWizardStep,
-  type RevEngCanvasInteractionMode,
-  type FittedPrimitiveCandidate,
-} from "@/lib/lab2d/revEngTypes";
-import { ChamferRevEngTab } from "./sidebar/ChamferRevEngTab";
-import {
   type IsoPlane,
   type DrawingProjectionMode,
   ISO_PLANES,
@@ -512,20 +340,37 @@ import {
 } from "@/lib/lab2d/isometricEngine";
 import { ChamferIsoPlaneHUD } from "./ChamferIsoPlaneHUD";
 
-import { ChamferSemanticPalette } from "./ChamferSemanticPalette";
-import { ChamferClipboardModal } from "./ChamferClipboardModal";
-import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
-import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
-import { ChamferVariablesModal } from "./ChamferVariablesModal";
-import { ChamferParametricOrchestrator } from "./ChamferParametricOrchestrator";
-import {
-  dispatchChamferParametricPanel,
-  useChamferParametricStatus,
-} from "./chamferParametricEvents";
-import { ChamferPresetsModal } from "./ChamferPresetsModal";
-import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
-import { CaldraIntegratedWorkshopModal } from "./CaldraIntegratedWorkshopModal";
-import { ChamferIsoConvertModal } from "./ChamferIsoConvertModal";
+const loadChamferSemanticPalette = () =>
+  import("./ChamferSemanticPalette").then((m) => ({ default: m.ChamferSemanticPalette }));
+const ChamferSemanticPalette = lazy(loadChamferSemanticPalette);
+const ChamferClipboardModal = lazy(() =>
+  import("./ChamferClipboardModal").then((m) => ({ default: m.ChamferClipboardModal })),
+);
+const ChamferFabricationPassportModal = lazy(() =>
+  import("./ChamferFabricationPassportModal").then((m) => ({
+    default: m.ChamferFabricationPassportModal,
+  })),
+);
+const ChamferTopologyHealthModal = lazy(() =>
+  import("./ChamferTopologyHealthModal").then((m) => ({ default: m.ChamferTopologyHealthModal })),
+);
+const ChamferVariablesModal = lazy(() =>
+  import("./ChamferVariablesModal").then((m) => ({ default: m.ChamferVariablesModal })),
+);
+const ChamferPresetsModal = lazy(() =>
+  import("./ChamferPresetsModal").then((m) => ({ default: m.ChamferPresetsModal })),
+);
+const ChamferTechnicalSheetModal = lazy(() =>
+  import("./ChamferTechnicalSheetModal").then((m) => ({ default: m.ChamferTechnicalSheetModal })),
+);
+const CaldraIntegratedWorkshopModal = lazy(() =>
+  import("./CaldraIntegratedWorkshopModal").then((m) => ({
+    default: m.CaldraIntegratedWorkshopModal,
+  })),
+);
+const ChamferIsoConvertModal = lazy(() =>
+  import("./ChamferIsoConvertModal").then((m) => ({ default: m.ChamferIsoConvertModal })),
+);
 import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
 import {
   evaluateGeometricIntent,
@@ -556,7 +401,6 @@ import {
   findOverlappingEntitiesAtPoint,
   runBoolean2DOnSelection,
   type GripEditMode,
-  type LineCreationMode,
   type PolylineSegmentMode,
   type RectCreationMode,
   type CircleCreationMode,
@@ -567,58 +411,6 @@ import {
   ChamferTouchDynamicHud,
   type LockedDimensionsState,
 } from "./ChamferTouchDynamicHud";
-import { Chamfer3DGizmoAndLoftOverlay } from "./Chamfer3DGizmoAndLoftOverlay";
-import {
-  buildLoft3DMesh,
-  createLoft3DEntity,
-  getEntityElevationZ,
-  getEntityExtrudeHeight,
-  getEntityLoft3DSpec,
-  isClosedLoftableProfile,
-  isLoft3DEntity,
-  resolveUnitZWorkplaneOffset,
-  setEntityElevationZ,
-  type LoftBodyMode,
-  type LoftSurfaceMode,
-} from "@/lib/lab2d/cadLoft3DEngine";
-import {
-  UI_NAME,
-  loadPersistedUiShellMode,
-  savePersistedUiShellMode,
-  type ChamferUiShellMode,
-} from "@/lib/lab2d/prumoEngine";
-import {
-  ChamferPrumoSpatialUI,
-  PrumoErrorBoundary,
-} from "./ChamferPrumoSpatialUI";
-import {
-  applyDeterministicBenchRescueToggle,
-  loadPersistedBenchCalcState,
-  savePersistedBenchCalcState,
-  type BenchPersistedState,
-} from "@/lib/lab2d/chamferBenchCalculator";
-import {
-  buildRichNoteEntity,
-  getEntityRichNoteSpec,
-  hitTestRichNoteGlyphsMm,
-  isRichNoteEntity,
-  type RichNoteSpec,
-} from "@/lib/lab2d/chamferRichNoteEngine";
-import {
-  appendFreehandSample,
-  buildFreehandVectorEntity,
-  computeFreehandLiveMetrics,
-  type FreehandPrimitiveSuggestion,
-  type FreehandSmoothingMode,
-  type FreehandUsageRole,
-} from "@/lib/lab2d/chamferFreehandEngine";
-import { ChamferBenchCalculator } from "./ChamferBenchCalculator";
-import {
-  ChamferRichNoteEditorOverlay,
-  ChamferRichNoteCanvasHandles,
-  type RichNoteEditorSession,
-} from "./ChamferRichNoteEditorOverlay";
-import { ChamferFreehandSubBar } from "./ChamferFreehandSubBar";
 
 export type Tool =
   | "select"
@@ -634,7 +426,6 @@ export type Tool =
   | "polygon"
   | "ellipse"
   | "spline"
-  | "freehand"
   | "point"
   | "text"
   | "measure"
@@ -647,10 +438,7 @@ export type Tool =
   | "chamfer"
   | "divide"
   | "center"
-  | "slot"
-  | "polar_ref"
-  | "trace_part"
-  | "loft_3d";
+  | "slot";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "select", icon: MousePointer2, label: "Selecionar", key: "V" },
@@ -694,7 +482,7 @@ const ENTITY_KINDS: DimKind[] = [
 const PRIMARY: Tool[] = ["select", "line", "polyline", "circle", "arc", "rect", "text"];
 
 const ZOOM_MIN = 0.05;
-const ZOOM_MAX = 80;
+const ZOOM_MAX = 30;
 
 type Measure = { a: Vec2; b: Vec2 };
 
@@ -801,15 +589,10 @@ function getOperationFeedback(
         command: "PONTO",
         instruction: "Clique na coordenada desejada para criar ponto de referência",
       };
-    case "freehand":
-      return {
-        command: "DESENHO LIVRE",
-        instruction: "Arraste na prancheta para traçar vetor suavizado em tempo real (Fiel, Suave ou Poligonal)",
-      };
     case "text":
       return {
-        command: "TEXTO / NOTA",
-        instruction: "Toque onde deseja inserir a Anotação Técnica rica / Fórmula nativa",
+        command: "TEXTO",
+        instruction: "Clique onde deseja posicionar o texto técnico de marcação",
       };
     case "trim":
       return {
@@ -871,31 +654,24 @@ function getOperationFeedback(
 
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
-  const { setTheme: setAppTheme, unit } = useSettings();
-  const parametricStatus = useChamferParametricStatus();
-  const {
-    isDark,
-    isAmoled,
-    bgStyle,
-    accentKey,
-    cardOpacity,
-    bubbleOpacity,
-    themeColors,
-    cssVariables,
-    themeVersion,
-  } = useChamferAppearance();
+  const { theme: appTheme, setTheme: setAppTheme, unit } = useSettings();
+  const isDark = useMemo(() => {
+    return (
+      appTheme === "dark" ||
+      appTheme === "amoled" ||
+      (appTheme === "system" &&
+        (typeof window !== "undefined"
+          ? window.matchMedia?.("(prefers-color-scheme: dark)").matches
+          : true)) ||
+      (typeof document !== "undefined" && document.documentElement.classList.contains("dark"))
+    );
+  }, [appTheme]);
 
-  const canvasBgColor = isDark ? themeColors.workAreaFill : "#FFFFFF";
-  const canvasOuterBgColor = isDark ? themeColors.canvasBg : "#E2E8F0";
-
-  const toggleTheme = useCallback(
-    (origin?: ThemeOriginInput) => {
-      triggerHaptic("tap");
-      const nextTheme = isDark ? "light" : "dark";
-      setAppTheme(nextTheme, origin);
-    },
-    [isDark, setAppTheme],
-  );
+  const toggleTheme = useCallback(() => {
+    triggerHaptic("tap");
+    const nextTheme = isDark ? "light" : "dark";
+    setAppTheme(nextTheme);
+  }, [isDark, setAppTheme]);
 
   const navigate = useNavigate();
   useDeclareImmersive(true);
@@ -1011,13 +787,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   cursorRef.current = cursor;
   const [snapHit, setSnapHit] = useState<Snap | null>(null);
   const [grid, setGrid] = useState(10);
-  const [snapOn, setSnapOn] = useState<boolean>(() => chamferSettings.snapOnLoad ?? true);
-  const [showGrid, setShowGrid] = useState<boolean>(() => chamferSettings.showGridOnLoad ?? true);
-  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [snapOn, setSnapOn] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
   /* WORKSPACE_FRAME — moldura técnica de trabalho (não é geometria) */
   const [frame, setFrame] = useState<WorkspaceFrame>(() =>
     typeof window === "undefined"
-      ? { w: 1500, h: 1000, visible: true, showDims: true, locked: false }
+      ? { w: 1500, h: 3000, visible: true, showDims: true }
       : loadFrame(),
   );
   const updateFrame = useCallback((patch: Partial<WorkspaceFrame>) => {
@@ -1044,73 +819,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const landscapeMoreTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const landscapeMoreMenuRef = useRef<HTMLDivElement | null>(null);
-  const [landscapeMoreCoords, setLandscapeMoreCoords] = useState<{ top: number; right: number }>({
-    top: 52,
-    right: 12,
-  });
-
-  const updateLandscapeMorePosition = useCallback(() => {
-    if (typeof window === "undefined" || !landscapeMoreTriggerRef.current) return;
-    const rect = landscapeMoreTriggerRef.current.getBoundingClientRect();
-    setLandscapeMoreCoords({
-      top: Math.max(48, Math.round(rect.bottom + 6)),
-      right: Math.max(8, Math.round(window.innerWidth - rect.right)),
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const handleOutsideClick = (event: MouseEvent | PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (landscapeMoreTriggerRef.current && landscapeMoreTriggerRef.current.contains(target)) {
-        return; // Não executa o fechar se o clique foi no próprio botão
-      }
-      if (landscapeMoreMenuRef.current && landscapeMoreMenuRef.current.contains(target)) {
-        return;
-      }
-      setMoreOpen(false);
-    };
-    const handleResize = () => updateLandscapeMorePosition();
-    document.addEventListener("pointerdown", handleOutsideClick);
-    window.addEventListener("resize", handleResize);
-    return () => {
-      document.removeEventListener("pointerdown", handleOutsideClick);
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [moreOpen, updateLandscapeMorePosition]);
-  const [statusWorkspaceMenuOpen, setStatusWorkspaceMenuOpen] = useState(false);
-  const [workspaceKeypadEditor, setWorkspaceKeypadEditor] = useState<{
-    axis: "w" | "h";
-    currentValue: number;
-    screenPos: { x: number; y: number };
-  } | null>(null);
   const [statusPrecisionMenuOpen, setStatusPrecisionMenuOpen] = useState(false);
   const [statusCncMenuOpen, setStatusCncMenuOpen] = useState(false);
-  /* PRECISÃO AVANÇADA, GUIAS DE INTERAÇÃO EXCLUSIVAS E RESTRIÇÕES DIMENSIONAIS REAIS */
-  const [snapDivision, setSnapDivision] = useState<number>(0);
-  const [showAllSnaps, setShowAllSnaps] = useState<boolean>(false);
-  const [isSettingReferencePoint, setIsSettingReferencePoint] = useState<boolean>(false);
-  const [interactionGuideMode, setInteractionGuideModeState] = useState<InteractionGuideMode>(() =>
-    loadInteractionGuideMode(),
-  );
-  const [lockedConstraints, setLockedConstraints] = useState<DimensionalConstraints>({});
-  const [touchInteractionState, setTouchInteractionState] = useState<TouchInteractionState>("IDLE");
-  const touchInteractionStateRef = useRef<TouchInteractionState>("IDLE");
-  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const preGestureSnapshotRef = useRef<{
-    cursor: Vec2;
-    temporaryOrigin: TemporaryOrigin | null;
-    pending: Vec2[];
-    draft: Entity | null;
-    selection: string[];
-  } | null>(null);
-  const preEditKeypadSnapshotRef = useRef<{
-    cursor: Vec2;
-    draft: Entity | null;
-  } | null>(null);
   /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
   const [thickness, setThickness] = useState<number>(() => initialProj?.thickness ?? DEFAULT_PLAN_THICKNESS);
   const [cad3dTreeJson, setCad3dTreeJson] = useState<string | undefined>(() => initialPlan?.cad3dTreeJson);
@@ -1156,17 +866,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showFolds3D, setShowFolds3D] = useState(true);
   const [showDims3D, setShowDims3D] = useState(true);
 
-  /* MODO DE DESENHO ORTOGONAL 2D (FALLBACK AUTOMÁTICO DE SEGURANÇA CONTRA ISO 2D) */
-  const [drawingProjectionState, setDrawingProjectionState] =
-    useState<DrawingProjectionMode>("orthographic");
-  const drawingProjection: DrawingProjectionMode =
-    drawingProjectionState === "isometric" ? "orthographic" : drawingProjectionState;
-  const setDrawingProjection = useCallback(
-    (_next: DrawingProjectionMode | "iso2d" | "ISO_2D" | "ortho" | ((prev: DrawingProjectionMode) => DrawingProjectionMode)) => {
-      setDrawingProjectionState("orthographic");
-    },
-    [],
-  );
+  /* MODO DE DESENHO ISOMÉTRICO 2D (ETAPA ISOMÉTRICO DO CHAMFER) */
+  const [drawingProjection, setDrawingProjection] = useState<DrawingProjectionMode>("orthographic");
   const [isoPlane, setIsoPlane] = useState<IsoPlane>("top");
   const [isoOrtho, setIsoOrtho] = useState<boolean>(true);
   const [isoPieceBuilderOpen, setIsoPieceBuilderOpen] = useState<boolean>(false);
@@ -1177,8 +878,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [orbitElevationDeg, setOrbitElevationDeg] = useState<number>(90);
 
   /* SUB-MODOS PARAMÉTRICOS E MOBILE TOUCH (CADCraft -> CHAMFER CAD) */
-  const [lineMode, setLineMode] = useState<LineCreationMode>("end_to_end");
-  const [polylineCreationMode, setPolylineCreationMode] = useState<LineCreationMode>("end_to_end");
   const [polylineSegMode, setPolylineSegMode] = useState<PolylineSegmentMode>("line");
   const polylineSegModesRef = useRef<PolylineSegmentMode[]>([]);
   const [rectMode, setRectMode] = useState<RectCreationMode>("corners");
@@ -1195,38 +894,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   });
   const [overlappingCandidates, setOverlappingCandidates] = useState<Entity[]>([]);
   const swipeTrimFenceRef = useRef<Vec2[]>([]);
-  const trimPointerDownWorldRef = useRef<Vec2 | null>(null);
   const [swipeTrimCutPreview, setSwipeTrimCutPreview] = useState<[Vec2, Vec2][]>([]);
-  const [trimMarkedKeys, setTrimMarkedKeys] = useState<string[]>([]);
-  const [trimHoverPiece, setTrimHoverPiece] = useState<TrimSubPiece | null>(null);
-  const [trimInstantMode, setTrimInstantMode] = useState<boolean>(false);
-  const [trimFenceTrail, setTrimFenceTrail] = useState<Vec2[]>([]);
   const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
   const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
   const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("wireframe");
-  const userPickedArameIn3DRef = useRef<boolean>(false);
   const [wireframe3DStyle, setWireframe3DStyle] = useState<ChamferWireframe3DStyleConfig>(() => ({
     ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   }));
-  const [zoomSensitivity, setZoomSensitivityState] = useState<ZoomSensitivityConfig>(() =>
-    loadZoomSensitivityConfig(),
-  );
-  const zoomSensitivityRef = useRef<ZoomSensitivityConfig>(zoomSensitivity);
-  zoomSensitivityRef.current = zoomSensitivity;
-  const handleChangeZoomSensitivity = useCallback((next: ZoomSensitivityConfig) => {
-    const clean = saveZoomSensitivityConfig(next);
-    zoomSensitivityRef.current = clean;
-    setZoomSensitivityState(clean);
-  }, []);
-  const [brepWireframeLayers, setBrepWireframeLayersState] = useState<BRepWireframeLayerConfig>(
-    () => loadBRepWireframeLayerConfig(),
-  );
-  const handleChangeBrepWireframeLayers = useCallback((next: BRepWireframeLayerConfig) => {
-    const clean = saveBRepWireframeLayerConfig(next);
-    setBrepWireframeLayersState(clean);
-  }, []);
-  const pinchSessionRef = useRef<PinchGestureSessionState | null>(null);
-  const characteristicRadiusRef = useRef<number>(100);
   const [orbitCommand3D, setOrbitCommand3D] = useState<{
     azimuthDeg: number;
     elevationDeg: number;
@@ -1240,17 +914,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   orbitElevationRef.current = orbitElevationDeg;
   const orbitAnimRafRef = useRef<number | null>(null);
   const orbitDragRef = useRef<{ x: number; y: number } | null>(null);
-  const orbitStartClientRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const last3DTapRef = useRef<{ x: number; y: number; time: number; faceId?: string } | null>(null);
-  const [subSelection3D, setSubSelection3D] = useState<SubElementSelectionState3D>({
-    faceIds: [],
-    edgeIds: [],
-    bodyIds: [],
-    activePivot3D: null,
-    activeHingeEdgeId: null,
-  });
-  const [activeDirect3DTool, setActiveDirect3DTool] =
-    useState<DirectModeling3DTool>("select_3d");
 
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
@@ -1261,16 +924,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     draftRef.current = next;
     setDraftState(next);
   }, []);
-
-  /* ESTADO PRÉ-CONFIRMAÇÃO EDITÁVEL (DRAFT-THEN-COMMIT) & ÚLTIMO VÉRTICE CRIADO */
-  const [pendingDraftShape, setPendingDraftShapeState] = useState<PendingDraftShapeState | null>(null);
-  const pendingDraftShapeRef = useRef<PendingDraftShapeState | null>(null);
-  const setPendingDraftShape = useCallback((next: PendingDraftShapeState | null) => {
-    pendingDraftShapeRef.current = next;
-    setPendingDraftShapeState(next);
-  }, []);
-  const [draggingDraftGripIndex, setDraggingDraftGripIndex] = useState<number | null>(null);
-  const lastCreatedVertexRef = useRef<Vec2>({ x: 0, y: 0 });
   const pointerMoveRafRef = useRef<number | null>(null);
   const pendingPointerMoveRef = useRef<{
     clientX: number;
@@ -1290,13 +943,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [importOpen, setImportOpen] = useState(false);
   const [visionOpen, setVisionOpen] = useState(false);
   const [imageLayer, setImageLayer] = useState<VisionImageLayer | null>(null);
-  /* ENGENHARIA REVERSA E BANCADA MECÂNICA (FASE B — PERSISTIDO POR PLANO) */
-  const [revEngData, setRevEngData] = useState<RevEngPlanData>(() =>
-    sanitizeRevEngPlanData(initialPlan?.revEng),
-  );
-  const [revEngCanvasMode, setRevEngCanvasMode] = useState<RevEngCanvasInteractionMode>("none");
-  const [revEngPickPoints, setRevEngPickPoints] = useState<Vec2[]>([]);
-  const [revEngFittedPreview, setRevEngFittedPreview] = useState<FittedPrimitiveCandidate | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
@@ -1305,71 +951,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     corner: DetectedCorner;
     calc: FilletCalculation;
   } | null>(null);
-  const [filletFirstPick, setFilletFirstPick] = useState<FilletTargetHit | null>(null);
-  const [filletSecondPick, setFilletSecondPick] = useState<FilletTargetHit | null>(null);
-  const [universalFilletResult, setUniversalFilletResult] = useState<UniversalFilletResult | null>(null);
-  const [filletSolutionIdx, setFilletSolutionIdx] = useState<number>(0);
-  const [filletErrorHint, setFilletErrorHint] = useState<string | null>(null);
   const [chamferPreview, setChamferPreview] = useState<{
     corner: DetectedCorner;
     calc: ChamferCalculation;
   } | null>(null);
-
-  /* FERRAMENTAS DE ARRAYS INTELIGENTES (POLAR E LINEAR) */
-  const [activeArrayType, setActiveArrayType] = useState<ArrayType | null>(null);
-  const [editingArrayGroupId, setEditingArrayGroupId] = useState<string | null>(null);
-  const isDraggingArrayCenterRef = useRef<boolean>(false);
-  const [arrayAnimNowMs, setArrayAnimNowMs] = useState<number>(0);
-  const [arrayPolarParams, setArrayPolarParams] = useState<PolarArrayParams>({
-    center: { x: 0, y: 0 },
-    count: 6,
-    totalAngleDeg: 360,
-    startAngleDeg: 0,
-    clockwise: false,
-    rotateItems: true,
-    includeOriginal: true,
-    skippedIndices: [],
-  });
-  const [arrayLinearParams, setArrayLinearParams] = useState<LinearArrayParams>({
-    rows: 2,
-    cols: 3,
-    dx: 40,
-    dy: 40,
-    modeX: "fixed_step",
-    modeY: "fixed_step",
-    spanX: 80,
-    spanY: 40,
-    marginX: 15,
-    marginY: 15,
-    angleDeg: 0,
-    includeOriginal: true,
-    skippedIndices: [],
-  });
-  const [arrayHostInfo, setArrayHostInfo] = useState<HostDetectionResult>({
-    type: "unknown",
-    confidence: "low",
-    description: "",
-    suggestedType: "polar",
-    candidateCenters: [],
-  });
-  const [isArrayPickingCenter, setIsArrayPickingCenter] = useState<boolean>(false);
-
-  // Animação direcional de lineDashOffset no círculo PCD e eixos do Array (Zero-Idle quando fechado)
-  useEffect(() => {
-    if (activeArrayType === null) return;
-    let raf = 0;
-    let last = 0;
-    const loop = (t: number) => {
-      if (t - last >= 33) {
-        last = t;
-        setArrayAnimNowMs(t);
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [activeArrayType]);
-
   /* FERRAMENTA DIVIDIR */
   const [divideEditorOpen, setDivideEditorOpen] = useState(false);
   const [divideParts, setDivideParts] = useState(2);
@@ -1383,92 +968,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
-  /* MINI-CALCULADORA DE BANCADA, NOTAS RICAS & DESENHO LIVRE VETORIAL */
-  const [benchCalcState, setBenchCalcState] = useState<BenchPersistedState>(() =>
-    loadPersistedBenchCalcState(),
-  );
-  useEffect(() => {
-    savePersistedBenchCalcState(benchCalcState);
-  }, [benchCalcState]);
-  const handleToggleBenchCalc = useCallback(() => {
-    setBenchCalcState((prev) => applyDeterministicBenchRescueToggle(prev));
-  }, []);
-
-  const [richNoteSession, setRichNoteSession] = useState<RichNoteEditorSession | null>(null);
-  const createDefaultRichNoteSpec = useCallback(
-    (): RichNoteSpec => ({
-      widthMm: 95,
-      fontSizeMm: 6,
-      rotationDeg: 0,
-      textAlign: "left",
-      lineHeight: 1.35,
-      categoryLayer: "Observação",
-      boxStyle: "card",
-      isFormula: false,
-      runs: [{ text: "" }],
-    }),
-    [],
-  );
-  const openRichNoteEditorForEntity = useCallback((ent: Entity) => {
-    if (ent.type !== "text") return;
-    const spec = getEntityRichNoteSpec(ent);
-    if (!spec) return;
-    setRichNoteSession({
-      mode: "edit",
-      entityId: ent.id,
-      anchorWorld: { x: ent.x, y: ent.y },
-      layer: ent.layer || "anotacoes",
-      initialSpec: spec,
-    });
-  }, []);
-
-  const [freehandMode, setFreehandMode] = useState<FreehandSmoothingMode>("suave");
-  const [freehandTolerancePx, setFreehandTolerancePx] = useState<number>(1.5);
-  const [freehandAutoClose, setFreehandAutoClose] = useState<boolean>(false);
-  const [freehandUsageRole, setFreehandUsageRole] = useState<FreehandUsageRole>("geometry");
-  const [freehandLivePts, setFreehandLivePts] = useState<Vec2[]>([]);
-  const freehandRawPtsRef = useRef<Vec2[]>([]);
-  const freehandStartSnapRef = useRef<Vec2 | null>(null);
-  const freehandDrawingRef = useRef<boolean>(false);
-  const [freehandSuggestion, setFreehandSuggestion] = useState<{
-    entityId: string;
-    data: FreehandPrimitiveSuggestion;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!freehandSuggestion) return;
-    const timer = window.setTimeout(() => {
-      setFreehandSuggestion(null);
-    }, 4000);
-    return () => window.clearTimeout(timer);
-  }, [freehandSuggestion]);
-
-  /* MOTOR LOFT 3D MULTISSEÇÃO E ELEVAÇÃO +Z (GIZMO 3D) */
-  const [loftSectionIds, setLoftSectionIds] = useState<string[]>([]);
-  const [loftSurfaceMode, setLoftSurfaceMode] = useState<LoftSurfaceMode>("smooth");
-  const [loftBodyMode, setLoftBodyMode] = useState<LoftBodyMode>("solid");
-  const [elevationKeypadState, setElevationKeypadState] = useState<{
-    open: boolean;
-    initialZ: number;
-  }>({ open: false, initialZ: 0 });
-
   /* BARRA SUPERIOR — NAVEGAÇÃO POR SWIPE HORIZONTAL (TOUCH + MOUSE DRAG) */
   const topBarRef = useRef<HTMLElement>(null);
   const topBarSwipeRef = useRef<{
     isDragging: boolean;
-    hasMoved: boolean;
-    pointerId: number | null;
     startX: number;
     scrollLeft: number;
   }>({
     isDragging: false,
-    hasMoved: false,
-    pointerId: null,
     startX: 0,
     scrollLeft: 0,
   });
 
-  const handleTopBarPointerDown = useCallback((e: React.PointerEvent<HTMLElement>) => {
+  const handleTopBarPointerDown = useCallback((e: React.PointerEvent) => {
+    // Permite clique padrão em touch ou botão principal do mouse
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest("input, select")) return;
@@ -1476,76 +989,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (!topBarRef.current) return;
     topBarSwipeRef.current = {
       isDragging: true,
-      hasMoved: false,
-      pointerId: e.pointerId,
       startX: e.clientX,
       scrollLeft: topBarRef.current.scrollLeft,
     };
   }, []);
 
-  const handleTopBarPointerMove = useCallback((e: React.PointerEvent<HTMLElement>) => {
+  const handleTopBarPointerMove = useCallback((e: React.PointerEvent) => {
     if (!topBarSwipeRef.current.isDragging || !topBarRef.current) return;
     const dx = e.clientX - topBarSwipeRef.current.startX;
-    if (Math.abs(dx) > 4) {
-      if (!topBarSwipeRef.current.hasMoved) {
-        topBarSwipeRef.current.hasMoved = true;
-        try {
-          if (
-            topBarSwipeRef.current.pointerId !== null &&
-            !topBarRef.current.hasPointerCapture(topBarSwipeRef.current.pointerId)
-          ) {
-            topBarRef.current.setPointerCapture(topBarSwipeRef.current.pointerId);
-          }
-        } catch {
-          // ignore pointer capture errors
-        }
-      }
+    if (Math.abs(dx) > 3) {
       topBarRef.current.scrollLeft = topBarSwipeRef.current.scrollLeft - dx;
     }
   }, []);
 
   const handleTopBarPointerUp = useCallback(() => {
-    if (topBarRef.current && topBarSwipeRef.current.pointerId !== null) {
-      try {
-        if (topBarRef.current.hasPointerCapture(topBarSwipeRef.current.pointerId)) {
-          topBarRef.current.releasePointerCapture(topBarSwipeRef.current.pointerId);
-        }
-      } catch {
-        // ignore
-      }
-    }
     topBarSwipeRef.current.isDragging = false;
-    topBarSwipeRef.current.pointerId = null;
-  }, []);
-
-  const handleTopBarTouchStart = useCallback((e: React.TouchEvent<HTMLElement>) => {
-    const touch = e.touches[0];
-    if (!touch || !topBarRef.current) return;
-    topBarSwipeRef.current = {
-      isDragging: true,
-      hasMoved: false,
-      pointerId: null,
-      startX: touch.clientX,
-      scrollLeft: topBarRef.current.scrollLeft,
-    };
-  }, []);
-
-  const handleTopBarTouchMove = useCallback((e: React.TouchEvent<HTMLElement>) => {
-    const touch = e.touches[0];
-    if (!touch || !topBarSwipeRef.current.isDragging || !topBarRef.current) return;
-    const dx = touch.clientX - topBarSwipeRef.current.startX;
-    if (Math.abs(dx) > 4) {
-      topBarSwipeRef.current.hasMoved = true;
-      topBarRef.current.scrollLeft = topBarSwipeRef.current.scrollLeft - dx;
-    }
-  }, []);
-
-  const handleTopBarClickCapture = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    if (topBarSwipeRef.current.hasMoved) {
-      e.stopPropagation();
-      e.preventDefault();
-      topBarSwipeRef.current.hasMoved = false;
-    }
   }, []);
 
   const handleTopBarWheel = useCallback((e: React.WheelEvent) => {
@@ -1700,148 +1158,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     currentValue: number;
     label: string;
     allowInvert?: boolean;
-    measureKind?: ConstrainableMeasureKind;
-    initialLocked?: boolean;
   } | null>(null);
-
-  const [pinnedMeetingPoints, setPinnedMeetingPoints] = useState<Vec2[]>([]);
-  const [relationalPicks, setRelationalPicks] = useState<RelationalPickItem[]>([]);
-  const [referenceState, setReferenceState] = useState<ReferenceServiceState>(() =>
-    ReferenceService.getState(),
-  );
-  const [smartPickCandidate, setSmartPickCandidate] = useState<SmartPickCandidate | null>(null);
-  const smartPickCandidateRef = useRef<SmartPickCandidate | null>(null);
-  const pastReferenceSnapshotsRef = useRef<ReferenceServiceState[]>([]);
-  const futureReferenceSnapshotsRef = useRef<ReferenceServiceState[]>([]);
-
-  /* REF. POLAR — COTA DE REFERÊNCIA NÃO-VETORIAL (LINHA VERMELHA PONTILHADA + ALVO ⊕) */
-  const [polarRefs, setPolarRefs] = useState<PolarReferenceItem[]>([]);
-  const polarRefsRef = useRef<PolarReferenceItem[]>([]);
-  polarRefsRef.current = polarRefs;
-  const pastPolarRefsRef = useRef<PolarReferenceItem[][]>([]);
-  const futurePolarRefsRef = useRef<PolarReferenceItem[][]>([]);
-  const [polarRefOriginAnchor, setPolarRefOriginAnchor] = useState<PolarRefOriginAnchor | null>(null);
-  const [polarRefHoveredOrigin, setPolarRefHoveredOrigin] = useState<PolarRefOriginAnchor | null>(null);
-  const [polarRefLivePreview, setPolarRefLivePreview] = useState<LivePolarRefPreview | null>(null);
-  const [polarRefLockedDist, setPolarRefLockedDist] = useState<number | null>(null);
-  const [polarRefLockedAngle, setPolarRefLockedAngle] = useState<number | null>(null);
-  const [polarSnapOn, setPolarSnapOn] = useState<boolean>(true);
-  const polarArbiterRef = useRef(createPolarPointerArbiterState());
-  const polarPreGestureOriginRef = useRef<PolarRefOriginAnchor | null>(null);
-
-  /* MODO GABARITO (REF.) & FERRAMENTA "TRAÇAR PEÇA" (TRIM INVERSO / PASSAR A LIMPO) */
-  const [guideModeOn, setGuideModeOn] = useState<boolean>(false);
-  const guideModeOnRef = useRef<boolean>(false);
-  guideModeOnRef.current = guideModeOn;
-  const [guidesHidden, setGuidesHidden] = useState<boolean>(false);
-  const [traceMarkedKeys, setTraceMarkedKeys] = useState<string[]>([]);
-  const [traceHoverPiece, setTraceHoverPiece] = useState<TrimSubPiece | null>(null);
-  const [traceFenceTrail, setTraceFenceTrail] = useState<Vec2[]>([]);
-  const traceFenceRef = useRef<Vec2[]>([]);
-  const tracePointerDownWorldRef = useRef<Vec2 | null>(null);
-
-  useEffect(() => {
-    return ReferenceService.subscribe((nextRefState) => {
-      setReferenceState(nextRefState);
-    });
-  }, []);
-
-  const [previewGeometricMarkCandidate, setPreviewGeometricMarkCandidate] = useState<
-    (Entity & { type: "point" }) | null
-  >(null);
-  const previewGeometricMarkCandidateRef = useRef<(Entity & { type: "point" }) | null>(null);
-  const [pendingGeometricMarkConfirmation, setPendingGeometricMarkConfirmation] = useState<
-    (Entity & { type: "point" }) | null
-  >(null);
-  const isMultiTouchGestureRef = useRef<boolean>(false);
-  const gestureCooldownUntilRef = useRef<number>(0);
-  const wasCameraPannedRef = useRef<boolean>(false);
-  const pointerDownClientRef = useRef<Vec2 | null>(null);
-  const [activeTouchScreenPos, setActiveTouchScreenPos] = useState<Vec2 | null>(null);
-  const activeTouchScreenPosRef = useRef<Vec2 | null>(null);
-
-  const [activeDatumComponent, setActiveDatumComponent] = useState<{
-    datumId: string;
-    component: "dx" | "dy" | "L" | "angle";
-  } | null>(null);
-
-  // Remove automaticamente quaisquer marcos "ÓRFÃO" antigos que tenham ficado salvos sem entidade-mãe
-  useEffect(() => {
-    setEntities((prev) => {
-      const hasOrphans = prev.some((e) => {
-        if (!isGeometricMarkEntity(e)) return false;
-        const spec = getGeometricMarkSpec(e);
-        return Boolean(
-          spec?.isOrphan ||
-            (!spec?.parentEntityId &&
-              !spec?.secondaryEntityId &&
-              !(spec?.anchorA && spec?.anchorB) &&
-              spec?.referenceType !== "intersection"),
-        );
-      });
-      if (!hasOrphans) return prev;
-      return clearGeometricMarksFromEntities(prev, true).cleaned;
-    });
-  }, []);
-
-  const previousToolBeforeReferenceRef = useRef<Tool | null>(null);
-
-  const handleSetInteractionGuideMode = useCallback(
-    (nextMode: InteractionGuideMode) => {
-      if (nextMode === "purple_ref") {
-        if (tool !== "select" && tool !== "node") {
-          previousToolBeforeReferenceRef.current = tool;
-          setTool("select");
-        }
-      } else if (nextMode === "off" && previousToolBeforeReferenceRef.current) {
-        setTool(previousToolBeforeReferenceRef.current);
-        previousToolBeforeReferenceRef.current = null;
-      }
-
-      setInteractionGuideModeState(nextMode);
-      saveInteractionGuideMode(nextMode);
-      setLiveDimEditor(null);
-      setLiveDimensions([]);
-      setIsSettingReferencePoint(false);
-      setRelationalPicks([]);
-      previewGeometricMarkCandidateRef.current = null;
-      setPreviewGeometricMarkCandidate(null);
-      setPendingGeometricMarkConfirmation(null);
-      smartPickCandidateRef.current = null;
-      setSmartPickCandidate(null);
-
-      if (nextMode !== "off") {
-        const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-        const viewportCenter: Vec2 = {
-          x: Number(((canvasSize.w / 2 - view.tx) / safeK).toFixed(2)),
-          y: Number(((canvasSize.h / 2 - view.ty) / safeK).toFixed(2)),
-        };
-        const currentOrigin =
-          temporaryOrigin?.p ??
-          (pending.length > 0 ? pending[pending.length - 1]! : viewportCenter);
-
-        if (!temporaryOrigin && nextMode === "blue_line") {
-          setTemporaryOrigin({
-            id: "ref_origin",
-            p: currentOrigin,
-            label: "REF 0,0",
-          });
-        }
-
-        // Garante que o ponto final (X, Y) esteja deslocado de (X0, Y0) para aparição imediata no canvas
-        const cur = cursorRef.current;
-        if (Math.hypot(cur.x - currentOrigin.x, cur.y - currentOrigin.y) < 8 / safeK) {
-          const initialTarget: Vec2 = {
-            x: Number((currentOrigin.x + 120 / safeK).toFixed(2)),
-            y: Number((currentOrigin.y - 80 / safeK).toFixed(2)),
-          };
-          cursorRef.current = initialTarget;
-          setCursor(initialTarget);
-        }
-      }
-    },
-    [view.k, view.tx, view.ty, canvasSize.w, canvasSize.h, temporaryOrigin, pending, tool],
-  );
   const [showGlobalCoordsPeek, setShowGlobalCoordsPeek] = useState<boolean>(false);
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
@@ -1914,27 +1231,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     });
   }, []);
 
-  /* PIVÔ ESTÁTICO DA CÂMERA 3D — 100% FIXO AO CLICAR, SELECIONAR, MOVER OU COPIAR PEÇAS */
-  const locked3DPivotRef = useRef<ReturnType<typeof computeSmartOrbitPivot> | null>(null);
-  const is3DCameraActive =
-    activeMode === "3d" ||
-    isOrbitToolActive ||
-    !isFlatTop2DView(orbitAzimuthDeg, orbitElevationDeg);
-  const smartOrbitPivot = useMemo(() => {
-    if (temporaryOrigin?.p) {
-      const refPivot = computeSmartOrbitPivot(entities, [], temporaryOrigin.p, thickness);
-      locked3DPivotRef.current = refPivot;
-      return refPivot;
-    }
-    if (locked3DPivotRef.current) {
-      return locked3DPivotRef.current;
-    }
-    const computed = computeSmartOrbitPivot(entities, [], null, thickness);
-    if (entities.length > 0) {
-      locked3DPivotRef.current = computed;
-    }
-    return computed;
-  }, [entities, temporaryOrigin, thickness]);
+  /* PIVÔ INTELIGENTE DA ÓRBITA E PROJEÇÃO 3D DO PLANO DE TRABALHO 2D */
+  const smartOrbitPivot = useMemo(
+    () => computeSmartOrbitPivot(entities, selection, temporaryOrigin?.p ?? null, thickness),
+    [entities, selection, temporaryOrigin, thickness],
+  );
   const smartOrbitPivotRef = useRef(smartOrbitPivot);
   smartOrbitPivotRef.current = smartOrbitPivot;
 
@@ -2006,127 +1307,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [],
   );
 
-  // Motor 3D B-Rep In-Place ativo no canvas unificado (SÓLIDO, SOMB e ARAME Gênese CALDRA)
+  // Motor Sólido 3D In-Place ativo no canvas unificado quando em vista 3D e modo SÓLIDO / SOMB
   const isInPlaceSolid3DActive =
     !solidOpen &&
-    (activeMode === "3d" ||
-      orbitProjection2D.isTilted ||
-      isOrbitToolActive);
+    (activeMode === "3d" || orbitProjection2D.isTilted || isOrbitToolActive) &&
+    renderStyle3D !== "wireframe";
 
   const transitionTo3D = useCallback(
     (targetMode: "3d" | "flanges" = "3d") => {
       setActiveMode(targetMode);
       setSolidOpen(false);
       setIsOrbitToolActive(true);
-      if (targetMode === "3d") {
-        // Desativa ferramentas de desenho/modificação 2D ao entrar no CAD 3D
-        setTool("select");
-        setPending([]);
-        setDraft(null);
-        setPendingDraftShape(null);
-        setPortraitDrawerOpen(false);
-        setDivideEditorOpen(false);
-        setMobileEditorOpenManual(false);
-        setActiveArrayType(null);
-        setRenderStyle3D((prev) =>
-          prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded" : prev,
-        );
-        // Costura automaticamente segmentos abertos conectados (ex.: Esquadro em "L") em contornos fechados sólidos 3D
-        setEntities((prev) => {
-          const { entities: consolidated, stitchedCount } =
-            consolidateStitchedLoopsInEntities2D(prev, 2.0);
-          if (stitchedCount > 0) {
-            const synced = syncAssociativeGeometricMarks(consolidated);
-            ReferenceService.syncWithEntities(synced);
-            return synced;
-          }
-          return prev;
-        });
-        setSelection((prevSel) => {
-          if (prevSel.length > 0) return prevSel;
-          const { entities: consolidated } = consolidateStitchedLoopsInEntities2D(entities, 2.0);
-          const firstDrawable = consolidated.find((e) => e.type !== "point" && e.type !== "text");
-          return firstDrawable ? [firstDrawable.id] : prevSel;
-        });
-      }
       if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
         animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
       }
     },
-    [animateOrbitTo, entities],
+    [animateOrbitTo],
   );
 
-  useEffect(() => {
-    const handleSelectDirect3DTool = (ev: Event) => {
-      const custom = ev as CustomEvent<{
-        tool?: DirectModeling3DTool;
-        tool3D?: DirectModeling3DTool;
-      }>;
-      const nextTool = custom.detail?.tool ?? custom.detail?.tool3D;
-      if (!nextTool) return;
-      setTool("select");
-      setPending([]);
-      setDraft(null);
-      setPendingDraftShape(null);
-      setActiveDirect3DTool(nextTool);
-      setActiveMode("3d");
-      setSolidOpen(false);
-      setIsOrbitToolActive(true);
-      setEntities((prev) => {
-        const { entities: consolidated, stitchedCount } =
-          consolidateStitchedLoopsInEntities2D(prev, 2.0);
-        if (stitchedCount > 0) {
-          const synced = syncAssociativeGeometricMarks(consolidated);
-          ReferenceService.syncWithEntities(synced);
-          return synced;
-        }
-        return prev;
-      });
-      setRenderStyle3D((prev) =>
-        prev === "wireframe" && !userPickedArameIn3DRef.current ? "shaded" : prev,
-      );
-      if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-        animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-      }
-    };
-    window.addEventListener("chamfer-select-direct-3d-tool", handleSelectDirect3DTool);
-    return () =>
-      window.removeEventListener("chamfer-select-direct-3d-tool", handleSelectDirect3DTool);
-  }, [animateOrbitTo]);
-
   const transitionTo2D = useCallback(() => {
-    if (orbitAnimRafRef.current) {
-      cancelAnimationFrame(orbitAnimRafRef.current);
-      orbitAnimRafRef.current = null;
-    }
     setActiveMode("2d");
-    setActiveDirect3DTool("select_3d");
-    setSubSelection3D({
-      faceIds: [],
-      edgeIds: [],
-      bodyIds: [],
-      activePivot3D: null,
-      activeHingeEdgeId: null,
-    });
-    setDrawingProjection("orthographic");
     setSolidOpen(false);
     setMorphDirection(null);
     setMorphState("2D_IDLE");
     setIsOrbitToolActive(false);
     orbitDragRef.current = null;
-    orbitAzimuthRef.current = 0;
-    orbitElevationRef.current = 90;
-    setOrbitAzimuthDeg(0);
-    setOrbitElevationDeg(90);
-    setOrbitPreset("top");
-    setOrbitCommand3D({
-      azimuthDeg: 0,
-      elevationDeg: 90,
-      pivot: smartOrbitPivotRef.current,
-      animate: false,
-      nonce: performance.now(),
-    });
-  }, [setDrawingProjection]);
+    if (!isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+      animateOrbitTo(0, 90, "top");
+    }
+  }, [animateOrbitTo]);
 
   const handleSelectOrbitPreset = useCallback(
     (presetId: OrbitPresetId) => {
@@ -2136,17 +1345,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         toast.info("Órbita 3D Livre ativada — arraste na tela para rotacionar a perspectiva.");
         return;
       }
-      if (presetId === "top" && activeMode !== "3d") {
-        transitionTo2D();
-        toast.info("Perspectiva: Superior (2D)");
-        return;
+      if (presetId === "top") {
+        setIsOrbitToolActive(false);
+      } else {
+        setIsOrbitToolActive(true);
       }
-      setIsOrbitToolActive(true);
       const def = getOrbitPresetDefinition(presetId);
       animateOrbitTo(def.azimuthDeg, def.elevationDeg, presetId);
       toast.info(`Perspectiva: ${def.label}`);
     },
-    [activeMode, animateOrbitTo, transitionTo2D],
+    [animateOrbitTo],
   );
 
   const handleDragOrbitDelta = useCallback((dx: number, dy: number) => {
@@ -2186,96 +1394,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   /* --------------------------------------------------------- coordenadas */
-  const getTouchCanvasScreenPos = useCallback(
-    (ev: {
-      clientX?: number;
-      clientY?: number;
-      touches?: ArrayLike<{ clientX: number; clientY: number }>;
-      changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
-    }): Vec2 => {
-      const el = svgRef.current ?? canvasViewportRef.current ?? canvasRef.current;
-      const rect = el?.getBoundingClientRect();
-      if (!rect) return { x: 0, y: 0 };
-
-      const touchPt =
-        ev.touches && ev.touches.length > 0
-          ? ev.touches[0]
-          : ev.changedTouches && ev.changedTouches.length > 0
-            ? ev.changedTouches[0]
-            : null;
-      const rawClientX = touchPt ? touchPt.clientX : (ev.clientX ?? 0);
-      const rawClientY = touchPt ? touchPt.clientY : (ev.clientY ?? 0);
-
-      const scaleX =
-        canvasSize.w > 0 && rect.width > 0 ? canvasSize.w / rect.width : 1;
-      const scaleY =
-        canvasSize.h > 0 && rect.height > 0 ? canvasSize.h / rect.height : 1;
-
-      return {
-        x: (rawClientX - rect.left) * scaleX,
-        y: (rawClientY - rect.top) * scaleY,
-      };
-    },
-    [canvasSize.w, canvasSize.h],
-  );
-
   const toWorld = useCallback(
-    (
-      ev: {
-        clientX?: number;
-        clientY?: number;
-        pointerType?: string;
-        touches?: ArrayLike<{ clientX: number; clientY: number }>;
-        changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
-      },
-      forceDirect = false,
-    ): Vec2 => {
-      const el = svgRef.current ?? canvasViewportRef.current ?? canvasRef.current;
-      const rect = el?.getBoundingClientRect();
-      if (!rect) return { x: 0, y: 0 };
-
-      const touchPt =
-        ev.touches && ev.touches.length > 0
-          ? ev.touches[0]
-          : ev.changedTouches && ev.changedTouches.length > 0
-            ? ev.changedTouches[0]
-            : null;
-      const rawClientX = touchPt ? touchPt.clientX : (ev.clientX ?? 0);
-      const rawClientY = touchPt ? touchPt.clientY : (ev.clientY ?? 0);
-
-      const scaleX =
-        canvasSize.w > 0 && rect.width > 0 ? canvasSize.w / rect.width : 1;
-      const scaleY =
-        canvasSize.h > 0 && rect.height > 0 ? canvasSize.h / rect.height : 1;
-
-      const touchX = (rawClientX - rect.left) * scaleX;
-      const touchY = (rawClientY - rect.top) * scaleY;
-
-      const isTouchOrActiveMira55 =
-        !forceDirect &&
-        cursorOffsetMode === "offset" &&
-        tool !== "pan" &&
-        (ev.pointerType === "touch" ||
-          Boolean(touchPt) ||
-          lastPointerTypeRef.current === "touch" ||
-          (ptrsRef.current.size === 1 && !panRef.current));
-
-      // Coordenada Real da Mira (55px Acima do Toque): crosshairScreenY = touchY - 55
-      const crosshairScreenX = touchX;
-      const crosshairScreenY = isTouchOrActiveMira55
-        ? touchY - TOUCH_CURSOR_OFFSET_PX
-        : touchY;
-
+    (ev: { clientX: number; clientY: number; pointerType?: string }, forceDirect = false): Vec2 => {
+      const el = canvasViewportRef.current ?? svgRef.current;
+      const r = el?.getBoundingClientRect();
+      if (!r) return { x: 0, y: 0 };
       const v = viewRef.current;
       const safeK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
       const safeTx = v && Number.isFinite(v.tx) ? v.tx : 0;
       const safeTy = v && Number.isFinite(v.ty) ? v.ty : 0;
-
-      const projectedPt: Vec2 = {
-        x: (crosshairScreenX - safeTx) / safeK,
-        y: (crosshairScreenY - safeTy) / safeK,
+      const pType = ev.pointerType ?? lastPointerTypeRef.current;
+      const useOffset =
+        !forceDirect &&
+        !isOrbitToolActive &&
+        shouldUseTouchOffset(
+          pType,
+          tool,
+          dragNode !== null,
+          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+          cursorOffsetMode,
+          selection.length > 0,
+        );
+      const calc = computeTouchCursorScreenAndWorld({
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        pointerType: pType,
+        canvasRect: r,
+        panX: safeTx,
+        panY: safeTy,
+        zoom: safeK,
+        offsetEnabled: useOffset,
+      });
+      const projectedPt = {
+        x: calc.cursorWorldX,
+        y: calc.cursorWorldY,
       };
-
       if (!solidOpen && orbitProjection2DRef.current.isTilted) {
         return unprojectOrbit2DToWorkplanePoint(
           projectedPt,
@@ -2286,7 +1439,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return projectedPt;
     },
-    [canvasSize.w, canvasSize.h, solidOpen, cursorOffsetMode, tool],
+    [tool, dragNode, cursorOffsetMode, selection.length, isOrbitToolActive, solidOpen],
   );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
@@ -2307,37 +1460,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const rh = canvasSize.h > 20 ? canvasSize.h : r?.height || el?.clientHeight || window.innerHeight || 600;
     if (rw <= 0 || rh <= 0) return;
 
-    const isPortraitViewport = rw < rh;
-    const rulerLeft = isPortraitViewport ? 20 : 30;
-    const rulerTop = isPortraitViewport ? 20 : 26;
-    const usableW = Math.max(rw - rulerLeft, 40);
-    const usableH = Math.max(rh - rulerTop, 40);
-
-    // Em tela vertical (Portrait), usa margem limpa de 12% e reserva folga superior/esquerda
-    // para o selo "⬚ ÁREA DE TRABALHO • 1500 × 3000 mm" e as cotas externas sem qualquer corte.
-    const marginX = isPortraitViewport ? Math.max(usableW * 0.12, 28) : Math.min(usableW, usableH) * 0.08 + 24;
-    const marginY = isPortraitViewport ? Math.max(usableH * 0.10, 32) : Math.min(usableW, usableH) * 0.08 + 24;
-    const topBadgeAllowance = isPortraitViewport ? 56 : 42;
-    const leftDimAllowance = isPortraitViewport ? 24 : 18;
-
+    const margin = Math.min(rw, rh) * 0.08 + 24;
     const w = Math.max(box.maxX - box.minX, 1);
     const h = Math.max(box.maxY - box.minY, 1);
-    const availW = Math.max(usableW - marginX * 2 - leftDimAllowance, 40);
-    const availH = Math.max(usableH - marginY * 2 - topBadgeAllowance, 40);
+    const availW = Math.max(rw - margin * 2, 40);
+    const availH = Math.max(rh - margin * 2, 40);
 
     const rawK = Math.min(availW / w, availH / h);
     const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, rawK));
 
     const cx = (box.minX + box.maxX) / 2;
-    const cy = (box.minY + box.minY + h) / 2;
-
-    const centerScreenX = rulerLeft + leftDimAllowance * 0.5 + usableW / 2;
-    const centerScreenY = rulerTop + topBadgeAllowance * 0.45 + usableH / 2;
+    const cy = (box.minY + box.maxY) / 2;
 
     const nextView = {
       k,
-      tx: centerScreenX - cx * k,
-      ty: centerScreenY - cy * k,
+      tx: rw / 2 - cx * k,
+      ty: rh / 2 - cy * k,
     };
 
     if (Number.isFinite(nextView.k) && Number.isFinite(nextView.tx) && Number.isFinite(nextView.ty)) {
@@ -2392,10 +1530,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setGroups(plan.groups ?? []);
     setDims(plan.dims ?? []);
     setCad3dTreeJson(plan.cad3dTreeJson);
-    setRevEngData(sanitizeRevEngPlanData(plan.revEng));
-    setRevEngCanvasMode("none");
-    setRevEngPickPoints([]);
-    setRevEngFittedPreview(null);
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
@@ -2449,39 +1583,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [projectId]);
 
   /* GRAVAÇÃO DO PROJETO COM GESTÃO DE ESTADO (SALVO / SALVANDO / PENDENTE) */
-  const projectRef = useRef<Project | null>(project);
-  projectRef.current = project;
-
   const performSave = useCallback(() => {
-    const curProject = projectRef.current;
-    if (!curProject || !planId) return;
+    if (!project || !planId) return;
     setSaveStatus("salvando");
     const live = pruneGroups(entities, groups);
     const next: Project = {
-      ...curProject,
+      ...project,
       layers,
       thickness,
       lastPlanId: planId,
-      plans: curProject.plans.map((pl) =>
+      plans: project.plans.map((pl) =>
         pl.id === planId
-          ? {
-              ...pl,
-              entities,
-              groups: live,
-              dims: pruneDimensions(dims, entities),
-              cad3dTreeJson,
-              revEng: revEngData,
-            }
+          ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities), cad3dTreeJson }
           : pl,
       ),
     };
     saveProject(next);
-    projectRef.current = next;
     setProject(next);
     setTimeout(() => {
       setSaveStatus("salvo");
     }, 400);
-  }, [planId, entities, groups, layers, thickness, dims, cad3dTreeJson, revEngData]);
+  }, [project, planId, entities, groups, layers, thickness, dims, cad3dTreeJson]);
 
   const handleManualSave = useCallback(() => {
     triggerHaptic("action");
@@ -2490,16 +1612,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [performSave]);
 
   /* SALVAMENTO AUTOMÁTICO CONFORME CONFIGURAÇÃO DO CHAMFER */
-  const activeProjectIdForAutoSave = project?.id ?? null;
   useEffect(() => {
-    if (
-      isInitialLoad.current ||
-      !activeProjectIdForAutoSave ||
-      !planId ||
-      isDraggingEntityRef.current
-    ) {
-      return;
-    }
+    if (isInitialLoad.current || !project || !planId || isDraggingEntityRef.current) return;
 
     // Sinaliza que há alterações não salvas
     setSaveStatus("pendente");
@@ -2517,7 +1631,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     return () => clearTimeout(t);
   }, [
-    activeProjectIdForAutoSave,
+    project,
     entities,
     layers,
     planId,
@@ -2545,124 +1659,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* Orientação livre (Portrait e Landscape) — sem bloqueio forçado de tela */
 
-  const [activeStrokeColor, setActiveStrokeColor] = useState<string | null>(null);
-  const activeStrokeColorRef = useRef<string | null>(null);
-  useEffect(() => {
-    activeStrokeColorRef.current = activeStrokeColor;
-  }, [activeStrokeColor]);
-
   const layerOf = useCallback((id: string) => layers.find((l) => l.id === id), [layers]);
 
   const commit = useCallback((next: Entity[] | ((p: Entity[]) => Entity[])) => {
     setEntities((prev) => {
       past.current = [...past.current.slice(-49), prev];
-      pastReferenceSnapshotsRef.current = [
-        ...pastReferenceSnapshotsRef.current.slice(-49),
-        ReferenceService.getSnapshot(),
-      ];
-      pastPolarRefsRef.current = [
-        ...pastPolarRefsRef.current.slice(-49),
-        polarRefsRef.current,
-      ];
       future.current = [];
-      futureReferenceSnapshotsRef.current = [];
-      futurePolarRefsRef.current = [];
       setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
       const updated = typeof next === "function" ? next(prev) : next;
       const seenIds = new Set<string>();
-      const prevIds = new Set(prev.map((e) => e.id));
-      const strokeOverride = activeStrokeColorRef.current;
-      const normalizedList = updated.map((ent) => {
+      return updated.map((ent) => {
         let entId = ent.id;
-        const isBrandNew =
-          !entId || entId === "draft" || entId.startsWith("draft-") || !prevIds.has(entId);
-        if (!entId || entId === "draft" || entId === "draft-" || seenIds.has(entId)) {
+        if (!entId || entId === "draft" || entId.startsWith("draft-") || seenIds.has(entId)) {
           entId = uid();
         }
         seenIds.add(entId);
-        let nextEnt = ent.id === entId ? ent : { ...ent, id: entId };
-        // Modo Gabarito (Ref.): marca automaticamente novas entidades (exceto quando explicitamente `isReferenceGuide: false`, como no Traçar Peça!)
-        if (isBrandNew && guideModeOnRef.current && nextEnt.isReferenceGuide === undefined) {
-          nextEnt = {
-            ...nextEnt,
-            isReferenceGuide: true,
-          };
-        }
-        if (isBrandNew && strokeOverride && !nextEnt.params?.strokeColor) {
-          nextEnt = {
-            ...nextEnt,
-            params: {
-              ...(nextEnt.params ?? {}),
-              strokeColor: strokeOverride,
-            },
-          };
-        }
-        return nextEnt;
+        return ent.id === entId ? ent : { ...ent, id: entId };
       });
-      const synced = syncAssociativeGeometricMarks(normalizedList);
-      ReferenceService.syncWithEntities(synced);
-      return synced;
     });
   }, []);
 
-  const commitPendingDraftShape = useCallback(
-    (shapeOverride?: PendingDraftShapeState | null) => {
-      const target = shapeOverride ?? pendingDraftShapeRef.current;
-      if (!target) return;
-      const hasAnyLockedConstraint =
-        lockedConstraints.lockedL != null ||
-        lockedConstraints.lockedDx != null ||
-        lockedConstraints.lockedDy != null ||
-        lockedConstraints.lockedDist != null;
-      const baseFinal: Entity =
-        !target.entity.id ||
-        target.entity.id === "draft" ||
-        target.entity.id.startsWith("draft-")
-          ? { ...target.entity, id: uid() }
-          : target.entity;
-      const finalEntity: Entity = hasAnyLockedConstraint
-        ? {
-            ...baseFinal,
-            params: {
-              ...baseFinal.params,
-              lockedConstraints: { ...lockedConstraints },
-            },
-          }
-        : baseFinal;
-      commit((e) => [...e, finalEntity]);
-      lastCreatedVertexRef.current = target.p1;
-      setPendingDraftShape(null);
-      setDraggingDraftGripIndex(null);
-      setSelection([]);
-      setMobileEditorOpenManual(false);
-
-      if (dualToolSecondary === "dim") {
-        const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
-        setDims((list) => [...list, dim]);
-        toast.success("Cota técnica gerada automaticamente via Dual Tool.");
-        if (!dualToolPinned) setDualToolSecondary(null);
-      } else if (dualToolSecondary === "smart_trim") {
-        setTool("smart_trim");
-        toast.info("Dual Tool: selecione o trecho a aparar.");
-      }
-    },
-    [
-      commit,
-      dualToolPinned,
-      dualToolSecondary,
-      lockedConstraints,
-      setPendingDraftShape,
-    ],
-  );
-
   const undo = useCallback(() => {
-    if (pendingDraftShapeRef.current) {
-      setPendingDraftShape(null);
-      setDraggingDraftGripIndex(null);
-      triggerHaptic("selection");
-      toast.info("Forma em pré-confirmação descartada.");
-      return;
-    }
     // Se houver desenho em progresso (pontos de polilinha, draft, etc.), cancela o rascunho primeiro
     if (pending.length > 0) {
       setPending([]);
@@ -2675,247 +1692,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLiveMeasure(null);
       return;
     }
-    const last = past.current.pop();
-    if (!last) return;
-    const prevRefSnap = pastReferenceSnapshotsRef.current.pop();
-    if (prevRefSnap) {
-      futureReferenceSnapshotsRef.current = [
-        ReferenceService.getSnapshot(),
-        ...futureReferenceSnapshotsRef.current,
-      ];
-      ReferenceService.restoreSnapshot(prevRefSnap);
-    }
-    const prevPolarSnap = pastPolarRefsRef.current.pop();
-    if (prevPolarSnap !== undefined) {
-      futurePolarRefsRef.current = [polarRefsRef.current, ...futurePolarRefsRef.current];
-      polarRefsRef.current = prevPolarSnap;
-      setPolarRefs(prevPolarSnap);
-    }
     setEntities((prev) => {
+      const last = past.current.pop();
+      if (!last) return prev;
       future.current = [prev, ...future.current];
-      ReferenceService.syncWithEntities(last);
+      setHistoryState({ canUndo: past.current.length > 0, canRedo: future.current.length > 0 });
+      triggerHaptic("medium");
+      toast.success("Ação desfeita");
       return last;
     });
-    setHistoryState({ canUndo: past.current.length > 0, canRedo: future.current.length + 1 > 0 });
-    triggerHaptic("medium");
-    toast.success("Ação desfeita");
   }, [pending.length, liveMeasure]);
 
   const redo = useCallback(() => {
-    const [next, ...rest] = future.current;
-    if (!next) return;
-    future.current = rest;
-    const [nextRefSnap, ...restRefSnaps] = futureReferenceSnapshotsRef.current;
-    if (nextRefSnap) {
-      pastReferenceSnapshotsRef.current = [
-        ...pastReferenceSnapshotsRef.current,
-        ReferenceService.getSnapshot(),
-      ];
-      futureReferenceSnapshotsRef.current = restRefSnaps;
-      ReferenceService.restoreSnapshot(nextRefSnap);
-    }
-    const [nextPolarSnap, ...restPolarSnaps] = futurePolarRefsRef.current;
-    if (nextPolarSnap !== undefined) {
-      pastPolarRefsRef.current = [...pastPolarRefsRef.current, polarRefsRef.current];
-      futurePolarRefsRef.current = restPolarSnaps;
-      polarRefsRef.current = nextPolarSnap;
-      setPolarRefs(nextPolarSnap);
-    }
     setEntities((prev) => {
+      const [next, ...rest] = future.current;
+      if (!next) return prev;
+      future.current = rest;
       past.current = [...past.current, prev];
-      ReferenceService.syncWithEntities(next);
+      setHistoryState({ canUndo: past.current.length > 0, canRedo: rest.length > 0 });
+      triggerHaptic("medium");
+      toast.success("Ação refeita");
       return next;
     });
-    setHistoryState({ canUndo: true, canRedo: rest.length > 0 });
-    triggerHaptic("medium");
-    toast.success("Ação refeita");
   }, []);
-
-  /** Registra alteração de Referências Polares na pilha de Undo/Redo sem poluir entidades vetoriais. */
-  const commitPolarRefs = useCallback((nextRefs: PolarReferenceItem[]) => {
-    setEntities((curEntities) => {
-      past.current = [...past.current.slice(-49), curEntities];
-      pastReferenceSnapshotsRef.current = [
-        ...pastReferenceSnapshotsRef.current.slice(-49),
-        ReferenceService.getSnapshot(),
-      ];
-      pastPolarRefsRef.current = [
-        ...pastPolarRefsRef.current.slice(-49),
-        polarRefsRef.current,
-      ];
-      future.current = [];
-      futureReferenceSnapshotsRef.current = [];
-      futurePolarRefsRef.current = [];
-      polarRefsRef.current = nextRefs;
-      setPolarRefs(nextRefs);
-      setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
-      return curEntities;
-    });
-  }, []);
-
-  // Limpa estados transitórios de Trim / Fillet / Ref. Polar ao trocar de ferramenta
-  useEffect(() => {
-    if (tool !== "trim" && tool !== "smart_trim") {
-      setTrimMarkedKeys([]);
-      setTrimHoverPiece(null);
-      setTrimFenceTrail([]);
-      swipeTrimFenceRef.current = [];
-      trimPointerDownWorldRef.current = null;
-    }
-    if (tool !== "fillet") {
-      setFilletFirstPick(null);
-      setFilletSecondPick(null);
-      setUniversalFilletResult(null);
-      setFilletSolutionIdx(0);
-      setFilletErrorHint(null);
-    }
-    if (tool !== "polar_ref") {
-      setPolarRefOriginAnchor(null);
-      setPolarRefHoveredOrigin(null);
-      setPolarRefLivePreview(null);
-      setPolarRefLockedDist(null);
-      setPolarRefLockedAngle(null);
-      polarArbiterRef.current = createPolarPointerArbiterState();
-    }
-    if (tool !== "trace_part") {
-      setTraceMarkedKeys([]);
-      setTraceHoverPiece(null);
-      setTraceFenceTrail([]);
-      traceFenceRef.current = [];
-      tracePointerDownWorldRef.current = null;
-    }
-  }, [tool]);
-
-  // Recalcula o preview do Fillet Universal ao mudar o raio R ou índice da solução
-  useEffect(() => {
-    if (tool !== "fillet" || !filletFirstPick || !filletSecondPick) return;
-    const entA = entities.find((e) => e.id === filletFirstPick.entity.id);
-    const entB = entities.find((e) => e.id === filletSecondPick.entity.id);
-    if (!entA || !entB) return;
-    const recomputed = computeUniversalFillet2D(
-      entA,
-      filletFirstPick.clickPoint,
-      entB,
-      filletSecondPick.clickPoint,
-      filletR,
-      entities,
-      filletSolutionIdx,
-    );
-    setUniversalFilletResult(recomputed);
-    setFilletErrorHint(recomputed.ok ? null : (recomputed.error ?? null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filletR, filletSolutionIdx]);
-
-  // Preview analítico em tempo real do Trim Unificado (trechos marcados + hover em curva real)
-  const trimBatchPreview: TrimBatchPreview | null = useMemo(() => {
-    if (tool !== "trim" && tool !== "smart_trim") return null;
-    return buildTrimBatchPreview(entities, trimMarkedKeys, trimHoverPiece, smartTrimMode);
-  }, [tool, entities, trimMarkedKeys, trimHoverPiece, smartTrimMode]);
-
-  const handleConfirmTrimCut = useCallback(() => {
-    if (trimMarkedKeys.length === 0) return;
-    const res = commitTrimBatch(entities, trimMarkedKeys, smartTrimMode);
-    if (res.removedSubPiecesCount > 0) {
-      commit(res.updatedEntities);
-      triggerHaptic("success");
-      toast.success(
-        `Trim confirmado: ${res.removedSubPiecesCount} trecho(s) aparado(s) em 1 operação Undo.`,
-      );
-    } else {
-      toast.info("Nenhum trecho válido selecionado para corte.");
-    }
-    setTrimMarkedKeys([]);
-    setTrimHoverPiece(null);
-    setTrimFenceTrail([]);
-    swipeTrimFenceRef.current = [];
-  }, [entities, trimMarkedKeys, smartTrimMode, commit]);
-
-  // Preview analítico e handlers da ferramenta "Traçar Peça" (TRIM Inverso / Passar a Limpo)
-  const guideEntitiesCount = useMemo(() => countReferenceGuideEntities(entities), [entities]);
-  const tracePartPreview: TracePartPreview | null = useMemo(() => {
-    if (tool !== "trace_part") return null;
-    return buildTracePartPreview(entities, traceMarkedKeys);
-  }, [tool, entities, traceMarkedKeys]);
-
-  const handleConfirmTracePartCreate = useCallback(() => {
-    if (traceMarkedKeys.length === 0) return;
-    const res = commitTracePartToRealEntities(entities, traceMarkedKeys, activeLayer);
-    if (res.createdRealEntities.length > 0) {
-      commit(res.updatedEntities);
-      setGuideModeOn(false);
-      triggerHaptic("success");
-      toast.success(
-        `✒️ Peça passada a limpo: ${res.createdRealEntities.length} entidade(s) vetorial(is) criada(s) em 1 passo Undo!`,
-      );
-    } else {
-      toast.info("Os trechos selecionados já existem como entidades vetoriais reais.");
-    }
-    setTraceMarkedKeys([]);
-    setTraceHoverPiece(null);
-    setTraceFenceTrail([]);
-    traceFenceRef.current = [];
-  }, [entities, traceMarkedKeys, activeLayer, commit]);
-
-  const handleDeleteAllReferenceGuides = useCallback(() => {
-    const res = removeAllReferenceGuides(entities);
-    if (res.removedCount === 0) {
-      toast.info("Nenhuma entidade de Gabarito para remover.");
-      return;
-    }
-    commit(res.updatedEntities);
-    setTraceMarkedKeys([]);
-    setGuidesHidden(false);
-    setGuideModeOn(false);
-    triggerHaptic("action");
-    toast.success(`🧹 ${res.removedCount} entidade(s) de Gabarito removida(s) (reversível com Desfazer).`);
-  }, [entities, commit]);
-
-  const handleConfirmLivePolarRef = useCallback(
-    (override?: { distanceMm?: number; angleDeg?: number }) => {
-      if (!polarRefOriginAnchor) return;
-      const effLockedDist = override?.distanceMm ?? polarRefLockedDist;
-      const effLockedAngle = override?.angleDeg ?? polarRefLockedAngle;
-      const evalRes = evaluateLivePolarReference({
-        originAnchor: polarRefOriginAnchor,
-        rawCursor: cursorRef.current,
-        orthoOn,
-        polarSnapOn,
-        lockedDistanceMm: effLockedDist,
-        lockedAngleDeg: effLockedAngle,
-      });
-      const finalDist = override?.distanceMm ?? polarRefLivePreview?.distanceMm ?? evalRes.distanceMm;
-      const finalAng = override?.angleDeg ?? polarRefLivePreview?.angleDeg ?? evalRes.angleDeg;
-      if (finalDist < 0.05) {
-        toast.info("Defina uma distância maior que 0 mm para fixar a Ref. Polar.");
-        return;
-      }
-      const item = createPolarReferenceItem({
-        origin: polarRefOriginAnchor.point,
-        distanceMm: finalDist,
-        angleDeg: finalAng,
-        originLabel: polarRefOriginAnchor.label,
-        isPerpendicularToEdge: polarRefLivePreview?.isPerpendicularToEdge ?? evalRes.isPerpendicularToEdge,
-      });
-      commitPolarRefs([...polarRefsRef.current, item]);
-      setPolarRefOriginAnchor(null);
-      setPolarRefLivePreview(null);
-      setPolarRefLockedDist(null);
-      setPolarRefLockedAngle(null);
-      triggerHaptic("success");
-      toast.success(
-        `⌖ Ref. Polar fixada: d = ${item.distanceMm.toFixed(1)} mm • ∠ ${item.angleDeg.toFixed(1)}° (alvo ⊕ magnético pronto).`,
-      );
-    },
-    [
-      polarRefOriginAnchor,
-      polarRefLivePreview,
-      orthoOn,
-      polarSnapOn,
-      polarRefLockedDist,
-      polarRefLockedAngle,
-      commitPolarRefs,
-    ],
-  );
 
   /* -------------------------------------------------- handoff da Traçagem */
   useEffect(() => {
@@ -3036,9 +1835,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const el = canvasViewportRef.current ?? svgRef.current;
     if (!el) return;
     const onWheel = (ev: WheelEvent) => {
-      if (isHudInteractiveElement(ev.target)) {
-        return;
-      }
       ev.preventDefault();
       ev.stopPropagation();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
@@ -3046,22 +1842,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const r = el.getBoundingClientRect();
       const intensity = ev.ctrlKey ? 0.01 : 0.0015;
       const clampedDy = Math.max(-800, Math.min(800, dy));
-      const rawFactor = Math.exp(-clampedDy * intensity);
-      const metrics = computeAdaptiveZoomMetrics({
-        characteristicRadiusMm: characteristicRadiusRef.current,
-        viewK: viewRef.current.k,
-        viewportWidthPx: r.width || 800,
-        viewportHeightPx: r.height || 600,
-        userSensitivityMultiplier: zoomSensitivityRef.current.multiplier,
-      });
-      const evaluated = evaluateAdaptiveZoomStep({
-        rawZoomRatio: rawFactor,
-        metrics,
-        isPinchGesture: false,
-      });
+      const factor = Math.exp(-clampedDy * intensity);
       const px = ev.clientX - r.left;
       const py = ev.clientY - r.top;
-      const v = zoomAt(evaluated.appliedZoomRatio, px, py);
+      const v = zoomAt(factor, px, py);
       flashZoom(v.k);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -3075,14 +1859,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   const visible = useMemo(
-    () =>
-      activeEntities.filter(
-        (e) =>
-          Boolean(e && e.id) &&
-          layerOf(e.layer)?.visible !== false &&
-          !(guidesHidden && e.isReferenceGuide),
-      ),
-    [activeEntities, layerOf, guidesHidden],
+    () => activeEntities.filter((e) => Boolean(e && e.id) && layerOf(e.layer)?.visible !== false),
+    [activeEntities, layerOf],
   );
 
   /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
@@ -3090,12 +1868,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     () => visible.filter((e) => modeAllows(outputMode, e.layer)),
     [visible, outputMode],
   );
-
-  characteristicRadiusRef.current = computeCharacteristicPartRadiusMm({
-    entities2D: drawable,
-    selectedEntityIds: selection,
-    defaultThicknessMm: thickness,
-  });
 
   /* índices espaciais: reconstruídos só quando a geometria muda */
   const pickIndex = useMemo(() => buildIndex(visible), [visible]);
@@ -3113,12 +1885,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const hitTest = useCallback(
     (p: Vec2): Entity | null => {
-      // Raio de Captura da Mira: 55px na tela convertido para 55 / zoom em coordenadas de mundo (Seção 5.2 / 5.3)
-      // Avalia a distância perpendicular exata às arestas/contornos ao redor do centro real do retículo (cx, cy)
-      const tol = 55 / view.k;
+      // Tolerância matemática de 12px / zoom conforme Seção 2 da especificação
+      const tol = 12 / view.k;
       const candidates: { e: Entity; d: number }[] = [];
 
-      for (const e of near(p, Math.max(tol, 55 / view.k))) {
+      for (const e of near(p, Math.max(tol, 25 / view.k))) {
         if (layerOf(e.layer)?.locked) continue;
         let d = Infinity;
         if (e.type === "circle") {
@@ -3156,30 +1927,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           const normD = (ux / rx) ** 2 + (uy / ry) ** 2;
           d = Math.abs(Math.sqrt(normD) - 1) * Math.min(rx, ry);
         } else if (e.type === "text") {
-          if (isRichNoteEntity(e)) {
-            const richDist = hitTestRichNoteGlyphsMm(p, e, tol);
-            d = richDist === null ? Infinity : richDist;
-          } else {
-            d = dist(p, { x: e.x, y: e.y });
-          }
+          d = dist(p, { x: e.x, y: e.y });
         } else if (e.type === "point") {
-          if (isPersistentDatumEntity(e)) {
-            const spec = getPersistentDatumSpec(e);
-            if (spec) {
-              const corner = { x: spec.target.x, y: spec.origin.y };
-              d = Math.min(
-                dist(p, spec.origin),
-                dist(p, spec.target),
-                dist(p, closestOnSegment(p, [spec.origin, spec.target])),
-                dist(p, closestOnSegment(p, [spec.origin, corner])),
-                dist(p, closestOnSegment(p, [corner, spec.target])),
-              );
-            } else {
-              d = dist(p, { x: e.x, y: e.y });
-            }
-          } else {
-            d = dist(p, { x: e.x, y: e.y });
-          }
+          d = dist(p, { x: e.x, y: e.y });
         } else {
           // Linhas e polilinhas (abertas ou fechadas / retângulos / polígonos):
           // Mede estritamente a distância matemática às arestas/traços reais.
@@ -3191,76 +1941,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         if (d <= tol) {
           candidates.push({ e, d });
-        }
-      }
-
-      if (
-        drawingProjection === "isometric" ||
-        orbitProjection2D.isTilted
-      ) {
-        const uz = resolveUnitZWorkplaneOffset(
-          drawingProjection === "isometric",
-          isoPlane,
-          orbitProjection2D,
-        );
-
-        const measureEntityDistanceAtPoint = (ent: Entity, pt: Vec2): number => {
-          if (ent.type === "circle") {
-            return Math.abs(dist(pt, { x: ent.cx, y: ent.cy }) - ent.r);
-          }
-          if (ent.type === "arc") {
-            const cd = dist(pt, { x: ent.cx, y: ent.cy });
-            const twoPi = Math.PI * 2;
-            const norm = (a: number) => ((a % twoPi) + twoPi) % twoPi;
-            const a0 = norm(ent.a0);
-            let a1 = norm(ent.a1);
-            if (a1 <= a0) a1 += twoPi;
-            let cur = norm(Math.atan2(pt.y - ent.cy, pt.x - ent.cx));
-            if (cur < a0) cur += twoPi;
-            if (cur <= a1) return Math.abs(cd - ent.r);
-            const p0 = { x: ent.cx + ent.r * Math.cos(ent.a0), y: ent.cy + ent.r * Math.sin(ent.a0) };
-            const p1 = { x: ent.cx + ent.r * Math.cos(ent.a1), y: ent.cy + ent.r * Math.sin(ent.a1) };
-            return Math.min(dist(pt, p0), dist(pt, p1));
-          }
-          let best = Infinity;
-          for (const s of segmentsOf(ent)) {
-            best = Math.min(best, dist(pt, closestOnSegment(pt, s)));
-          }
-          return best;
-        };
-
-        for (const e of visible) {
-          if (layerOf(e.layer)?.locked) continue;
-          const elevZ = getEntityElevationZ(e);
-          const extH = getEntityExtrudeHeight(e, thickness);
-          const loftSpec = getEntityLoft3DSpec(e);
-          if (Math.abs(elevZ) <= 0.01 && extH <= 0.01 && !loftSpec) continue;
-
-          const pAtBaseZ = { x: p.x - uz.x * elevZ, y: p.y - uz.y * elevZ };
-          let d = measureEntityDistanceAtPoint(e, pAtBaseZ);
-
-          if (extH > 0.01) {
-            const topZ = elevZ + extH;
-            const pAtTopZ = { x: p.x - uz.x * topZ, y: p.y - uz.y * topZ };
-            d = Math.min(d, measureEntityDistanceAtPoint(e, pAtTopZ));
-          }
-
-          if (loftSpec && Array.isArray(loftSpec.sectionEntities)) {
-            for (const sec of loftSpec.sectionEntities) {
-              const secZ = getEntityElevationZ(sec);
-              const pSec = { x: p.x - uz.x * secZ, y: p.y - uz.y * secZ };
-              d = Math.min(d, measureEntityDistanceAtPoint(sec, pSec));
-            }
-          }
-
-          if (d <= tol * 1.35) {
-            const existing = candidates.find((c) => c.e.id === e.id);
-            if (existing) {
-              existing.d = Math.min(existing.d, d);
-            } else {
-              candidates.push({ e, d });
-            }
-          }
         }
       }
 
@@ -3277,37 +1957,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       return candidates[0].e;
     },
-    [near, view.k, layerOf, selection, drawingProjection, orbitProjection2D, isoPlane, visible, thickness],
+    [near, view.k, layerOf, selection],
   );
 
   const snapPoint = useCallback(
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
-      const tol = (nudgeHudVisible ? 6 : 12) / view.k;
-
-      // Prioridade absoluta para Alvos Magnéticos ⊕ das Cotas de Referência Polar (Ref. Polar)
-      const polarSnap = findNearestPolarRefSnap(p, polarRefsRef.current, tol * 1.5);
-      if (polarSnap) {
-        return { x: polarSnap.point.x, y: polarSnap.point.y };
-      }
-
-      // Prioridade máxima para Âncoras A–E, Divisores ÷N e Encontros de Guias do ReferenceService
-      const refCandidates = ReferenceService.snapCandidates(entities);
-      for (const rc of refCandidates) {
-        if (dist(p, rc.point) <= tol * 1.45) {
-          return { x: rc.point.x, y: rc.point.y };
-        }
-      }
-
-      // Prioridade máxima para Pontos de Encontro Roxos (+) confirmados
-      for (const mp of pinnedMeetingPoints) {
-        if (dist(p, mp) <= tol * 1.35) {
-          return { x: mp.x, y: mp.y };
-        }
-      }
-
+      const tol = 12 / view.k;
       const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
-      const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection, snapDivision);
+      const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection);
       if (smart) return smart.p;
 
       // Snapping prioritário à grade isométrica quando em modo isométrico
@@ -3319,13 +1977,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, view.k, pinnedMeetingPoints, pending, entities, tool, selection, snapDivision, nudgeHudVisible, near, grid, showGrid, drawingProjection, isoPlane],
+    [snapOn, view.k, pending, entities, tool, selection, near, grid, showGrid, drawingProjection, isoPlane],
   );
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
   const initialFitDoneRef = useRef(false);
-  const isTransitioningLayoutRef = useRef(false);
-  const isTransitioningLayoutTimerRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const el = canvasRef.current;
@@ -3337,43 +1993,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const nextH = Math.round(r.height);
         setCanvasSize((prev) => {
           if (prev.w === nextW && prev.h === nextH) return prev;
-          if (isTransitioningLayoutRef.current) {
-            return { w: nextW, h: nextH };
-          }
-          const prevPortrait = prev.w > 20 && prev.h > 20 && prev.w < prev.h;
-          const nextPortrait = nextW < nextH;
-          if (
-            initialFitDoneRef.current &&
-            prev.w > 20 &&
-            prev.h > 20 &&
-            arrayFrameAnimRafRef.current === null
-          ) {
-            if (prevPortrait !== nextPortrait) {
-              // Auto-Fit Portrait: ao alternar entre Paisagem e Retrato, recalcula o bounding box
-              // das peças (ou da Área de Trabalho) com 12% de margem limpa sem cortar cotas/selo
-              requestAnimationFrame(() => {
-                const list = entitiesRef.current;
-                const b = list.length > 0 ? bbox(list) : null;
-                if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
-                  fitBoxRef.current(b);
-                } else {
-                  fitBoxRef.current(frameBox(loadFrame()));
-                }
-              });
-            } else {
-              const dw = (nextW - prev.w) / 2;
-              const dh = (nextH - prev.h) / 2;
-              const curV = viewRef.current;
-              if (
-                curV &&
-                Number.isFinite(curV.tx) &&
-                Number.isFinite(curV.ty) &&
-                Number.isFinite(curV.k)
-              ) {
-                const adjusted = { k: curV.k, tx: curV.tx + dw, ty: curV.ty + dh };
-                viewRef.current = adjusted;
-                setView(adjusted);
-              }
+          if (initialFitDoneRef.current && prev.w > 20 && prev.h > 20) {
+            // Preserva o ponto central do mundo CAD (cx, cy) e a proporção 1:1 (k_x === k_y === k)
+            // ao girar o aparelho entre Retrato (Portrait) e Paisagem (Landscape)
+            const dw = (nextW - prev.w) / 2;
+            const dh = (nextH - prev.h) / 2;
+            const curV = viewRef.current;
+            if (
+              curV &&
+              Number.isFinite(curV.tx) &&
+              Number.isFinite(curV.ty) &&
+              Number.isFinite(curV.k)
+            ) {
+              const adjusted = { k: curV.k, tx: curV.tx + dw, ty: curV.ty + dh };
+              viewRef.current = adjusted;
+              setView(adjusted);
             }
           }
           return { w: nextW, h: nextH };
@@ -3424,189 +2058,49 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const selectionSet = useMemo(() => new Set(selection), [selection]);
 
-  const activeLoftPreviewMesh = useMemo(() => {
-    if ((tool !== "loft_3d" && activeDirect3DTool !== "loft_3d") || loftSectionIds.length < 2) {
-      return null;
-    }
-    const sectionEntities = loftSectionIds
-      .map((id) => entities.find((e) => e.id === id))
-      .filter((e): e is Entity => Boolean(e));
-    if (sectionEntities.length < 2) return null;
-    return buildLoft3DMesh(sectionEntities, {
-      surfaceMode: loftSurfaceMode,
-      bodyMode: loftBodyMode,
-      wallThicknessMm: thickness,
-    });
-  }, [tool, activeDirect3DTool, loftSectionIds, entities, loftSurfaceMode, loftBodyMode, thickness]);
+  useEffect(() => {
+    if (cadPhase < 2) return;
+    const el = canvasRef.current;
+    if (!el || !canvasSize.w || !canvasSize.h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pw = Math.round(canvasSize.w * dpr);
+    const ph = Math.round(canvasSize.h * dpr);
+    if (el.width !== pw) el.width = pw;
+    if (el.height !== ph) el.height = ph;
+    const ctx = el.getContext("2d");
+    if (!ctx) return;
 
-  const handleConfirmLoft3D = useCallback(() => {
-    const sectionEntities = loftSectionIds
-      .map((id) => entities.find((e) => e.id === id))
-      .filter((e): e is Entity => Boolean(e));
-    if (sectionEntities.length < 2) {
-      toast.error("Selecione pelo menos 2 seções transversais fechadas para criar o Loft 3D.");
+    if (solidOpen || isInPlaceSolid3DActive) {
+      // Em modo 3D Sólido In-Place ou Traçagem, limpa o canvas 2D para exibir o sólido B-Rep sem duplicação
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
       return;
     }
-    const loftEntity = createLoft3DEntity({
-      sectionEntities,
-      surfaceMode: loftSurfaceMode,
-      bodyMode: loftBodyMode,
-      wallThicknessMm: thickness,
-      layer: activeLayer,
-    });
-    if (!loftEntity) {
-      toast.error("Não foi possível gerar a malha 3D do Loft para os perfis selecionados.");
-      return;
-    }
-    triggerHaptic("action");
-    const consumedSet = new Set(loftSectionIds);
-    commit((list) => [...list.filter((e) => !consumedSet.has(e.id)), loftEntity]);
-    setSelection([loftEntity.id]);
-    setSubSelection3D({
-      faceIds: [],
-      edgeIds: [],
-      vertexIds: [],
-      bodyIds: [`body_${loftEntity.id}`],
-      selectionScope: "body",
-      activePivot3D: null,
-      activeHingeEdgeId: null,
-    });
-    setLoftSectionIds([]);
-    setTool("select");
-    setActiveDirect3DTool("select_3d");
-    toast.success(
-      `✓ Sólido Loft 3D criado com ${sectionEntities.length} seções (${
-        loftSurfaceMode === "smooth" ? "Suave / Smooth Fit" : "Reto / Ruled"
-      }).`,
-    );
-  }, [loftSectionIds, entities, loftSurfaceMode, loftBodyMode, thickness, activeLayer, commit]);
 
-  const render2DSceneForMode = useCallback(
-    (targetMode: "light" | "dark" | "amoled") => {
-      if (cadPhase < 2) return;
-      const el = canvasRef.current;
-      if (!el || !canvasSize.w || !canvasSize.h) return;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const pw = Math.round(canvasSize.w * dpr);
-      const ph = Math.round(canvasSize.h * dpr);
-      if (el.width !== pw) el.width = pw;
-      if (el.height !== ph) el.height = ph;
-      const ctx = el.getContext("2d");
-      if (!ctx) return;
+    // pinta no MESMO quadro em que o SVG recebe a transformação: sem atraso
+    // de um frame entre a geometria (canvas) e os overlays (SVG) no pinch.
+    const hasIsoSolidFaces = entities.some((e) => e.params?.isIsoSolidFace);
+    const isIsoView = drawingProjection === "isometric" || hasIsoSolidFaces;
 
-      if (solidOpen || isInPlaceSolid3DActive) {
-        // Em modo 3D Sólido In-Place ou Traçagem, limpa o canvas 2D para exibir o sólido B-Rep sem duplicação
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
-        return;
-      }
-
-      const modeIsDark = targetMode !== "light";
-      const palette = buildChamferThemeColors(
-        targetMode,
-        bgStyle,
-        accentKey,
-        cardOpacity,
-        bubbleOpacity,
-      );
-      const hasIsoSolidFaces = entities.some((e) => e.params?.isIsoSolidFace);
-      const isIsoView = drawingProjection === "isometric" || hasIsoSolidFaces;
-
-      drawScene(ctx, {
-        index: drawIndex,
-        view,
-        width: canvasSize.w,
-        height: canvasSize.h,
-        dpr,
-        selection: selectionSet,
-        lod: gesturing,
-        isLight: !modeIsDark,
-        canvasBgColor: palette.workAreaFill,
-        themeLerpT: modeIsDark ? 1 : 0,
-        isDraggingUnlocked,
-        isIsometric: isIsoView,
-        isoPlane,
-        sheetThickness: thickness,
-        orbitProjection: orbitProjection2D,
-        wireframe3DStyle,
-        showGrid,
-        gridStep: Math.max(15, grid * 2.5),
-        bgStyle,
-        activeLoftPreviewMesh,
-        freehandLiveStroke:
-          freehandLivePts.length >= 2
-            ? {
-                pts: freehandLivePts,
-                usageRole: freehandUsageRole,
-                canClose: computeFreehandLiveMetrics(
-                  freehandLivePts,
-                  10 / Math.max(0.2, view.k),
-                ).canClose,
-              }
-            : null,
-      });
-
-      // Nota (Seção 1.1): A Mira Principal (Retículo + Haste Elástica + Anel de Toque)
-      // é renderizada exclusivamente por <ChamferTechnicalCursorSvg /> no SVG Overlay,
-      // eliminando qualquer segunda mira duplicada/fantasma no Canvas 2D.
-      void activeTouchScreenPos;
-    },
-    [
-      cadPhase,
-      canvasSize.w,
-      canvasSize.h,
-      solidOpen,
-      isInPlaceSolid3DActive,
-      bgStyle,
-      accentKey,
-      cardOpacity,
-      bubbleOpacity,
-      entities,
-      drawingProjection,
-      drawIndex,
+    drawScene(ctx, {
+      index: drawIndex,
       view,
-      selectionSet,
-      gesturing,
+      width: canvasSize.w,
+      height: canvasSize.h,
+      dpr,
+      selection: selectionSet,
+      lod: gesturing,
+      isLight: !isDark,
       isDraggingUnlocked,
+      isIsometric: isIsoView,
       isoPlane,
-      thickness,
-      orbitProjection2D,
+      sheetThickness: thickness,
+      orbitProjection: orbitProjection2D,
       wireframe3DStyle,
       showGrid,
-      grid,
-      activeLoftPreviewMesh,
-      activeTouchScreenPos,
-      freehandLivePts,
-      freehandUsageRole,
-    ],
-  );
-
-  useLayoutEffect(() => {
-    const activeThemeMode: "light" | "dark" | "amoled" = !isDark
-      ? "light"
-      : isAmoled
-        ? "amoled"
-        : "dark";
-    render2DSceneForMode(activeThemeMode);
-  }, [render2DSceneForMode, isDark, isAmoled, canvasBgColor, themeVersion]);
-
-  const activeBridgeModeRef = useRef<"light" | "dark" | "amoled">(
-    !isDark ? "light" : isAmoled ? "amoled" : "dark",
-  );
-  activeBridgeModeRef.current = !isDark ? "light" : isAmoled ? "amoled" : "dark";
-  const render2DSceneForModeRef = useRef(render2DSceneForMode);
-  render2DSceneForModeRef.current = render2DSceneForMode;
-
-  useEffect(() => {
-    return registerThemeBridge("chamfer-2d-canvas", {
-      applyTheme: (nextTheme) => {
-        activeBridgeModeRef.current = nextTheme;
-      },
-      renderNow: () => {
-        render2DSceneForModeRef.current(activeBridgeModeRef.current);
-      },
+      gridStep: Math.max(15, grid * 2.5),
     });
-  }, []);
+  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -4144,46 +2638,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* QUICK COMMANDS DO CHAMFER CAD */
   const quickCommands: QuickCommandItem[] = useMemo(() => [
     {
-      id: "trim",
-      title: "Trim / Aparar (Toque & Faca)",
-      keywords: ["trim", "aparar", "cortar", "limite", "encontro", "faca"],
+      id: "smart_trim",
+      title: "Aparar até o Encontro (Smart Trim)",
+      keywords: ["trim", "aparar", "cortar", "limite", "encontro"],
       category: "modificar",
-      description: "Toque ou arraste sobre trechos para marcar e confirmar o corte analítico exato.",
+      description: "Localiza automaticamente o limite e apara até o encontro real.",
       icon: Scissors,
-      action: () => setTool("trim"),
-    },
-    {
-      id: "polar_ref",
-      title: "Ref. Polar (Referência Não-Vetorial)",
-      keywords: ["ref polar", "polar", "referencia", "alvo", "guia", "cota", "graus"],
-      category: "precisao",
-      description: "Cria linha vermelha pontilhada de referência não-vetorial com alvo magnético ⊕.",
-      icon: Crosshair,
-      action: () => setTool("polar_ref"),
-    },
-    {
-      id: "guide_mode",
-      title: "Modo Gabarito (Ref. Vermelho Pontilhado)",
-      keywords: ["gabarito", "ref", "referencia", "nao vetorial", "rascunho", "construcao"],
-      category: "precisao",
-      description: "Ativa criação em modo Gabarito (vermelho pontilhado, fora do 3D e DXF).",
-      icon: Compass,
-      action: () => {
-        setGuideModeOn((v) => !v);
-        setGuidesHidden(false);
-      },
-    },
-    {
-      id: "trace_part",
-      title: "Traçar Peça (Passar a Limpo / TRIM Inverso)",
-      keywords: ["tracar peca", "passar a limpo", "trim inverso", "gabarito", "contorno", "trace"],
-      category: "criar",
-      description: "Seleciona trechos exatos sobre gabaritos e promove apenas a peça final para vetores reais.",
-      icon: PenLine,
-      action: () => {
-        setGuidesHidden(false);
-        setTool("trace_part");
-      },
+      action: () => setTool("smart_trim"),
     },
     {
       id: "center_shapes",
@@ -4270,8 +2731,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       icon: Zap,
       action: () => {
         setTool("offset");
-        setDualToolSecondary("trim");
-        toast.success("Dual Tool ativada: Offset + Aparar.");
+        setDualToolSecondary("smart_trim");
+        toast.success("Dual Tool ativada: Offset + Smart Trim.");
       },
     },
     {
@@ -4313,16 +2774,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       description: "Alterna a projeção do canvas para desenho isométrico 2D com eixos a 30°, 90° e 150°.",
       icon: BoxIcon,
       action: () => {
-        const next = drawingProjection === "isometric" ? "orthographic" : "isometric";
-        setDrawingProjection(next);
-        if (next === "isometric") {
-          toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`);
-        } else {
-          toast.info("Modo Ortogonal 2D ativado");
-        }
+        setDrawingProjection((prev) => {
+          const next = prev === "isometric" ? "orthographic" : "isometric";
+          if (next === "isometric") {
+            toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`);
+          } else {
+            toast.info("Modo Ortogonal 2D ativado");
+          }
+          return next;
+        });
       },
     },
-  ], [isoPlane, drawingProjection]);
+  ], [isoPlane]);
 
   const handlePasteClipboardItem = useCallback(
     (item: GlobalClipboardItem, targetPos?: Vec2 | null) => {
@@ -4344,17 +2807,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [canvasSize, view, groups, commit],
   );
 
-  const applyDirectDimValue = (newVal: number, isFinalCommit: boolean) => {
+  const handleDirectDimUpdate = (newVal: number) => {
     if (!directDimEditor) return;
     const { dimId } = directDimEditor;
     const dim = dims.find((d) => d.id === dimId);
     if (!dim) return;
 
-    const updater = isFinalCommit ? commit : setEntities;
     const entRef = dim.refs.find((r) => r.kind === "entity");
     if (entRef && entRef.kind === "entity") {
       const entId = entRef.id;
-      updater((prev) =>
+      commit((prev) =>
         prev.map((e) => {
           if (e.id !== entId) return e;
           if (e.type === "circle") {
@@ -4403,7 +2865,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const pt0 = dim.refs[0]?.kind === "point" ? dim.refs[0].p : null;
       const pt1 = dim.refs[1]?.kind === "point" ? dim.refs[1].p : null;
       if (pt0 && pt1) {
-        updater((prev) =>
+        commit((prev) =>
           prev.map((e) => {
             if (e.type === "line") {
               const d0 = Math.hypot(e.x1 - pt0.x, e.y1 - pt0.y);
@@ -4425,19 +2887,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setDims((prev) =>
       prev.map((d) => (d.id === dimId ? { ...d, label: `${newVal.toFixed(2)} mm` } : d)),
     );
-    if (isFinalCommit) {
-      toast.success(`Cota atualizada para ${newVal.toFixed(2)} mm e geometria recalculada.`);
-      setDirectDimEditor(null);
-    }
+    toast.success(`Cota atualizada para ${newVal.toFixed(2)} mm e geometria recalculada.`);
+    setDirectDimEditor(null);
   };
 
-  const handleDirectDimUpdate = (newVal: number) => {
-    applyDirectDimValue(newVal, true);
-  };
-
-  /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO — DESATIVADO NO MODO 3D PARA NÃO EXIBIR ÍCONES ◊ E □ NAS FACES) */
+  /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO) */
   const relevantRefs = useMemo(() => {
-    if (!snapOn || isInPlaceSolid3DActive) return [];
+    if (!snapOn) return [];
     const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
     const isCreating = [
       "line",
@@ -4452,22 +2908,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     ].includes(tool);
     const isModifying = selection.length > 0 || tool === "smart_trim" || tool === "offset" || tool === "trim";
 
-    const caldDivs = tool === "caldeiraria_div" || tool === "divide" ? 12 : 0;
-
-    // Se "Exibir Todos os Snaps da Peça" estiver ATIVO, gera todos os snaps de todas as entidades
-    if (showAllSnaps) {
-      const all: SmartReferencePoint[] = [];
-      for (const ent of entities) {
-        if (ent) all.push(...extractEntitySmartReferences(ent, activeStart ?? null, caldDivs, snapDivision));
-      }
-      all.push(...extractIntersections(entities));
-      return all;
-    }
-
     if (!isCreating && !isModifying) {
       if (!cursor) return [];
       const nearEnt = hitTest(cursor) ?? near(cursor, 30 / view.k)[0];
-      if (nearEnt) return extractEntitySmartReferences(nearEnt, null, caldDivs, snapDivision);
+      if (nearEnt) return extractEntitySmartReferences(nearEnt, null, 12);
       return [];
     }
 
@@ -4475,30 +2919,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (selection.length > 0) {
       for (const id of selection) {
         const ent = entities.find((e) => e && e.id === id);
-        if (ent) refs.push(...extractEntitySmartReferences(ent, activeStart ?? null, caldDivs, snapDivision));
+        if (ent) refs.push(...extractEntitySmartReferences(ent, activeStart ?? null, 12));
       }
     }
 
     const probe = activeStart ?? cursor;
-    const consideredEntities: Entity[] = [];
     if (probe) {
       const nearby = near(probe, 80 / view.k);
       for (const item of nearby) {
-        if (item) {
-          consideredEntities.push(item);
-          if (!selection.includes(item.id)) {
-            refs.push(...extractEntitySmartReferences(item, activeStart ?? null, caldDivs, snapDivision));
-          }
+        if (item && !selection.includes(item.id)) {
+          refs.push(...extractEntitySmartReferences(item, activeStart ?? null, 12));
         }
       }
     }
 
-    if (consideredEntities.length > 1) {
-      refs.push(...extractIntersections(consideredEntities));
-    }
-
-    return refs.slice(0, 64);
-  }, [snapOn, showAllSnaps, snapDivision, selection, tool, pending, cursor, view.k, entities, hitTest, near]);
+    return refs.slice(0, 32);
+  }, [snapOn, selection, tool, pending, cursor, view.k, entities, hitTest, near]);
 
   /* FERRAMENTA DIVIDIR EM PARTES IGUAIS (2 a 50) */
   const handleOpenDivide = useCallback(
@@ -4547,484 +2983,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTool("select");
   }, []);
 
-  const arrayFrameAnimRafRef = useRef<number | null>(null);
-  const lastFramedArrayBoxRef = useRef<{
-    type: ArrayType | null;
-    w: number;
-    h: number;
-    cx: number;
-    cy: number;
-  } | null>(null);
-
-  const fitArrayAndHostToVisibleCanvas = useCallback(
-    (
-      seedEntities: Entity[],
-      previewEntities: Entity[],
-      polarCenter?: Vec2 | null,
-      polarRadius?: number,
-      hostBounds?: { minX: number; minY: number; maxX: number; maxY: number } | null,
-    ) => {
-      const allToFrame: Entity[] = [
-        ...entities,
-        ...seedEntities,
-        ...previewEntities,
-      ];
-      const baseBox = bbox(allToFrame);
-      let minX = baseBox ? baseBox.minX : Infinity;
-      let minY = baseBox ? baseBox.minY : Infinity;
-      let maxX = baseBox ? baseBox.maxX : -Infinity;
-      let maxY = baseBox ? baseBox.maxY : -Infinity;
-
-      if (hostBounds) {
-        minX = Math.min(minX, hostBounds.minX);
-        minY = Math.min(minY, hostBounds.minY);
-        maxX = Math.max(maxX, hostBounds.maxX);
-        maxY = Math.max(maxY, hostBounds.maxY);
-      }
-
-      if (
-        polarCenter &&
-        Number.isFinite(polarCenter.x) &&
-        Number.isFinite(polarCenter.y)
-      ) {
-        const r =
-          typeof polarRadius === "number" && Number.isFinite(polarRadius) && polarRadius > 0
-            ? polarRadius
-            : 20;
-        minX = Math.min(minX, polarCenter.x - r);
-        minY = Math.min(minY, polarCenter.y - r);
-        maxX = Math.max(maxX, polarCenter.x + r);
-        maxY = Math.max(maxY, polarCenter.y + r);
-      }
-
-      if (
-        !Number.isFinite(minX) ||
-        !Number.isFinite(minY) ||
-        !Number.isFinite(maxX) ||
-        !Number.isFinite(maxY)
-      ) {
-        return;
-      }
-
-      const el = canvasViewportRef.current ?? svgRef.current;
-      const rect = el?.getBoundingClientRect();
-      const screenW = typeof window !== "undefined" ? window.innerWidth : 1024;
-      const leftBarW = rect ? Math.max(0, rect.left) : 64;
-      const panelEl =
-        typeof document !== "undefined"
-          ? document.getElementById("chamfer-array-right-panel")
-          : null;
-      const rightPanelW = panelEl
-        ? panelEl.getBoundingClientRect().width
-        : screenW >= 640
-          ? 310
-          : 285;
-
-      // X_centro_útil = W_barra_esquerda + (W_tela - W_barra_esquerda - W_painel_direito) / 2
-      const usableW = Math.max(140, screenW - leftBarW - rightPanelW);
-      const usableH = Math.max(
-        120,
-        rect?.height || canvasSize.h || (typeof window !== "undefined" ? window.innerHeight - 96 : 500),
-      );
-      const localCenterX = usableW / 2;
-      const localCenterY = usableH / 2;
-
-      const geomW = Math.max(maxX - minX, 15);
-      const geomH = Math.max(maxY - minY, 15);
-      const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2;
-
-      // 20% de margem de respiro ao redor (fator útil = 0.78)
-      const rawK = Math.min((usableW * 0.78) / geomW, (usableH * 0.78) / geomH);
-      const targetK = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, rawK));
-      const targetTx = localCenterX - cx * targetK;
-      const targetTy = localCenterY - cy * targetK;
-
-      if (
-        !Number.isFinite(targetK) ||
-        !Number.isFinite(targetTx) ||
-        !Number.isFinite(targetTy)
-      ) {
-        return;
-      }
-
-      if (arrayFrameAnimRafRef.current !== null) {
-        cancelAnimationFrame(arrayFrameAnimRafRef.current);
-        arrayFrameAnimRafRef.current = null;
-      }
-
-      const startView = viewRef.current ?? { k: 1, tx: 0, ty: 0 };
-      const startTime = performance.now();
-      const durationMs = 300;
-
-      // Aproximação precisa de cubic-bezier(0.22, 1, 0.36, 1)
-      const easeOutCubicBezier = (t: number) => 1 - Math.pow(1 - t, 3.2);
-
-      const step = (now: number) => {
-        const elapsed = now - startTime;
-        const progress = Math.min(1, Math.max(0, elapsed / durationMs));
-        const eased = easeOutCubicBezier(progress);
-
-        const nextView = {
-          k: startView.k + (targetK - startView.k) * eased,
-          tx: startView.tx + (targetTx - startView.tx) * eased,
-          ty: startView.ty + (targetTy - startView.ty) * eased,
-        };
-        viewRef.current = nextView;
-        setView(nextView);
-
-        if (progress < 1) {
-          arrayFrameAnimRafRef.current = requestAnimationFrame(step);
-        } else {
-          arrayFrameAnimRafRef.current = null;
-        }
-      };
-
-      arrayFrameAnimRafRef.current = requestAnimationFrame(step);
-    },
-    [entities, canvasSize.h],
-  );
-
-  const applyArraySmartFraming = useCallback(
-    (targetEntities: Entity[], pivotCenter?: Vec2 | null) => {
-      fitArrayAndHostToVisibleCanvas(
-        targetEntities,
-        [],
-        pivotCenter,
-        pivotCenter && targetEntities.length > 0
-          ? dist(pivotCenter, getGroupCenter(targetEntities))
-          : undefined,
-        arrayHostInfo.sheetBounds,
-      );
-    },
-    [fitArrayAndHostToVisibleCanvas, arrayHostInfo.sheetBounds],
-  );
-
-  const initializeArrayFromEntities = useCallback(
-    (targetEntities: Entity[], preferredType?: ArrayType, existingGroupId?: string | null) => {
-      const hostContextEntities = existingGroupId
-        ? entities.filter(
-            (e) => !(e.params?.arrayGroupId === existingGroupId && e.params?.isArrayInstance),
-          )
-        : entities;
-      const host = detectHostPart(
-        hostContextEntities,
-        targetEntities,
-        temporaryOrigin?.p ?? { x: 0, y: 0 },
-      );
-      setArrayHostInfo(host);
-
-      const baseCenter = getGroupCenter(targetEntities);
-      const chosenCenter =
-        host.center ??
-        (temporaryOrigin ? temporaryOrigin.p : { x: baseCenter.x - 50, y: baseCenter.y });
-      const radius = dist(chosenCenter, baseCenter);
-      const startAngleDeg =
-        Math.atan2(baseCenter.y - chosenCenter.y, baseCenter.x - chosenCenter.x) * (180 / Math.PI);
-
-      setArrayPolarParams((prev) => ({
-        ...prev,
-        center: chosenCenter,
-        radius,
-        startAngleDeg,
-        count: prev.count || 6,
-        skippedIndices: [],
-      }));
-
-      if (host.sheetBounds) {
-        const stepX = Math.min(60, Math.max(20, Math.round(host.sheetBounds.width / 5)));
-        const stepY = Math.min(60, Math.max(20, Math.round(host.sheetBounds.height / 5)));
-        setArrayLinearParams((prev) => ({
-          ...prev,
-          dx: prev.dx || stepX,
-          dy: prev.dy || stepY,
-          spanX: Math.max(40, Math.round(host.sheetBounds!.width * 0.7)),
-          spanY: Math.max(40, Math.round(host.sheetBounds!.height * 0.7)),
-          skippedIndices: [],
-        }));
-      } else {
-        setArrayLinearParams((prev) => ({
-          ...prev,
-          skippedIndices: [],
-        }));
-      }
-
-      if (preferredType) {
-        setActiveArrayType(preferredType);
-      } else {
-        setActiveArrayType(host.suggestedType);
-      }
-      lastFramedArrayBoxRef.current = null;
-      applyArraySmartFraming(targetEntities, chosenCenter);
-    },
-    [entities, temporaryOrigin, applyArraySmartFraming],
-  );
-
-  const handleStartArray = useCallback(
-    (type: ArrayType) => {
-      setEditingArrayGroupId(null);
-      setIsArrayPickingCenter(false);
-      lastFramedArrayBoxRef.current = null;
-      if (!selected.length) {
-        toast.info("Toque no furo ou geometria que deseja multiplicar.");
-        setActiveArrayType(type);
-        fitArrayAndHostToVisibleCanvas([], []);
-        return;
-      }
-
-      // Se a entidade selecionada já pertence a um Array associativo, abre diretamente em modo de reedição
-      const existing = getEntityArraySpec(selected[0]);
-      if (existing) {
-        const { arrayGroupId, spec } = existing;
-        const seedEntities = entities.filter(
-          (e) => e.params?.arrayGroupId === arrayGroupId && !e.params?.isArrayInstance,
-        );
-        const targetSeeds = seedEntities.length > 0 ? seedEntities : [selected[0]!];
-        setSelection(targetSeeds.map((e) => e.id));
-        setEditingArrayGroupId(arrayGroupId);
-        const hostContextEntities = entities.filter(
-          (e) => !(e.params?.arrayGroupId === arrayGroupId && e.params?.isArrayInstance),
-        );
-        const host = detectHostPart(
-          hostContextEntities,
-          targetSeeds,
-          temporaryOrigin?.p ?? { x: 0, y: 0 },
-        );
-        setArrayHostInfo(host);
-        if (spec.polar) setArrayPolarParams(spec.polar);
-        if (spec.linear) setArrayLinearParams(spec.linear);
-        setActiveArrayType(type);
-        applyArraySmartFraming(targetSeeds, spec.polar?.center ?? host.center);
-        triggerHaptic("selection");
-        return;
-      }
-
-      initializeArrayFromEntities(selected, type, null);
-      triggerHaptic("selection");
-    },
-    [selected, entities, temporaryOrigin, initializeArrayFromEntities, applyArraySmartFraming, fitArrayAndHostToVisibleCanvas],
-  );
-
-  const handleEditExistingArray = useCallback(
-    (targetEntity: Entity) => {
-      const existing = getEntityArraySpec(targetEntity);
-      if (!existing) return;
-      const { arrayGroupId, spec } = existing;
-      const seedEntities = entities.filter(
-        (e) => e.params?.arrayGroupId === arrayGroupId && !e.params?.isArrayInstance,
-      );
-      const targetSeeds = seedEntities.length > 0 ? seedEntities : [targetEntity];
-      setSelection(targetSeeds.map((e) => e.id));
-      setEditingArrayGroupId(arrayGroupId);
-      setIsArrayPickingCenter(false);
-      lastFramedArrayBoxRef.current = null;
-
-      const hostContextEntities = entities.filter(
-        (e) => !(e.params?.arrayGroupId === arrayGroupId && e.params?.isArrayInstance),
-      );
-      const host = detectHostPart(
-        hostContextEntities,
-        targetSeeds,
-        temporaryOrigin?.p ?? { x: 0, y: 0 },
-      );
-      setArrayHostInfo(host);
-      if (spec.polar) setArrayPolarParams(spec.polar);
-      if (spec.linear) setArrayLinearParams(spec.linear);
-      setActiveArrayType(spec.type);
-      applyArraySmartFraming(targetSeeds, spec.polar?.center ?? host.center);
-      triggerHaptic("selection");
-      toast.info("Editando padrão existente em tempo real.");
-    },
-    [entities, temporaryOrigin, applyArraySmartFraming],
-  );
-
   const handleArrayLinear = useCallback(() => {
-    handleStartArray("linear");
-  }, [handleStartArray]);
+    if (!selected.length) {
+      toast.info("Selecione entidades para matriz linear.");
+      return;
+    }
+    const copies = arrayLinear(selected, { rows: 2, cols: 3, dx: 40, dy: 40 });
+    commit((e) => [...e, ...copies]);
+    toast.success(`Matriz linear gerada (+${copies.length} entidades).`);
+  }, [selected, commit]);
 
   const handleArrayPolar = useCallback(() => {
-    handleStartArray("polar");
-  }, [handleStartArray]);
-
-  const arraySourceAssembly = useMemo(() => {
-    if (!activeArrayType || selected.length === 0) return selected;
-    const includeAssembly =
-      activeArrayType === "polar"
-        ? arrayPolarParams.includeAssembly !== false
-        : arrayLinearParams.includeAssembly !== false;
-    if (!includeAssembly) return selected;
-    return findEnclosedAndConnectedAssembly(entities, selected);
-  }, [activeArrayType, selected, entities, arrayPolarParams.includeAssembly, arrayLinearParams.includeAssembly]);
-
-  const arrayPreview = useMemo(() => {
-    if (!activeArrayType || arraySourceAssembly.length === 0) return null;
-    const spec: ArraySpec = {
-      id: editingArrayGroupId ?? "preview-spec",
-      type: activeArrayType,
-      sourceEntityIds: arraySourceAssembly.map((e) => e.id),
-      polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
-      linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
-    };
-    return computeInstances(spec, arraySourceAssembly, arrayHostInfo);
-  }, [activeArrayType, editingArrayGroupId, arraySourceAssembly, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
-
-  // Auto-Frame on Open e quando as dimensões do Array mudarem significativamente
-  useEffect(() => {
-    if (!activeArrayType) {
-      lastFramedArrayBoxRef.current = null;
+    if (!selected.length) {
+      toast.info("Selecione entidades para matriz polar.");
       return;
     }
-    if (isDraggingArrayCenterRef.current) return;
-
-    const previewEnts = arrayPreview ? arrayPreview.ghostSlots.flatMap((s) => s.entities) : [];
-    const combinedBox = bbox([...entities, ...arraySourceAssembly, ...previewEnts]);
-    if (!combinedBox) return;
-
-    const w = Math.max(10, combinedBox.maxX - combinedBox.minX);
-    const h = Math.max(10, combinedBox.maxY - combinedBox.minY);
-    const cx = (combinedBox.minX + combinedBox.maxX) / 2;
-    const cy = (combinedBox.minY + combinedBox.maxY) / 2;
-
-    const prev = lastFramedArrayBoxRef.current;
-    const shouldReFrame =
-      !prev ||
-      prev.type !== activeArrayType ||
-      Math.abs(w - prev.w) / prev.w > 0.16 ||
-      Math.abs(h - prev.h) / prev.h > 0.16 ||
-      Math.hypot(cx - prev.cx, cy - prev.cy) > Math.max(w, h) * 0.15;
-
-    if (shouldReFrame) {
-      lastFramedArrayBoxRef.current = { type: activeArrayType, w, h, cx, cy };
-      fitArrayAndHostToVisibleCanvas(
-        arraySourceAssembly,
-        previewEnts,
-        activeArrayType === "polar" ? arrayPolarParams.center : null,
-        activeArrayType === "polar" ? arrayPolarParams.radius : undefined,
-        arrayHostInfo.sheetBounds,
-      );
-    }
-  }, [
-    activeArrayType,
-    arrayPreview,
-    entities,
-    arraySourceAssembly,
-    arrayPolarParams.center,
-    arrayPolarParams.radius,
-    arrayHostInfo.sheetBounds,
-    fitArrayAndHostToVisibleCanvas,
-  ]);
-
-  const arrayValidation = useMemo(() => {
-    if (!activeArrayType || arraySourceAssembly.length === 0) {
-      return {
-        isValid: true,
-        errors: [],
-        warnings: [],
-        slotDiagnostics: {},
-        collidingCount: 0,
-        activeCopiesCount: 0,
-        skippedCount: 0,
-        totalPositionsCount: 0,
-      };
-    }
-    const spec: ArraySpec = {
-      id: editingArrayGroupId ?? "validation-spec",
-      type: activeArrayType,
-      sourceEntityIds: arraySourceAssembly.map((e) => e.id),
-      polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
-      linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
-    };
-    return validateArray(spec, arraySourceAssembly, arrayHostInfo);
-  }, [activeArrayType, editingArrayGroupId, arraySourceAssembly, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
-
-  const handleCommitArray = useCallback(() => {
-    if (!activeArrayType || arraySourceAssembly.length === 0) return;
-    const specId = editingArrayGroupId ?? uid();
-    const spec: ArraySpec = {
-      id: specId,
-      type: activeArrayType,
-      sourceEntityIds: arraySourceAssembly.map((e) => e.id),
-      polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
-      linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
-    };
-    const { instances, repositionedOriginals } = computeInstances(spec, arraySourceAssembly, arrayHostInfo);
-    if (instances.length === 0 && !repositionedOriginals) {
-      toast.info("Nenhuma cópia gerada.");
-      return;
-    }
-
-    const selectedIdSet = new Set(arraySourceAssembly.map((e) => e.id));
-    const repoMap = new Map<string, Entity>();
-    if (repositionedOriginals) {
-      for (const ro of repositionedOriginals) {
-        repoMap.set(ro.id, ro);
-      }
-    }
-
-    const shouldAutoTrim =
-      activeArrayType === "polar" ? Boolean(arrayPolarParams.autoTrim) : Boolean(arrayLinearParams.autoTrim);
-
-    let trimmedCount = 0;
-    commit((prev) => {
-      // Se estiver reeditando um Array associativo, substitui as cópias anteriores daquele grupo
-      const cleaned = editingArrayGroupId
-        ? prev.filter(
-            (e) => !(e.params?.arrayGroupId === editingArrayGroupId && e.params?.isArrayInstance),
-          )
-        : prev;
-
-      const updatedOriginals = cleaned.map((e) => {
-        if (!selectedIdSet.has(e.id)) return e;
-        const baseEnt = repoMap.get(e.id) ?? e;
-        return {
-          ...baseEnt,
-          params: {
-            ...(baseEnt.params ?? {}),
-            arrayGroupId: specId,
-            isArrayInstance: false,
-            arrayIndex: 0,
-            arraySpec: spec,
-          },
-        };
-      });
-
-      if (shouldAutoTrim) {
-        const res = applyArrayAutoTrim(updatedOriginals, instances, arraySourceAssembly);
-        trimmedCount = res.trimmedCount;
-        return res.entities;
-      }
-
-      return [...updatedOriginals, ...instances];
-    });
-
-    setActiveArrayType(null);
-    setEditingArrayGroupId(null);
-    setIsArrayPickingCenter(false);
-    isDraggingArrayCenterRef.current = false;
-    setSelection([...arraySourceAssembly.map((e) => e.id), ...instances.map((e) => e.id)]);
-    triggerHaptic("success");
-    AudioManager.play("ui_select");
-    toast.success(
-      shouldAutoTrim && trimmedCount > 0
-        ? `Array aplicado com Auto-Trim (${trimmedCount} interseções aparadas no contorno).`
-        : activeArrayType === "polar"
-          ? `Padrão circular aplicado (+${instances.length} cópias, PCD ${((arrayPolarParams.radius ?? 0) * 2).toFixed(1)} mm).`
-          : `Padrão linear aplicado (+${instances.length} cópias).`,
-    );
-  }, [activeArrayType, editingArrayGroupId, arraySourceAssembly, arrayPolarParams, arrayLinearParams, arrayHostInfo, commit]);
-
-  const handleCancelArray = useCallback(() => {
-    setActiveArrayType(null);
-    setEditingArrayGroupId(null);
-    setIsArrayPickingCenter(false);
-    isDraggingArrayCenterRef.current = false;
-    triggerHaptic("tap");
-    notify({
-      tipo: "informacao",
-      titulo: "Padrão cancelado",
-      mensagem: "Nenhuma alteração foi gravada.",
-    });
-  }, []);
+    const box = boxOfEntities(selected);
+    const center = { x: box.minX - 50, y: (box.minY + box.maxY) / 2 };
+    const copies = arrayCircular(selected, { center, count: 6, totalAngleDeg: 360 });
+    commit((e) => [...e, ...copies]);
+    toast.success(`Matriz polar gerada (+${copies.length} entidades).`);
+  }, [selected, boxOfEntities, commit]);
 
   const handleConvertToBend = useCallback(() => {
     if (!selected.length) {
@@ -5035,175 +3014,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     toast.success("Linha(s) convertida(s) em linha de dobra.");
   }, [selected.length, selection, commit]);
 
-  const handleAddHole = useCallback(
-    (diameterMm = 10) => {
-      const b = selected.length
-        ? boxOfEntities(selected)
-        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
-      const cx = (b.minX + b.maxX) / 2;
-      const cy = (b.minY + b.maxY) / 2;
-      const hole = createIndustrialHoleEntity({
-        cx,
-        cy,
-        diameterMm,
-        layer: "corte",
-        strokeColor: activeStrokeColorRef.current,
-      });
-      commit((e) => [...e, hole]);
-      setSelection([hole.id]);
-      setMobileEditorOpenManual(false);
-      toast.success(`Furo industrial Ø${diameterMm}mm adicionado em (${cx.toFixed(1)}, ${cy.toFixed(1)}) mm.`);
-    },
-    [boxOfEntities, selected, cursor.x, cursor.y, commit],
-  );
-
-  const handleAddThread = useCallback(
-    (nominalDiaMm: number, pitchMm: number) => {
-      const b = selected.length
-        ? boxOfEntities(selected)
-        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
-      const cx = (b.minX + b.maxX) / 2;
-      const cy = (b.minY + b.maxY) / 2;
-      const threadEnts = createThreadedHoleEntities({
-        cx,
-        cy,
-        nominalM: nominalDiaMm,
-        pitchMm,
-        strokeColor: activeStrokeColorRef.current,
-      });
-      commit((e) => [...e, ...threadEnts]);
-      setSelection(threadEnts.map((x) => x.id));
-      setMobileEditorOpenManual(false);
-      toast.success(
-        `Rosca métrica M${nominalDiaMm}×${pitchMm} (furo Ø${Math.max(1, nominalDiaMm - pitchMm).toFixed(1)}mm) inserida.`,
-      );
-    },
-    [boxOfEntities, selected, cursor.x, cursor.y, commit],
-  );
-
-  const handleAddEyelet = useCallback(
-    (outerDiaMm: number, innerDiaMm: number) => {
-      const b = selected.length
-        ? boxOfEntities(selected)
-        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
-      const cx = (b.minX + b.maxX) / 2;
-      const cy = (b.minY + b.maxY) / 2;
-      const eyeletEnts = createConcentricEyeletEntities({
-        cx,
-        cy,
-        outerDiameterMm: outerDiaMm,
-        innerDiameterMm: innerDiaMm,
-        layer: activeLayer,
-        strokeColor: activeStrokeColorRef.current,
-      });
-      commit((e) => [...e, ...eyeletEnts]);
-      setSelection(eyeletEnts.map((x) => x.id));
-      toast.success(`Olhal concêntrico Ø${outerDiaMm}/Ø${innerDiaMm} mm inserido.`);
-    },
-    [boxOfEntities, selected, cursor.x, cursor.y, activeLayer, commit],
-  );
-
-  const handleAddTangentBridge = useCallback(() => {
-    const bridgeEnts = createTangentBridgeEntities({
-      selectedEntities: selected.length >= 2 ? selected : entities,
-      fallbackCx: cursor.x,
-      fallbackCy: cursor.y,
-      layer: activeLayer,
-      strokeColor: activeStrokeColorRef.current,
-    });
-    commit((e) => [...e, ...bridgeEnts]);
-    setSelection(bridgeEnts.map((x) => x.id));
-    toast.success("Ponte tangente (TTR) gerada.");
-  }, [selected, entities, activeLayer, cursor.x, cursor.y, commit]);
-
-  const handleAddSerratedTeeth = useCallback(
-    (toothHeightMm: number, toothPitchMm: number) => {
-      const targetLine = selected.find(
-        (e): e is Extract<Entity, { type: "line" }> => e.type === "line",
-      );
-      const startX = targetLine ? targetLine.x1 : cursor.x - 40;
-      const startY = targetLine ? targetLine.y1 : cursor.y;
-      const totalSpan = targetLine
-        ? Math.max(10, Math.hypot(targetLine.x2 - targetLine.x1, targetLine.y2 - targetLine.y1))
-        : 80;
-      const toothCount = Math.max(3, Math.round(totalSpan / Math.max(1, toothPitchMm)));
-      const teethEnt = createSerratedTeethEntities({
-        startX,
-        startY,
-        toothCount,
-        pitchMm: toothPitchMm,
-        toothHeightMm,
-        layer: activeLayer,
-        strokeColor: activeStrokeColorRef.current,
-      });
-      commit((e) => [
-        ...(targetLine ? e.filter((x) => x.id !== targetLine.id) : e),
-        teethEnt,
-      ]);
-      setSelection([teethEnt.id]);
-      toast.success(`Perfil serrilhado (${toothCount} dentes · passo ${toothPitchMm}mm × h ${toothHeightMm}mm) gerado.`);
-    },
-    [selected, cursor.x, cursor.y, activeLayer, commit],
-  );
-
-  const handleAddPocket2D = useCallback(
-    (widthMm: number, heightMm: number, cornerRadiusMm: number) => {
-      const b = selected.length
-        ? boxOfEntities(selected)
-        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
-      const cx = (b.minX + b.maxX) / 2;
-      const cy = (b.minY + b.maxY) / 2;
-      const pocket = createPocket2DEntity({
-        cx,
-        cy,
-        widthMm,
-        heightMm,
-        cornerRadiusMm,
-        layer: "recorte",
-        strokeColor: activeStrokeColorRef.current,
-      });
-      commit((e) => [...e, pocket]);
-      setSelection([pocket.id]);
-      toast.success(`Cavidade 2D ${widthMm}×${heightMm}mm (R${cornerRadiusMm}) inserida.`);
-    },
-    [boxOfEntities, selected, cursor.x, cursor.y, commit],
-  );
-
-  const handleSelectColorAndLayer = useCallback(
-    (opt: ChamferTechnicalColorOption) => {
-      setActiveLayer(opt.layer);
-      setActiveStrokeColor(opt.hex);
-      activeStrokeColorRef.current = opt.hex;
-      if (selection.length > 0) {
-        commit((list) => applyColorAndLayerToEntities(list, selection, opt));
-        toast.success(
-          `Cor "${opt.label}" (${opt.hex}) e camada [${opt.layer.toUpperCase()}] aplicadas a ${selection.length} peça(s).`,
-        );
-      } else {
-        toast.success(
-          `Cor ativa: ${opt.label} (${opt.hex}) • Camada: ${opt.layer.toUpperCase()}`,
-        );
-      }
-    },
-    [selection, commit],
-  );
-
-  const handleDeleteSelection = useCallback(() => {
-    if (!selection.length) {
-      toast.info("Selecione uma ou mais entidades para apagar.");
-      return;
-    }
-    const count = selection.length;
-    commit((list) => list.filter((x) => !selection.includes(x.id)));
+  const handleAddHole = useCallback(() => {
+    const b = selected.length
+      ? boxOfEntities(selected)
+      : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const hole: Entity = {
+      id: uid(),
+      layer: "corte",
+      type: "circle",
+      cx,
+      cy,
+      r: 5,
+    };
+    commit((e) => [...e, hole]);
     setSelection([]);
-    triggerHaptic("action");
-    toast.success(`${count} entidade(s) removida(s).`);
-  }, [selection, commit]);
-
-  const handleUseSelectedEdge = useCallback(() => {
-    setTool((prev) => (prev === "polar_ref" ? "select" : "polar_ref"));
-    triggerHaptic("selection");
-  }, []);
+    setMobileEditorOpenManual(false);
+    toast.success("Furo paramétrico Ø10mm adicionado.");
+  }, [boxOfEntities, selected, cursor.x, cursor.y, commit]);
 
   const handlePlanificar = useCallback(() => {
     transitionTo3D("3d");
@@ -5431,248 +3260,61 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
   }, [isoPlane]);
 
-  const abortForMultiTouchGesture = useCallback(() => {
-    isMultiTouchGestureRef.current = true;
-    touchInteractionStateRef.current = "MULTITOUCH_NAVIGATION";
-    setTouchInteractionState("MULTITOUCH_NAVIGATION");
-    setLoupeVisible(false);
-    setIsDraggingUnlocked(false);
-    setDragNode(null);
-    setTouchOffsetActive(false);
-    setTouchWorldPos(null);
-    activeTouchScreenPosRef.current = null;
-    setActiveTouchScreenPos(null);
-
-    // Descarta instantaneamente qualquer prévia ou confirmação pendente do Marco Geométrico
-    previewGeometricMarkCandidateRef.current = null;
-    setPreviewGeometricMarkCandidate(null);
-    setPendingGeometricMarkConfirmation(null);
-    smartPickCandidateRef.current = null;
-    setSmartPickCandidate(null);
-
-    if (pointerMoveRafRef.current !== null) {
-      cancelAnimationFrame(pointerMoveRafRef.current);
-      pointerMoveRafRef.current = null;
-    }
-    pendingPointerMoveRef.current = null;
-
-    if (dragLongPressRef.current) {
-      clearTimeout(dragLongPressRef.current.timer);
-      dragLongPressRef.current = null;
-    }
-    if (longPressRef.current) {
-      clearTimeout(longPressRef.current.timer);
-      longPressRef.current = null;
-    }
-
-    if (dragEntityRef.current) {
-      if (dragRafRef.current) {
-        cancelAnimationFrame(dragRafRef.current);
-        dragRafRef.current = null;
-      }
-      setEntities(dragEntityRef.current.initialEntitiesSnapshot);
-      dragEntityRef.current = null;
-      isDraggingEntityRef.current = false;
-      pendingDragEntitiesRef.current = null;
-    }
-
-    if (preGestureSnapshotRef.current) {
-      const snap = preGestureSnapshotRef.current;
-      cursorRef.current = snap.cursor;
-      setCursor(snap.cursor);
-      setTemporaryOrigin(snap.temporaryOrigin);
-      setPending(snap.pending);
-      setDraft(snap.draft);
-      setSelection(snap.selection);
-    } else {
-      setDraft(null);
-      setPending([]);
-    }
-
-    setMarquee(null);
-    swipeTrimFenceRef.current = [];
-    setTrimFenceTrail([]);
-    traceFenceRef.current = [];
-    tracePointerDownWorldRef.current = null;
-    setTraceFenceTrail([]);
-    // Trava absoluta de navegação na Ref. Polar: descarta qualquer toque pendente ou origem criada no 1º dedo da pinça
-    polarArbiterRef.current.gestureLockedByNavigation = true;
-    polarArbiterRef.current.pendingSingle = null;
-    if (tool === "polar_ref") {
-      const prevOrigin = polarPreGestureOriginRef.current;
-      setPolarRefOriginAnchor(prevOrigin);
-      if (!prevOrigin) {
-        setPolarRefLivePreview(null);
-      }
-    }
-    setSwipeTrimCutPreview([]);
-    setOverlappingCandidates([]);
-    if (freehandDrawingRef.current || freehandRawPtsRef.current.length > 0) {
-      freehandDrawingRef.current = false;
-      freehandRawPtsRef.current = [];
-      freehandStartSnapRef.current = null;
-      setFreehandLivePts([]);
-    }
-
-    const now = performance.now();
-    gestureCooldownUntilRef.current = Math.max(gestureCooldownUntilRef.current, now + 150);
-    dragCooldownUntilRef.current = Math.max(dragCooldownUntilRef.current, now + 200);
-    gestureUntilRef.current = Math.max(gestureUntilRef.current, now + 200);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("chamfer-cancel-3d-drag-for-pinch"));
-    }
-  }, []);
-
-  const applyPinchZoomFromScreenPoints = useCallback(
-    (ax: number, ay: number, bx: number, by: number) => {
-      const now = performance.now();
-      const d = Math.hypot(bx - ax, by - ay) || 1;
-      const mx = (ax + bx) * 0.5;
-      const my = (ay + by) * 0.5;
-      if (!pinchRef.current || !pinchSessionRef.current) {
-        pinchRef.current = { dist: d, mx, my };
-        pinchSessionRef.current = createPinchGestureSessionState(ax, ay, bx, by, now);
-        panRef.current = null;
-        orbitDragRef.current = null;
-        return;
-      }
-      const prev = pinchRef.current;
-      const session = pinchSessionRef.current;
-      if (Math.abs(d - prev.dist) < 0.05 && Math.hypot(mx - prev.mx, my - prev.my) < 0.05) {
-        return;
-      }
-      const rectEl = svgRef.current ?? canvasViewportRef.current;
-      if (!rectEl) return;
-      const r = rectEl.getBoundingClientRect();
-      const v = viewRef.current;
-      const metrics = computeAdaptiveZoomMetrics({
-        characteristicRadiusMm: characteristicRadiusRef.current,
-        viewK: v.k,
-        viewportWidthPx: r.width || 800,
-        viewportHeightPx: r.height || 600,
-        userSensitivityMultiplier: zoomSensitivityRef.current.multiplier,
-      });
-
-      const rawFactor = Math.min(2.5, Math.max(0.4, d / (session.prevDist || prev.dist || 1)));
-      const zoomEval = evaluateAdaptiveZoomStep({
-        rawZoomRatio: rawFactor,
-        metrics,
-        isPinchGesture: true,
-        pinchDeltaPxFromStart: d - session.initialDist,
-        touchElapsedMs: now - session.startTimeMs,
-        pinchUnlocked: session.unlockedZoom,
-      });
-      if (zoomEval.unlockedNow) {
-        session.unlockedZoom = true;
-      }
-
-      const rawMidDx = mx - session.prevMidX;
-      const rawMidDy = my - session.prevMidY;
-      const midDistFromStart = Math.hypot(mx - session.initialMidX, my - session.initialMidY);
-      if (!session.unlockedPan && midDistFromStart >= PINCH_DEADZONE_PX && now - session.startTimeMs >= 60) {
-        session.unlockedPan = true;
-      }
-
-      const panEval = session.unlockedPan
-        ? evaluateAdaptivePanStep({
-            rawDeltaPxX: rawMidDx,
-            rawDeltaPxY: rawMidDy,
-            viewportWidthPx: r.width || 800,
-            viewportHeightPx: r.height || 600,
-            metrics,
-          })
-        : { appliedDeltaPxX: 0, appliedDeltaPxY: 0, clampedByCloseUp: false };
-
-      session.prevDist = d;
-      session.prevMidX = mx;
-      session.prevMidY = my;
-      pinchRef.current = { dist: d, mx, my };
-      orbitDragRef.current = null;
-
-      if (zoomEval.blockedByDeadzone && !session.unlockedPan) {
-        return;
-      }
-
-      // Ancoragem focal exata sob o ponto médio atual dos 2 dedos
-      const anchorLocalX = mx - r.left;
-      const anchorLocalY = my - r.top;
-      const prevAnchorLocalX = anchorLocalX - panEval.appliedDeltaPxX;
-      const prevAnchorLocalY = anchorLocalY - panEval.appliedDeltaPxY;
-      const wx = (prevAnchorLocalX - v.tx) / v.k;
-      const wy = (prevAnchorLocalY - v.ty) / v.k;
-      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * zoomEval.appliedZoomRatio));
-      const nv = {
-        k,
-        tx: anchorLocalX - wx * k,
-        ty: anchorLocalY - wy * k,
-      };
-      wasCameraPannedRef.current = true;
-      applyView(nv);
-      flashZoom(k);
-      markGesture();
-    },
-    [applyView, flashZoom, markGesture],
-  );
-
   const onPointerDown = (ev: React.PointerEvent) => {
-    if (isHudInteractiveElement(ev.target)) {
-      return;
-    }
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
-    // 1. BLINDAGEM GLOBAL DE GESTOS MULTITOQUE: 2 ou mais dedos bloqueiam e abortam imediatamente qualquer ferramenta
+    // dois dedos sempre navegam, independentemente da ferramenta ativa
     if (ptrsRef.current.size >= 2) {
-      abortForMultiTouchGesture();
+      setLoupeVisible(false);
+      setIsDraggingUnlocked(false);
+
+      // a) Cancele imediatamente qualquer timer de Long-Press pendente
+      if (dragLongPressRef.current) {
+        clearTimeout(dragLongPressRef.current.timer);
+        dragLongPressRef.current = null;
+      }
+      if (longPressRef.current) clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+
+      // b) Se uma peça já estava sendo movida, aborte imediatamente o arraste e restaure à posição original do snapshot
+      if (dragEntityRef.current) {
+        if (dragRafRef.current) {
+          cancelAnimationFrame(dragRafRef.current);
+          dragRafRef.current = null;
+        }
+        setEntities(dragEntityRef.current.initialEntitiesSnapshot);
+        dragEntityRef.current = null;
+        isDraggingEntityRef.current = false;
+        pendingDragEntitiesRef.current = null;
+      }
+
+      // c) Cancela imediatamente qualquer traçado, seleção marquee ou Swipe-to-Trim de 1 dedo sem gravar ponto espúrio
+      setDraft(null);
+      setPending([]);
+      setMarquee(null);
+      swipeTrimFenceRef.current = [];
+      setSwipeTrimCutPreview([]);
+      setOverlappingCandidates([]);
+
+      // d) Cooldown de 150ms após soltar o gesto de 2 dedos antes de aceitar novo início de arraste
+      dragCooldownUntilRef.current = performance.now() + 150;
+      gestureUntilRef.current = Math.max(gestureUntilRef.current, performance.now() + 150);
 
       const [a, b] = [...ptrsRef.current.values()];
       if (a && b) {
-        const d0 = Math.hypot(b.x - a.x, b.y - a.y) || 1;
         pinchRef.current = {
-          dist: d0,
+          dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
           mx: (a.x + b.x) / 2,
           my: (a.y + b.y) / 2,
         };
-        pinchSessionRef.current = createPinchGestureSessionState(
-          a.x,
-          a.y,
-          b.x,
-          b.y,
-          performance.now(),
-        );
         panRef.current = null;
         orbitDragRef.current = null;
       }
       return;
     }
-
-    // 2. Trava pós-gesto (Gesture Cooldown >= 120ms): ignora qualquer toque fantasma durante ou logo após pinça/zoom
-    if (
-      isMultiTouchGestureRef.current ||
-      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
-      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
-      performance.now() <
-        Math.max(
-          gestureCooldownUntilRef.current,
-          gestureUntilRef.current,
-          dragCooldownUntilRef.current,
-        )
-    ) {
-      return;
-    }
-
-    // Salva snapshot estável no início da interação com 1 ponteiro (para restaurar se o 2º dedo tocar)
-    preGestureSnapshotRef.current = {
-      cursor: { ...cursor },
-      temporaryOrigin: temporaryOrigin ? { ...temporaryOrigin, p: { ...temporaryOrigin.p } } : null,
-      pending: pending.map((pt) => ({ ...pt })),
-      draft: draftRef.current ? { ...draftRef.current } : null,
-      selection: [...selection],
-    };
-    pointerDownClientRef.current = { x: ev.clientX, y: ev.clientY };
-    wasCameraPannedRef.current = false;
-    touchInteractionStateRef.current = "SINGLE_POINTER";
-    setTouchInteractionState("SINGLE_POINTER");
+    // ignora toques fantasma logo após um gesto
+    if (performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)) return;
 
     // Se o modo ÓRBITA 3D estiver ativo na barra superior, 1 dedo / botão esquerdo rotaciona a órbita
     // (impedindo seleção acidental ou traçado de linhas durante a rotação 3D)
@@ -5680,13 +3322,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLoupeVisible(false);
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
-      activeTouchScreenPosRef.current = null;
-      setActiveTouchScreenPos(null);
-      orbitStartClientRef.current = {
-        x: ev.clientX,
-        y: ev.clientY,
-        time: performance.now(),
-      };
       orbitDragRef.current = { x: ev.clientX, y: ev.clientY };
       return;
     }
@@ -5695,95 +3330,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     lastPointerTypeRef.current = pType;
     setActivePointerType(pType);
 
-    const touchCanvasPt = getTouchCanvasScreenPos(ev);
     const raw = toWorld(ev);
     const directTouchWorld = toWorld(ev, true);
-    let p = snapPoint(raw);
+    const p = snapPoint(raw);
+    setCursor(raw);
 
-    if (isSettingReferencePoint) {
-      setTemporaryOrigin({
-        id: "ref_origin",
-        p,
-        label: "REF 0,0",
-        sourceEntityId: undefined,
-      });
-      setIsSettingReferencePoint(false);
-      if (interactionGuideMode === "off") {
-        setInteractionGuideModeState("purple_ref");
-        saveInteractionGuideMode("purple_ref");
-      }
-      const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-      const displacedCursor: Vec2 = {
-        x: Number((p.x + 100 / safeK).toFixed(2)),
-        y: Number((p.y - 70 / safeK).toFixed(2)),
-      };
-      cursorRef.current = displacedCursor;
-      setCursor(displacedCursor);
-      triggerHaptic("action");
-      toast.success(`Ponto de Referência fixado: (${p.x.toFixed(2)}, ${p.y.toFixed(2)} mm)`);
-      return;
-    }
-
-    // Aplica restrições dimensionais reais se houver medidas fixas ativas
-    const constraintBase =
-      interactionGuideMode === "blue_line"
-        ? pending.length > 0
-          ? pending[pending.length - 1]!
-          : temporaryOrigin?.p ?? null
-        : interactionGuideMode === "purple_ref" && temporaryOrigin
-          ? temporaryOrigin.p
-          : null;
-    if (constraintBase) {
-      p = applyDimensionalConstraintsToPoint(constraintBase, p, lockedConstraints);
-    }
-    setCursor(p);
-
-    // Se houver uma forma em estado Pré-Confirmação Editável (Draft Pending):
-    // 1. Tocar em um de seus grips permite arrastar e ajustar a forma ao vivo
-    // 2. Iniciar novo arrasto em área vazia confirma automaticamente a forma anterior (Fluxo Contínuo)
-    if (pendingDraftShapeRef.current) {
-      const grips = getPendingDraftShapeGrips(pendingDraftShapeRef.current);
-      const safeK = Math.max(0.05, view.k);
-      const gripTol = 18 / safeK;
-      const hitGrip = grips.find((g) => Math.hypot(g.p.x - raw.x, g.p.y - raw.y) <= gripTol);
-      if (hitGrip) {
-        setDraggingDraftGripIndex(hitGrip.index);
-        triggerHaptic("selection");
-        return;
-      }
-      commitPendingDraftShape(pendingDraftShapeRef.current);
-    }
-
-    const useOffsetHere =
-      cursorOffsetMode === "offset" &&
-      tool !== "pan" &&
-      (pType === "touch" ||
-        shouldUseTouchOffset(
-          pType,
-          tool,
-          dragNode !== null,
-          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
-          cursorOffsetMode,
-          selection.length > 0,
-        ));
+    const useOffsetHere = shouldUseTouchOffset(
+      pType,
+      tool,
+      dragNode !== null,
+      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+      cursorOffsetMode,
+      selection.length > 0,
+    );
     globalCADInteractionHub.beginActiveInteraction({
       directWorld: directTouchWorld,
       cursorWorld: raw,
       cursorScreen: { x: ev.clientX, y: ev.clientY },
-      appliedOffsetY: useOffsetHere ? -TOUCH_CURSOR_OFFSET_PX : 0,
+      appliedOffsetY: useOffsetHere ? -55 : 0,
       invertedTopEdge: false,
     });
-    if (useOffsetHere) {
-      activeTouchScreenPosRef.current = touchCanvasPt;
-      setActiveTouchScreenPos(touchCanvasPt);
+    if (pType === "touch" && useOffsetHere) {
       setTouchWorldPos(directTouchWorld);
       setTouchOffsetActive(true);
-      if (pType === "touch" && tool !== "select") {
+      if (tool !== "select") {
         setNudgeHudVisible(true);
       }
     } else {
-      activeTouchScreenPosRef.current = null;
-      setActiveTouchScreenPos(null);
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
     }
@@ -5806,7 +3379,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "move" ||
       tool === "node" ||
       tool === "leader" ||
-      interactionGuideMode === "purple_ref" ||
       dragNode !== null ||
       dragEntityRef.current !== null
     );
@@ -5839,55 +3411,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // CAPTURA DE PONTOS E CALIBRAÇÃO DA ENGENHARIA REVERSA (FASE B)
-    if (revEngCanvasMode !== "none") {
-      if (revEngCanvasMode === "capture_contour_pts") {
-        const ptIdx = revEngData.capturedPoints.length + 1;
-        setRevEngData((prev) => ({
-          ...prev,
-          capturedPoints: [
-            ...prev.capturedPoints,
-            {
-              id: uid(),
-              x: Number(p.x.toFixed(3)),
-              y: Number(p.y.toFixed(3)),
-              source: "manual_touch",
-              uncertaintyMm: 0.1,
-            },
-          ],
-        }));
-        triggerHaptic("selection");
-        toast.success(`✓ Ponto P${ptIdx} capturado (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
-        return;
-      }
-
-      if (revEngCanvasMode === "pick_cal_2pt" || revEngCanvasMode === "pick_cal_multiref") {
-        const next = revEngPickPoints.length >= 2 ? [p] : [...revEngPickPoints, p];
-        setRevEngPickPoints(next);
-        triggerHaptic("selection");
-        if (next.length === 1) {
-          toast.info("1º ponto de referência marcado — toque no 2º ponto da cota conhecida.");
-        } else {
-          toast.success(
-            `✓ 2º ponto marcado (distância: ${dist(next[0]!, next[1]!).toFixed(2)} unid.) — informe o comprimento real em mm na aba ENG. REV.`,
-          );
-        }
-        return;
-      }
-
-      if (revEngCanvasMode === "pick_homography_4pt") {
-        const next = revEngPickPoints.length >= 4 ? [p] : [...revEngPickPoints, p];
-        setRevEngPickPoints(next);
-        triggerHaptic("selection");
-        if (next.length < 4) {
-          toast.info(`Canto C${next.length}/4 marcado — toque no canto C${next.length + 1}.`);
-        } else {
-          toast.success("✓ 4 cantos C1–C4 marcados! Clique em Retificar Perspectiva na aba ENG. REV.");
-        }
-        return;
-      }
-    }
-
     // DEFINIR PARTIDA: o próximo clique com snap vira o início do caminho
     if (startPicking) {
       const target = entities.find((e) => selection.includes(e.id) && isCutPath(e));
@@ -5902,136 +3425,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // INTERAÇÕES DIRETAS DO MOTOR DE ARRAYS INTELIGENTES (PIVO ARRASTÁVEL, SELEÇÃO DE FURO, OMITIR CÓPIAS)
-    if (activeArrayType !== null) {
-      // 1. Se nenhuma peça foi selecionada antes de abrir o Array, o 1º toque seleciona o furo/entidade
-      if (selected.length === 0) {
-        const hit = hitTest(raw) ?? hitTest(directTouchWorld);
-        if (hit) {
-          const nextIds = expandSelection(entities, [hit.id]);
-          const nextEnts = entities.filter((e) => nextIds.includes(e.id));
-          setSelection(nextIds);
-          initializeArrayFromEntities(nextEnts, activeArrayType, null);
-          triggerHaptic("selection");
-        }
-        return;
-      }
-
-      // 2. Modo Polar: Toque ou arraste no Pivô Central Vermelho Carmesim (#DC143C) ou modo "Escolher Centro"
-      if (activeArrayType === "polar") {
-        const pivotTol = (pType === "touch" ? 22 : 16) / view.k;
-        const distToPivot = Math.min(
-          dist(raw, arrayPolarParams.center),
-          dist(directTouchWorld, arrayPolarParams.center),
-        );
-
-        if (isArrayPickingCenter || distToPivot <= pivotTol) {
-          isDraggingArrayCenterRef.current = true;
-          const nextCenter = isArrayPickingCenter ? p : arrayPolarParams.center;
-          if (isArrayPickingCenter) {
-            setArrayPolarParams((prev) => {
-              const baseCenter = selected.length > 0 ? getGroupCenter(selected) : nextCenter;
-              const radius = dist(nextCenter, baseCenter);
-              return {
-                ...prev,
-                center: nextCenter,
-                radius,
-                startAngleDeg:
-                  Math.atan2(baseCenter.y - nextCenter.y, baseCenter.x - nextCenter.x) *
-                  (180 / Math.PI),
-              };
-            });
-            setIsArrayPickingCenter(false);
-            toast.success(
-              `Centro do padrão fixado em (${nextCenter.x.toFixed(1)}, ${nextCenter.y.toFixed(1)}) mm`,
-            );
-          }
-          triggerHaptic("selection");
-          return;
-        }
-
-        // 2b. Toque em um centro candidato (quando confiança MÉDIA / múltiplos centros candidatos)
-        if (arrayHostInfo.candidateCenters.length > 1) {
-          for (const cand of arrayHostInfo.candidateCenters) {
-            if (
-              Math.min(dist(raw, cand.point), dist(directTouchWorld, cand.point)) <=
-              (pType === "touch" ? 20 : 14) / view.k
-            ) {
-              setArrayPolarParams((prev) => {
-                const baseCenter = selected.length > 0 ? getGroupCenter(selected) : cand.point;
-                const radius = dist(cand.point, baseCenter);
-                return {
-                  ...prev,
-                  center: cand.point,
-                  radius,
-                  startAngleDeg:
-                    Math.atan2(baseCenter.y - cand.point.y, baseCenter.x - cand.point.x) *
-                    (180 / Math.PI),
-                };
-              });
-              triggerHaptic("action");
-              toast.success(`Centro selecionado: ${cand.label}`);
-              return;
-            }
-          }
-        }
-      }
-
-      // 3. Toque em qualquer instância fantasma (k >= 1) para Omitir / Restaurar cópia individual (skippedIndices)
-      if (arrayPreview?.ghostSlots) {
-        const baseBox = bbox(selected);
-        const entRadius = baseBox
-          ? Math.max(8 / view.k, Math.hypot(baseBox.maxX - baseBox.minX, baseBox.maxY - baseBox.minY) / 2)
-          : 14 / view.k;
-        const slotHitTol = Math.max((pType === "touch" ? 18 : 14) / view.k, entRadius);
-
-        let bestSlot: { index: number; isSkipped: boolean; d: number } | null = null;
-        for (const slot of arrayPreview.ghostSlots) {
-          if (slot.isOriginal || slot.index < 1) continue;
-          const d = Math.min(dist(raw, slot.center), dist(directTouchWorld, slot.center));
-          if (d <= slotHitTol && (!bestSlot || d < bestSlot.d)) {
-            bestSlot = { index: slot.index, isSkipped: slot.isSkipped, d };
-          }
-        }
-
-        if (bestSlot) {
-          const targetIdx = bestSlot.index;
-          if (activeArrayType === "polar") {
-            setArrayPolarParams((prev) => {
-              const cur = prev.skippedIndices ?? [];
-              const exists = cur.includes(targetIdx);
-              return {
-                ...prev,
-                skippedIndices: exists ? cur.filter((k) => k !== targetIdx) : [...cur, targetIdx],
-              };
-            });
-          } else {
-            setArrayLinearParams((prev) => {
-              const cur = prev.skippedIndices ?? [];
-              const exists = cur.includes(targetIdx);
-              return {
-                ...prev,
-                skippedIndices: exists ? cur.filter((k) => k !== targetIdx) : [...cur, targetIdx],
-              };
-            });
-          }
-          triggerHaptic("selection");
-          toast.info(
-            bestSlot.isSkipped
-              ? `Posição #${targetIdx + 1} restaurada no padrão.`
-              : `Posição #${targetIdx + 1} omitida do padrão (toque novamente para restaurar).`,
-          );
-          return;
-        }
-      }
-    }
-
     if (tool === "select" || tool === "node") {
       // 1. Fusão Gestual Inteligente (Seção 3.2):
       // Ao aproximar o cursor (com offset 55px ou direto) de qualquer vértice de uma peça selecionada,
       // o Snap magnético trava nele e permite arrastar o nó diretamente no modo Ponteiro!
       let bestNode: { id: string; index: number; dist: number; pt: Vec2 } | null = null;
-      if (selection.length > 0 && interactionGuideMode !== "purple_ref") {
+      if (selection.length > 0) {
         const bd = (pType === "touch" ? 16 : 12) / view.k;
         for (const selEnt of selected) {
           const pts = entityPoints(selEnt);
@@ -6044,31 +3443,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
 
-      // 2. Teste de colisão estritamente a partir do centro real do retículo (cx, cy) com raio de captura 55px / zoom (Seção 5.2)
-      const hit = hitTest(raw);
+      // 2. Teste de colisão com formas geométricas existentes
+      const hit = hitTest(raw) ?? hitTest(directTouchWorld);
       const targetEntity = hit;
-
-      // Modo MARCO GEOMÉTRICO / ÂNCORA (interactionGuideMode === "purple_ref"):
-      // PROIBIDO criar ou comitar entidade no pointerdown / touchstart e PROIBIDO gerar marcos "ÓRFÃO" no vazio!
-      // No início do toque (1 dedo), apenas atualiza o Smart Pick (<= 24px) e a prévia pulsante se houver um ponto válido real.
-      if (interactionGuideMode === "purple_ref" && !bestNode) {
-        const smartCand = evaluateSmartPick(p, entities, view.k, {
-          maxPixelRadius: 24,
-          guideMeetings: ReferenceService.getState().meetings,
-        }).best;
-        smartPickCandidateRef.current = smartCand;
-        setSmartPickCandidate(smartCand);
-
-        const validCandidate = inferValidGeometricMarkCandidate(
-          p,
-          entities,
-          activeLayer,
-          smartSnap,
-          24 / view.k,
-        );
-        previewGeometricMarkCandidateRef.current = validCandidate;
-        setPreviewGeometricMarkCandidate(validCandidate);
-      }
 
       // =========================================================================
       // MÁQUINA DE ESTADOS BASEADA NO ALVO DO TOQUE (HIT-TEST CONTEXT)
@@ -6114,9 +3491,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               : target;
           setSelection(nextSel);
 
-          // Selecionar ou clicar na entidade JAMAIS abre automaticamente o painel lateral direito (Seção 1.3)
+          // Duplo clique / duplo toque intencional para abrir janela de propriedades da entidade (Regra 3.2)
           const now = performance.now();
-          lastEntityTapRef.current = { id: hit.id, time: now };
+          if (lastEntityTapRef.current && lastEntityTapRef.current.id === hit.id && now - lastEntityTapRef.current.time < 380) {
+            setMobileEditorOpenManual(true);
+            setRightSidebarOpen(true);
+            setActiveSidebarTab("propriedades");
+            triggerHaptic("action");
+            lastEntityTapRef.current = null;
+          } else {
+            lastEntityTapRef.current = { id: hit.id, time: now };
+          }
 
           if (tool === "select") {
             const inCooldown = performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current);
@@ -6270,29 +3655,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         finishPolyline(true);
         return;
       }
-      if (
-        tool === "polyline" &&
-        polylineCreationMode === "center_radius" &&
-        pending.length === 1
-      ) {
-        const center = pending[0]!;
-        const geom = computeCenterRadiusLineGeometry(center, nextPoint);
-        if (geom.lengthMm >= 0.05) {
-          polylineSegModesRef.current.push(polylineSegMode);
-          setPending([geom.start, geom.end]);
-          setDraft({
-            id: uid(),
-            layer: activeLayer,
-            type: "line",
-            x1: geom.end.x,
-            y1: geom.end.y,
-            x2: geom.end.x,
-            y2: geom.end.y,
-          });
-          triggerHaptic("tap");
-          return;
-        }
-      }
       if (pending.length > 0) {
         polylineSegModesRef.current.push(polylineSegMode);
       }
@@ -6309,46 +3671,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       triggerHaptic("tap");
       return;
     }
-    if (tool === "freehand") {
-      const startSnap =
-        snapOn && (smartSnap ?? snapHit) ? { ...(smartSnap ?? snapHit)!.p } : null;
-      const startWorld = startSnap ?? { ...p };
-      freehandStartSnapRef.current = startSnap;
-      freehandDrawingRef.current = true;
-      freehandRawPtsRef.current = [startWorld];
-      setFreehandLivePts([startWorld]);
-      setFreehandSuggestion(null);
-      triggerHaptic("tap");
-      return;
-    }
     if (tool === "text") {
-      if (textSpec) {
-        commit((list) => [
-          ...list,
-          {
-            id: uid(),
-            layer: activeLayer,
-            type: "text",
-            x: p.x,
-            y: p.y,
-            text: textSpec.text,
-            size: textSpec.height,
-            width: textSpec.width,
-            bold: textSpec.bold,
-            italic: textSpec.italic,
-          },
-        ]);
-        setTextSpec(null);
-        setTool("select");
+      if (!textSpec) {
+        setTextOpen(true);
         return;
       }
-      setRichNoteSession({
-        mode: "create",
-        anchorWorld: { x: p.x, y: p.y },
-        layer: "anotacoes",
-        initialSpec: createDefaultRichNoteSpec(),
-      });
-      triggerHaptic("tap");
+      commit((list) => [
+        ...list,
+        {
+          id: uid(),
+          layer: activeLayer,
+          type: "text",
+          x: p.x,
+          y: p.y,
+          text: textSpec.text,
+          size: textSpec.height,
+          width: textSpec.width,
+          bold: textSpec.bold,
+          italic: textSpec.italic,
+        },
+      ]);
+      setTextSpec(null);
+      setTool("select");
       return;
     }
     if (tool === "arc") {
@@ -6357,30 +3701,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const [a, b, c] = q as [Vec2, Vec2, Vec2];
         const arc = arcFrom3(a, b, c, activeLayer);
         if (arc) {
-          const draftState = createPendingDraftShapeState(
-            "arc",
-            arc,
-            a,
-            c,
-            activeLayer,
-            filletR,
-            {
-              rectMode,
-              circleMode,
-              polygonMode,
-              polygonSides,
-              polygonAcrossFlatsMm,
-              slotMode,
-              slotWidthMm,
-              arcMidPoint: b,
-            },
-          );
-          if (draftState) {
-            setPendingDraftShape(draftState);
-            lastCreatedVertexRef.current = c;
-          } else {
-            commit((e) => [...e, arc]);
-          }
+          commit((e) => [...e, arc]);
           setSelection([]);
           setMobileEditorOpenManual(false);
         }
@@ -6448,35 +3769,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    if (tool === "loft_3d") {
-      const hit = hitTest(raw);
-      if (!hit) {
-        toast.info("Toque em um perfil fechado (Retângulo, Polígono ou Círculo) para adicionar à transição Loft 3D.");
-        return;
-      }
-      if (!isClosedLoftableProfile(hit)) {
-        toast.warning("Para o Loft 3D, selecione um perfil fechado (Retângulo, Polígono, Círculo ou Polilinha fechada).");
-        return;
-      }
-      triggerHaptic("selection");
-      setLoftSectionIds((prev) => {
-        if (prev.includes(hit.id)) {
-          return prev.filter((id) => id !== hit.id);
-        }
-        const next = [...prev, hit.id];
-        if (
-          next.length === 2 &&
-          drawingProjection !== "isometric" &&
-          !orbitProjection2D.isTilted
-        ) {
-          // Inclina suavemente para perspectiva isométrica 3D para revelar a prévia translúcida
-          animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-        }
-        return next;
-      });
-      return;
-    }
-
     if (tool === "offset") {
       const hit = hitTest(raw);
       if (hit) {
@@ -6485,44 +3777,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
-    if (tool === "polar_ref") {
-      // BLINDAGEM CONTRA PINÇA 2 DEDOS: registra no árbitro e só confirma origem/alvo no pointerup limpo
-      // ou após micro-confirmação de arraste com 1 dedo único (ZERO origens fantasma ao dar zoom/pan!)
-      polarPreGestureOriginRef.current = polarRefOriginAnchor;
-      const arbiterAct = polarArbiterPointerDown(polarArbiterRef.current, {
-        pointerId: ev.pointerId,
-        screen: { x: ev.clientX, y: ev.clientY },
-        world: raw,
-        nowMs: performance.now(),
-        hasExistingOrigin: Boolean(polarRefOriginAnchor),
-      });
-      if (arbiterAct.kind === "abort_and_restore_pre_gesture") {
-        setPolarRefOriginAnchor(polarPreGestureOriginRef.current);
-        if (!polarPreGestureOriginRef.current) setPolarRefLivePreview(null);
-      }
-      return;
-    }
-    if (tool === "trace_part") {
-      if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current) return;
-      tracePointerDownWorldRef.current = raw;
-      traceFenceRef.current = [raw];
-      setTraceFenceTrail([raw]);
-      try {
-        (ev.currentTarget as Element | null)?.setPointerCapture?.(ev.pointerId);
-      } catch {
-        // Ignora se já capturado
-      }
-      return;
-    }
-    if (tool === "trim" || tool === "smart_trim") {
-      trimPointerDownWorldRef.current = raw;
+    if (tool === "trim") {
       swipeTrimFenceRef.current = [raw];
-      setTrimFenceTrail([raw]);
       setSwipeTrimCutPreview([]);
-      try {
-        (ev.currentTarget as Element | null)?.setPointerCapture?.(ev.pointerId);
-      } catch {
-        // Ignora se elemento não suporta pointer capture no ambiente atual
+      const hit = hitTest(raw);
+      if (hit) {
+        const result = removeEntityOnly(entities, groups, hit.id);
+        commit(result.entities);
+        setGroups(result.groups);
+        setSelection((ids) => ids.filter((id) => id !== hit.id));
+        toast.success("Entidade removida.");
+        swipeTrimFenceRef.current = [];
+      }
+      return;
+    }
+    if (tool === "smart_trim") {
+      swipeTrimFenceRef.current = [raw];
+      setSwipeTrimCutPreview([]);
+      const hit = hitTest(raw);
+      if (hit) {
+        const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
+        if (preview && preview.activeCandidate) {
+          const cand = preview.activeCandidate;
+          triggerHaptic("action");
+          commit((list) => {
+            const filtered = list.filter((e) => e.id !== preview.targetEntity.id);
+            const additions = [cand.trimmedEntity];
+            if (cand.extraTrimmedEntities) {
+              additions.push(...cand.extraTrimmedEntities);
+            }
+            return [...filtered, ...additions];
+          });
+          toast.success("Geometria aparada até o encontro.");
+          setSmartTrimPreview(null);
+          swipeTrimFenceRef.current = [];
+        }
       }
       return;
     }
@@ -6558,138 +3847,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
-    if (tool === "fillet") {
-      const tol = 16 / Math.max(0.05, view.k);
-      if (!filletFirstPick) {
-        // 1-clique direto próximo a uma quina (Linha×Linha, Polilinha ou Retângulo)
-        const directRes = detectDirectFilletCorner(raw, entities, filletR, tol);
-        if (directRes) {
-          if (directRes.ok && directRes.activeSolution) {
-            commit(directRes.activeSolution.updatedEntities);
-            triggerHaptic("action");
-            toast.success(`Filete R${filletR} mm aplicado (arco real sem facetamento).`);
-            setFilletPreview(null);
-            setUniversalFilletResult(null);
-            setFilletErrorHint(null);
-            setSelection([]);
-            return;
-          }
-          if (directRes.error) {
-            setFilletErrorHint(directRes.error);
-            toast.warning(directRes.error);
-            return;
-          }
-        }
-        // Seleção sequencial Universal (Linha, Arco, Círculo, Retângulo ou Polilinha)
-        const firstHit = findFilletTargetAtPoint(raw, entities, tol);
-        if (!firstHit) {
-          toast.info("Toque em uma Linha, Arco, Círculo ou vértice de canto para aplicar Filete R.");
-          return;
-        }
-        setFilletFirstPick(firstHit);
-        setFilletSolutionIdx(0);
-        setFilletErrorHint(null);
-        setSelection([firstHit.entity.id]);
-        triggerHaptic("selection");
-        toast.info("1ª entidade selecionada. Toque na 2ª entidade (Linha, Arco ou Círculo).");
-        return;
-      }
-
-      // 2º clique: busca 2ª entidade (ou outro segmento da mesma polilinha)
-      const secondHit = findFilletTargetAtPoint(raw, entities, tol);
-      if (!secondHit) {
-        setFilletFirstPick(null);
-        setFilletSecondPick(null);
-        setUniversalFilletResult(null);
-        setFilletErrorHint(null);
-        setSelection([]);
-        return;
-      }
-      const firstSegIdx =
-        filletFirstPick.primitive.kind === "line"
-          ? filletFirstPick.primitive.polylineSegIndex
-          : undefined;
-      const secondSegIdx =
-        secondHit.primitive.kind === "line" ? secondHit.primitive.polylineSegIndex : undefined;
-      if (secondHit.entity.id === filletFirstPick.entity.id && secondSegIdx === firstSegIdx) {
-        // Se já existe solução ativa exibida, confirma com 2º toque
-        if (universalFilletResult?.ok && universalFilletResult.activeSolution) {
-          commit(universalFilletResult.activeSolution.updatedEntities);
-          triggerHaptic("action");
-          toast.success(`Filete R${filletR} mm aplicado.`);
-          setFilletFirstPick(null);
-          setFilletSecondPick(null);
-          setUniversalFilletResult(null);
-          setFilletErrorHint(null);
-          setSelection([]);
-        }
-        return;
-      }
-
-      const res = computeUniversalFillet2D(
-        filletFirstPick.entity,
-        filletFirstPick.clickPoint,
-        secondHit.entity,
-        secondHit.clickPoint,
-        filletR,
-        entities,
-        filletSolutionIdx,
-      );
-      if (!res.ok || !res.activeSolution) {
-        const msg = res.error ?? "Não foi possível concordar estas entidades com o raio atual.";
-        setFilletSecondPick(secondHit);
-        setFilletErrorHint(msg);
-        setUniversalFilletResult(res);
-        toast.warning(msg);
-        return;
-      }
-
-      // Se houver apenas 1 solução (ou o usuário clicou novamente no mesmo par já em prévia), aplica imediatamente
-      const samePairPreviewed =
-        universalFilletResult?.ok &&
-        universalFilletResult.activeSolution &&
-        filletSecondPick?.entity.id === secondHit.entity.id;
-
-      if (res.solutions.length === 1 || samePairPreviewed) {
-        const chosen = samePairPreviewed ? universalFilletResult!.activeSolution! : res.activeSolution;
-        commit(chosen.updatedEntities);
-        triggerHaptic("action");
-        toast.success(`Filete R${filletR} mm aplicado (arco analítico exato).`);
-        setFilletFirstPick(null);
-        setFilletSecondPick(null);
-        setUniversalFilletResult(null);
-        setFilletErrorHint(null);
-        setFilletSolutionIdx(0);
-        setSelection([]);
-        return;
-      }
-
-      // Múltiplas soluções possíveis (ex.: Linha×Círculo ou Círculo×Círculo): exibe prévia e botão Alternar Solução
-      setFilletSecondPick(secondHit);
-      setUniversalFilletResult(res);
-      setFilletErrorHint(null);
-      setSelection([filletFirstPick.entity.id, secondHit.entity.id]);
-      triggerHaptic("selection");
-      toast.info(
-        `${res.solutions.length} concordâncias possíveis. Use "Alternar Solução" ou clique em "Aplicar R${filletR}".`,
-      );
-      return;
-    }
-    if (tool === "chamfer") {
+    if (tool === "fillet" || tool === "chamfer") {
       const tol = 16 / view.k;
       const corner = findCornerAtPoint(raw, entities, tol);
       if (corner) {
-        const res = applyChamferToCorner(corner, filletR, filletR, entities);
-        if (res.success) {
-          commit(res.updatedEntities);
-          triggerHaptic("action");
-          toast.success(`Chanfro ${filletR} mm aplicado no canto.`);
-          setChamferPreview(null);
-          setSelection([]);
-          return;
+        if (tool === "fillet") {
+          const res = applyFilletToCorner(corner, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Filete R${filletR} mm aplicado no canto.`);
+            setFilletPreview(null);
+            setSelection([]);
+            return;
+          }
+        } else {
+          const res = applyChamferToCorner(corner, filletR, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Chanfro ${filletR} mm aplicado no canto.`);
+            setChamferPreview(null);
+            setSelection([]);
+            return;
+          }
         }
       }
 
+      // Permite também seleção sequencial de 2 linhas concorrentes
       const hit = hitTest(raw);
       if (!hit) return;
       if (!selection.length) {
@@ -6710,18 +3895,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           farB: { x: hit.x2, y: hit.y2 },
         };
 
-        const res = applyChamferToCorner(cornerLines, filletR, filletR, entities);
-        if (res.success) {
-          commit(res.updatedEntities);
-          triggerHaptic("action");
-          toast.success(`Chanfro ${filletR} mm aplicado entre as linhas.`);
-          setSelection([]);
-          setChamferPreview(null);
-          return;
+        if (tool === "fillet") {
+          const res = applyFilletToCorner(cornerLines, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Filete R${filletR} mm aplicado entre as linhas.`);
+            setSelection([]);
+            setFilletPreview(null);
+            return;
+          }
+        } else {
+          const res = applyChamferToCorner(cornerLines, filletR, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Chanfro ${filletR} mm aplicado entre as linhas.`);
+            setSelection([]);
+            setChamferPreview(null);
+            return;
+          }
         }
       }
 
-      toast.error("Não foi possível chanfrar estas entidades.");
+      toast.error("Não foi possível concordar estas entidades.");
       return;
     }
     if (tool === "divide") {
@@ -6739,12 +3936,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // ferramentas de arrasto 2D (bloqueadas enquanto estiver no modo CAD 3D)
-    if (activeMode === "3d") return;
+    // ferramentas de arrasto
     setPending([p]);
     setDraft(
       buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane, {
-        lineMode,
         rectMode,
         circleMode,
         polygonMode,
@@ -6760,9 +3955,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (ptrsRef.current.has(ev.pointerId))
       ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
-    // Multi-Touch Guard: se 2 ou mais dedos estiverem no canvas, bloqueia e aborta qualquer ferramenta imediatamente
-    if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current) {
-      abortForMultiTouchGesture();
+    // Multi-Touch Guard: se 2 ou mais dedos estiverem no canvas, cancela arraste e restaura snapshot
+    if (ptrsRef.current.size >= 2) {
+      setLoupeVisible(false);
+      setIsDraggingUnlocked(false);
+      if (dragLongPressRef.current) {
+        clearTimeout(dragLongPressRef.current.timer);
+        dragLongPressRef.current = null;
+      }
+      if (longPressRef.current) {
+        clearTimeout(longPressRef.current.timer);
+        longPressRef.current = null;
+      }
+      if (dragEntityRef.current) {
+        if (dragRafRef.current) {
+          cancelAnimationFrame(dragRafRef.current);
+          dragRafRef.current = null;
+        }
+        setEntities(dragEntityRef.current.initialEntitiesSnapshot);
+        dragEntityRef.current = null;
+        isDraggingEntityRef.current = false;
+        pendingDragEntitiesRef.current = null;
+      }
+      dragCooldownUntilRef.current = performance.now() + 150;
     }
 
     // REGRA 1.1: Tolerância de oscilação de 8px antes de completar os 320ms
@@ -6784,16 +3999,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       longPressRef.current = null;
     }
 
-    // ---- pinça + pan adaptativos anti-esbarrão (2 ponteiros, qualquer ferramenta) ----
+    // ---- pinça + pan (2 ponteiros, qualquer ferramenta) ----
     if (pinchRef.current && ptrsRef.current.size >= 2) {
       ev.preventDefault();
       const [a, b] = [...ptrsRef.current.values()];
       if (!a || !b) return;
-      applyPinchZoomFromScreenPoints(a.x, a.y, b.x, b.y);
-      return;
-    }
-
-    if (isMultiTouchGestureRef.current || ptrsRef.current.size >= 2) {
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const prev = pinchRef.current;
+      const factor = Math.min(2, Math.max(0.5, d / prev.dist));
+      const r = svgRef.current!.getBoundingClientRect();
+      const v = viewRef.current;
+      // ponto de mundo sob o ponto médio anterior
+      const wx = (prev.mx - r.left - v.tx) / v.k;
+      const wy = (prev.my - r.top - v.ty) / v.k;
+      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
+      const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
+      applyView(nv);
+      flashZoom(k);
+      markGesture();
+      pinchRef.current = { dist: d, mx, my };
+      orbitDragRef.current = null;
       return;
     }
 
@@ -6804,7 +4031,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const dy = ev.clientY - orbitDragRef.current.y;
       orbitDragRef.current = { x: ev.clientX, y: ev.clientY };
       if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
-        wasCameraPannedRef.current = true;
         handleDragOrbitDelta(dx, dy);
         markGesture();
       }
@@ -6816,32 +4042,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (activePointerType !== pType) setActivePointerType(pType);
 
     if (panRef.current) {
-      const rawDx = ev.clientX - panRef.current.x;
-      const rawDy = ev.clientY - panRef.current.y;
-      if (Math.hypot(rawDx, rawDy) > 1.5) {
-        wasCameraPannedRef.current = true;
-      }
+      const dx = ev.clientX - panRef.current.x;
+      const dy = ev.clientY - panRef.current.y;
       panRef.current = { x: ev.clientX, y: ev.clientY };
       const v = viewRef.current;
-      const rectEl = svgRef.current ?? canvasViewportRef.current;
-      const r = rectEl?.getBoundingClientRect();
-      const wPx = r?.width || canvasSize.w || 800;
-      const hPx = r?.height || canvasSize.h || 600;
-      const panMetrics = computeAdaptiveZoomMetrics({
-        characteristicRadiusMm: characteristicRadiusRef.current,
-        viewK: v.k,
-        viewportWidthPx: wPx,
-        viewportHeightPx: hPx,
-        userSensitivityMultiplier: zoomSensitivityRef.current.multiplier,
-      });
-      const panEval = evaluateAdaptivePanStep({
-        rawDeltaPxX: rawDx,
-        rawDeltaPxY: rawDy,
-        viewportWidthPx: wPx,
-        viewportHeightPx: hPx,
-        metrics: panMetrics,
-      });
-      applyView({ ...v, tx: v.tx + panEval.appliedDeltaPxX, ty: v.ty + panEval.appliedDeltaPxY });
+      applyView({ ...v, tx: v.tx + dx, ty: v.ty + dy });
       markGesture();
       return;
     }
@@ -6868,57 +4073,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         if (!lastFence || dist(lastFence, rawPt) > 1.5 / view.k) {
           swipeTrimFenceRef.current.push(rawPt);
         }
-      }
-      setTrimFenceTrail([...swipeTrimFenceRef.current]);
-    }
-
-    if (tool === "trace_part" && traceFenceRef.current.length > 0 && ptrsRef.current.size === 1 && !isMultiTouchGestureRef.current) {
-      const nativeEv = ev.nativeEvent as PointerEvent;
-      const coalesced = typeof nativeEv.getCoalescedEvents === "function" ? nativeEv.getCoalescedEvents() : [];
-      if (coalesced.length > 0) {
-        for (const ce of coalesced) {
-          const pt = toWorld({
-            clientX: ce.clientX,
-            clientY: ce.clientY,
-            pointerType: ce.pointerType,
-          });
-          const lastFence = traceFenceRef.current[traceFenceRef.current.length - 1];
-          if (!lastFence || dist(lastFence, pt) > 1.5 / view.k) {
-            traceFenceRef.current.push(pt);
-          }
-        }
-      } else {
-        const rawPt = toWorld(ev);
-        const lastFence = traceFenceRef.current[traceFenceRef.current.length - 1];
-        if (!lastFence || dist(lastFence, rawPt) > 1.5 / view.k) {
-          traceFenceRef.current.push(rawPt);
-        }
-      }
-      setTraceFenceTrail([...traceFenceRef.current]);
-    }
-
-    if (tool === "freehand" && freehandDrawingRef.current && ptrsRef.current.size === 1) {
-      const nativeEv = ev.nativeEvent as PointerEvent;
-      const coalesced =
-        typeof nativeEv.getCoalescedEvents === "function" ? nativeEv.getCoalescedEvents() : [];
-      const minStepMm = Math.max(0.05, 0.35 / Math.max(0.2, view.k));
-      let nextPts = freehandRawPtsRef.current;
-      if (coalesced.length > 0) {
-        for (const ce of coalesced) {
-          const wPt = toWorld({
-            clientX: ce.clientX,
-            clientY: ce.clientY,
-            pointerType: ce.pointerType || pType,
-          });
-          nextPts = appendFreehandSample(nextPts, wPt, minStepMm);
-        }
-      } else {
-        const wPt = toWorld(ev);
-        nextPts = appendFreehandSample(nextPts, wPt, minStepMm);
-      }
-      if (nextPts !== freehandRawPtsRef.current) {
-        freehandRawPtsRef.current = nextPts;
-        setFreehandLivePts(nextPts);
       }
     }
 
@@ -7061,43 +4215,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const flushPointerMoveFrame = (clientX: number, clientY: number, pType: string) => {
-    if (
-      isMultiTouchGestureRef.current ||
-      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
-      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
-      ptrsRef.current.size >= 2 ||
-      pinchRef.current !== null
-    ) {
-      return;
-    }
-
-    const touchCanvasPt = getTouchCanvasScreenPos({ clientX, clientY });
     const raw = toWorld({ clientX, clientY, pointerType: pType });
     const directTouchWorld = toWorld({ clientX, clientY, pointerType: pType }, true);
+    cursorRef.current = raw;
+    setCursor(raw);
 
-    const useOffsetMove =
-      cursorOffsetMode === "offset" &&
-      tool !== "pan" &&
-      !panRef.current &&
-      ptrsRef.current.size <= 1 &&
-      (pType === "touch" ||
-        ptrsRef.current.size === 1 ||
-        shouldUseTouchOffset(
-          pType,
-          tool,
-          dragNode !== null || isDraggingArrayCenterRef.current || isArrayPickingCenter,
-          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
-          cursorOffsetMode,
-          selection.length > 0,
-        ));
-    if (useOffsetMove) {
-      activeTouchScreenPosRef.current = touchCanvasPt;
-      setActiveTouchScreenPos(touchCanvasPt);
+    const useOffsetMove = shouldUseTouchOffset(
+      pType,
+      tool,
+      dragNode !== null,
+      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+      cursorOffsetMode,
+      selection.length > 0,
+    );
+    if (pType === "touch" && useOffsetMove && ptrsRef.current.size === 1 && !panRef.current) {
       setTouchWorldPos(directTouchWorld);
       setTouchOffsetActive(true);
-    } else if (ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
-      activeTouchScreenPosRef.current = null;
-      setActiveTouchScreenPos(null);
+    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
     }
@@ -7108,7 +4242,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "construction_line" ||
       tool === "polyline" ||
       tool === "spline" ||
-      tool === "freehand" ||
       tool === "rect" ||
       tool === "rrect" ||
       tool === "circle" ||
@@ -7125,7 +4258,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "move" ||
       tool === "node" ||
       tool === "leader" ||
-      interactionGuideMode === "purple_ref" ||
       dragNode !== null ||
       dragEntityRef.current !== null ||
       (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
@@ -7147,321 +4279,74 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     let currentSnapPt = raw;
     if (snapOn) {
-      const tol = (nudgeHudVisible ? 6 : 12) / view.k;
-      const hysteresisTol = smartSnap ? tol * 1.35 : tol;
-
-      // Verifica primeiro Âncoras A–E, Divisores ÷N e Encontros de Guias do ReferenceService
-      const refCandidates = ReferenceService.snapCandidates(entities);
-      let matchedRefCand: (typeof refCandidates)[number] | null = null;
-      for (const rc of refCandidates) {
-        if (dist(raw, rc.point) <= hysteresisTol) {
-          matchedRefCand = rc;
-          break;
-        }
-      }
-
-      // Verifica depois os Pontos de Encontro Roxos (+) confirmados
-      let matchedPinned: Vec2 | null = null;
-      if (!matchedRefCand) {
-        for (const mp of pinnedMeetingPoints) {
-          if (dist(raw, mp) <= hysteresisTol) {
-            matchedPinned = mp;
-            break;
-          }
-        }
-      }
-
-      if (matchedRefCand) {
-        setSmartSnap({
-          p: matchedRefCand.point,
-          kind: matchedRefCand.kind === "meeting" ? "intersection" : "geometric_mark",
-          label: matchedRefCand.label,
-          priority: 110,
-        });
+      const tol = 12 / view.k;
+      const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
+      const smart = findSmartSnap(raw, entities, tol, activeStart ?? null, tool, selection);
+      setSmartSnap(smart);
+      if (smart) {
         setSnapHit(null);
-        currentSnapPt = matchedRefCand.point;
-      } else if (matchedPinned) {
-        setSmartSnap({
-          p: matchedPinned,
-          kind: "intersection",
-          label: "Ponto de Encontro (+)",
-          priority: 100,
-        });
-        setSnapHit(null);
-        currentSnapPt = matchedPinned;
+        currentSnapPt = smart.p;
       } else {
-        const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
-        const smart = findSmartSnap(raw, entities, hysteresisTol, activeStart ?? null, tool, selection, snapDivision);
-        setSmartSnap(smart);
-        if (smart) {
-          setSnapHit(null);
-          currentSnapPt = smart.p;
-        } else {
-          if (drawingProjection === "isometric" && showGrid) {
-            const isoG = snapToIsoGrid(raw, grid, isoPlane);
-            if (dist(raw, isoG) <= tol * 1.5) {
-              currentSnapPt = isoG;
-            }
+        if (drawingProjection === "isometric" && showGrid) {
+          const isoG = snapToIsoGrid(raw, grid, isoPlane);
+          if (dist(raw, isoG) <= tol * 1.5) {
+            currentSnapPt = isoG;
           }
-          const sh = findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true });
-          setSnapHit(sh);
-          if (sh) currentSnapPt = sh.p;
         }
+        const sh = findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true });
+        setSnapHit(sh);
+        if (sh) currentSnapPt = sh.p;
       }
     } else {
       setSmartSnap(null);
       setSnapHit(null);
     }
 
-    // Aplica restrições dimensionais reais (L, ∠, ΔX, ΔY, d) se ativas no modo atual
-    const activeRefAnchor = ReferenceService.getActive();
-    const constraintBase =
-      interactionGuideMode === "blue_line"
-        ? pending.length > 0
-          ? pending[pending.length - 1]!
-          : temporaryOrigin?.p ?? null
-        : interactionGuideMode === "purple_ref"
-          ? activeRefAnchor?.origin ?? temporaryOrigin?.p ?? null
-          : null;
-    if (constraintBase) {
-      currentSnapPt = applyDimensionalConstraintsToPoint(constraintBase, currentSnapPt, lockedConstraints);
-    }
-
-    cursorRef.current = currentSnapPt;
-    setCursor(currentSnapPt);
-
-    // Prévia ao Vivo do Marco Geométrico / Âncora (Seção 4.2 Smart Pick <= 24px):
-    // Enquanto o dedo desliza com Marco Geométrico ativo, destaca o candidato dentro do raio <= 24px sem criar órfãos no vazio!
-    if (interactionGuideMode === "purple_ref") {
-      const smartCand = evaluateSmartPick(raw, entities, view.k, {
-        maxPixelRadius: 24,
-        guideMeetings: ReferenceService.getState().meetings,
-      }).best;
-      smartPickCandidateRef.current = smartCand;
-      setSmartPickCandidate(smartCand);
-
-      const activeSmart =
-        smartSnap && dist(currentSnapPt, smartSnap.p) <= 1e-3 ? smartSnap : null;
-      const validCand = inferValidGeometricMarkCandidate(
-        currentSnapPt,
-        entities,
-        activeLayer,
-        activeSmart,
-        24 / view.k,
-      );
-      previewGeometricMarkCandidateRef.current = validCand;
-      setPreviewGeometricMarkCandidate(validCand);
-    }
-
-    // Atualização em tempo real apenas das Cotas Vivas de Borda Ativa (evita duplicação com guias azuis/roxas)
+    // Atualização em tempo real das Cotas Vivas Inteligentes (Live Dimensions)
     if (activeEdge) {
-      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(currentSnapPt, activeEdge, activeEdgeSide);
+      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(raw, activeEdge, activeEdgeSide);
+      setLiveDimensions(dims);
+    } else if (temporaryOrigin) {
+      const dims = DynamicDimensionInteraction.generateRefOriginDimensions(raw, temporaryOrigin);
       setLiveDimensions(dims);
     } else if (liveDimensions.length > 0) {
       setLiveDimensions([]);
     }
 
-    if (tool === "polar_ref") {
-      if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current || polarArbiterRef.current.gestureLockedByNavigation) {
-        return;
-      }
-      const arbiterAct = polarArbiterPointerMove(polarArbiterRef.current, {
-        pointerId: ptrsRef.current.size === 1 ? [...ptrsRef.current.keys()][0]! : -1,
-        screen: { x: clientX, y: clientY },
-        world: raw,
-        nowMs: performance.now(),
-      });
-      if (arbiterAct.kind === "promote_origin_or_drag" && !polarRefOriginAnchor) {
-        const anchor = detectPolarRefOrigin(
-          arbiterAct.worldPoint,
-          entities,
-          18 / Math.max(0.05, view.k),
-          temporaryOrigin?.p ?? null,
-        );
-        setPolarRefOriginAnchor(anchor);
-        setPolarRefLockedDist(null);
-        setPolarRefLockedAngle(null);
-        const live = evaluateLivePolarReference({
-          originAnchor: anchor,
-          rawCursor: raw,
-          orthoOn,
-          polarSnapOn,
-        });
-        setPolarRefLivePreview({ originAnchor: anchor, ...live });
-        setPolarRefHoveredOrigin(null);
-        setLoupeCadPos(live.target);
-        triggerHaptic("tap");
-      } else if (polarRefOriginAnchor) {
-        const live = evaluateLivePolarReference({
-          originAnchor: polarRefOriginAnchor,
-          rawCursor: raw,
-          orthoOn,
-          polarSnapOn,
-          lockedDistanceMm: polarRefLockedDist,
-          lockedAngleDeg: polarRefLockedAngle,
-        });
-        setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...live });
-        setPolarRefHoveredOrigin(null);
-        setLoupeCadPos(live.target);
-      } else {
-        const hovered = detectPolarRefOrigin(
-          raw,
-          entities,
-          18 / Math.max(0.05, view.k),
-          temporaryOrigin?.p ?? null,
-        );
-        setPolarRefHoveredOrigin(hovered);
-        setPolarRefLivePreview(null);
-        setLoupeCadPos(hovered.point);
-      }
-    }
-
-    if (tool === "trace_part") {
-      if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current) return;
-      if (traceFenceRef.current.length >= 2) {
-        const startPt = traceFenceRef.current[0]!;
-        const endPt = traceFenceRef.current[traceFenceRef.current.length - 1]!;
-        if (dist(startPt, endPt) > 4 / Math.max(0.05, view.k)) {
-          const crossed = collectTraceSubPiecesCrossedByFence(
-            traceFenceRef.current,
-            entities,
-            10 / Math.max(0.05, view.k),
-          );
-          if (crossed.length > 0) {
-            setTraceMarkedKeys((prev) => {
-              const set = new Set(prev);
-              let changed = false;
-              for (const piece of crossed) {
-                if (!set.has(piece.key)) {
-                  set.add(piece.key);
-                  changed = true;
-                }
-              }
-              return changed ? Array.from(set) : prev;
-            });
-          }
-          setTraceHoverPiece(null);
-        }
-      } else {
-        const hit = hitTestTraceSubPiece(raw, entities, 14 / Math.max(0.05, view.k));
-        setTraceHoverPiece(hit ?? null);
-      }
-    }
-
     if (tool === "smart_trim" || tool === "trim") {
       if (swipeTrimFenceRef.current.length >= 2) {
-        const startPt = swipeTrimFenceRef.current[0]!;
-        const endPt = swipeTrimFenceRef.current[swipeTrimFenceRef.current.length - 1]!;
-        if (dist(startPt, endPt) > 4 / Math.max(0.05, view.k)) {
-          const crossed = collectTrimSubPiecesCrossedByFence(
-            swipeTrimFenceRef.current,
-            entities,
-            smartTrimMode,
-          );
-          if (crossed.length > 0) {
-            setTrimMarkedKeys((prev) => {
-              const set = new Set(prev);
-              let changed = false;
-              for (const piece of crossed) {
-                if (!set.has(piece.key)) {
-                  set.add(piece.key);
-                  changed = true;
-                }
-              }
-              return changed ? Array.from(set) : prev;
-            });
-          }
+        const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
+        setSwipeTrimCutPreview(tx.cutSegmentsPreview);
+      }
+
+      if (tool === "smart_trim") {
+        const hit = hitTest(raw);
+        if (hit) {
+          const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
+          setSmartTrimPreview(preview);
+        } else {
+          setSmartTrimPreview(null);
         }
-        setTrimHoverPiece(null);
-      } else {
-        const hovered = hitTestTrimSubPiece(
-          raw,
-          entities,
-          14 / Math.max(0.05, view.k),
-          smartTrimMode,
-        );
-        setTrimHoverPiece(hovered?.subPiece ?? null);
       }
     }
 
-    if (tool === "fillet") {
-      const tol = 16 / Math.max(0.05, view.k);
-      if (filletFirstPick) {
-        const secondHit = findFilletTargetAtPoint(raw, entities, tol);
-        const firstSegIdx =
-          filletFirstPick.primitive.kind === "line"
-            ? filletFirstPick.primitive.polylineSegIndex
-            : undefined;
-        const secondSegIdx =
-          secondHit && secondHit.primitive.kind === "line"
-            ? secondHit.primitive.polylineSegIndex
-            : undefined;
-        if (
-          secondHit &&
-          (secondHit.entity.id !== filletFirstPick.entity.id || secondSegIdx !== firstSegIdx)
-        ) {
-          const res = computeUniversalFillet2D(
-            filletFirstPick.entity,
-            filletFirstPick.clickPoint,
-            secondHit.entity,
-            secondHit.clickPoint,
-            filletR,
-            entities,
-            filletSolutionIdx,
-          );
-          setFilletSecondPick(secondHit);
-          setUniversalFilletResult(res);
-          setFilletErrorHint(res.ok ? null : (res.error ?? null));
-        }
-      } else {
-        const directRes = detectDirectFilletCorner(raw, entities, filletR, tol);
-        if (directRes) {
-          setUniversalFilletResult(directRes);
-          setFilletErrorHint(directRes.ok ? null : (directRes.error ?? null));
-        } else {
-          setUniversalFilletResult(null);
-          setFilletErrorHint(null);
-        }
-      }
-      setFilletPreview(null);
-      setChamferPreview(null);
-    } else if (tool === "chamfer") {
+    if (tool === "fillet" || tool === "chamfer") {
       const tol = 16 / view.k;
       const corner = findCornerAtPoint(raw, entities, tol);
       if (corner) {
-        const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
-        setChamferPreview(calc ? { corner, calc } : null);
-        setFilletPreview(null);
+        if (tool === "fillet") {
+          const calc = calculateFillet(corner.corner, corner.farA, corner.farB, filletR);
+          setFilletPreview(calc ? { corner, calc } : null);
+          setChamferPreview(null);
+        } else {
+          const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
+          setChamferPreview(calc ? { corner, calc } : null);
+          setFilletPreview(null);
+        }
       } else {
         setFilletPreview(null);
         setChamferPreview(null);
       }
-    }
-
-    if (isDraggingArrayCenterRef.current && activeArrayType === "polar") {
-      const p = currentSnapPt;
-      setArrayPolarParams((prev) => {
-        const baseCenter = selected.length > 0 ? getGroupCenter(selected) : p;
-        const radius = dist(p, baseCenter);
-        return {
-          ...prev,
-          center: p,
-          radius,
-          startAngleDeg: Math.atan2(baseCenter.y - p.y, baseCenter.x - p.x) * (180 / Math.PI),
-        };
-      });
-      return;
-    }
-
-    if (draggingDraftGripIndex !== null && pendingDraftShapeRef.current) {
-      const nextPending = applyPendingDraftGripDrag(
-        pendingDraftShapeRef.current,
-        draggingDraftGripIndex,
-        currentSnapPt,
-      );
-      setPendingDraftShape(nextPending);
-      lastCreatedVertexRef.current = nextPending.p1;
-      return;
     }
 
     if (dragNode) {
@@ -7469,15 +4354,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setEntities((list) =>
         list.map((e) => {
           if (e.id !== dragNode.id) return e;
-          const { constrainedPoint } = applyEntityNodeConstraint(
-            e,
-            dragNode.index,
-            p,
-            temporaryOrigin?.p ?? null,
-          );
           const pts = entityPoints(e);
-          const origPt = pts[dragNode.index] ?? constrainedPoint;
-          return applyMultiModeGripEdit(e, dragNode.index, constrainedPoint, gripMode, origPt);
+          const origPt = pts[dragNode.index] ?? p;
+          return applyMultiModeGripEdit(e, dragNode.index, p, gripMode, origPt);
         }),
       );
       return;
@@ -7532,32 +4411,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         pt = projectOrthoSegment(lastPoint, pt);
       }
       setLoupeCadPos(pt);
-      if (
-        tool === "polyline" &&
-        polylineCreationMode === "center_radius" &&
-        pending.length === 1
-      ) {
-        const geom = computeCenterRadiusLineGeometry(lastPoint, pt);
-        setDraft({
-          id: uid(),
-          layer: activeLayer,
-          type: "line",
-          x1: geom.start.x,
-          y1: geom.start.y,
-          x2: geom.end.x,
-          y2: geom.end.y,
-        });
-      } else {
-        setDraft({
-          id: uid(),
-          layer: activeLayer,
-          type: "line",
-          x1: lastPoint.x,
-          y1: lastPoint.y,
-          x2: pt.x,
-          y2: pt.y,
-        });
-      }
+      setDraft({
+        id: uid(),
+        layer: activeLayer,
+        type: "line",
+        x1: lastPoint.x,
+        y1: lastPoint.y,
+        x2: pt.x,
+        y2: pt.y,
+      });
       return;
     }
     if (pending.length === 1 && draftRef.current) {
@@ -7608,7 +4470,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       setDraft(
         buildDraft(tool, p0, targetP, activeLayer, filletR, drawingProjection, isoPlane, {
-          lineMode,
           rectMode,
           circleMode,
           polygonMode,
@@ -7623,25 +4484,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const onPointerUp = (ev?: React.PointerEvent) => {
-    // Cancela imediatamente qualquer quadro de pointerMove pendente
+    // Descarrega imediatamente qualquer quadro de pointerMove pendente antes de finalizar o comando
     if (pointerMoveRafRef.current !== null) {
       cancelAnimationFrame(pointerMoveRafRef.current);
       pointerMoveRafRef.current = null;
     }
-    const isMultitouchNow =
-      isMultiTouchGestureRef.current ||
-      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
-      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
-      pinchRef.current !== null ||
-      ptrsRef.current.size >= 2;
-
-    if (isMultitouchNow) {
-      pendingPointerMoveRef.current = null;
-    } else if (pendingPointerMoveRef.current) {
+    if (pendingPointerMoveRef.current) {
       const pendingEv = pendingPointerMoveRef.current;
       pendingPointerMoveRef.current = null;
       flushPointerMoveFrame(pendingEv.clientX, pendingEv.clientY, pendingEv.pointerType);
-    } else if (ev && pending.length === 1 && draftRef.current && !panRef.current && !orbitDragRef.current) {
+    } else if (ev && pending.length === 1 && draftRef.current && !pinchRef.current && !panRef.current && !orbitDragRef.current) {
       flushPointerMoveFrame(ev.clientX, ev.clientY, ev.pointerType || lastPointerTypeRef.current || "mouse");
     }
 
@@ -7649,8 +4501,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setIsDraggingUnlocked(false);
     setTouchOffsetActive(false);
     setTouchWorldPos(null);
-    activeTouchScreenPosRef.current = null;
-    setActiveTouchScreenPos(null);
     // Regra Zero-Idle (Seção 2.2): libera listeners e animações transitórias ao soltar o toque
     globalCADInteractionHub.enterIdleState();
 
@@ -7661,318 +4511,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (longPressRef.current) clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
     if (ev) ptrsRef.current.delete(ev.pointerId);
-
-    const wasMultitouch =
-      isMultiTouchGestureRef.current ||
-      pinchRef.current !== null ||
-      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
-      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN";
-    if (wasMultitouch) {
-      if (ev) {
-        polarArbiterPointerUp(polarArbiterRef.current, {
-          pointerId: ev.pointerId,
-          world: cursorRef.current,
-          nowMs: performance.now(),
-        });
-      } else {
-        polarArbiterPointerCancel(polarArbiterRef.current, -1, performance.now());
-      }
-      traceFenceRef.current = [];
-      tracePointerDownWorldRef.current = null;
-      setTraceFenceTrail([]);
-      previewGeometricMarkCandidateRef.current = null;
-      setPreviewGeometricMarkCandidate(null);
-      setPendingGeometricMarkConfirmation(null);
-      setMarquee(null);
-
-      if (ptrsRef.current.size < 2) {
-        pinchRef.current = null;
-        pinchSessionRef.current = null;
-      }
+    const wasPinching = pinchRef.current !== null;
+    if (wasPinching && ptrsRef.current.size < 2) {
+      pinchRef.current = null;
+      gestureUntilRef.current = performance.now() + 350;
+      dragCooldownUntilRef.current = performance.now() + 150;
+      // continua o pan com o dedo restante, sem salto
+      const rest = [...ptrsRef.current.values()][0];
       panRef.current = null;
-      orbitDragRef.current = null;
-
-      // Mantenha o bloqueio até TODOS os dedos saírem da tela + janela de segurança (>= 120ms)
-      if (ptrsRef.current.size === 0) {
-        touchInteractionStateRef.current = "POST_GESTURE_COOLDOWN";
-        setTouchInteractionState("POST_GESTURE_COOLDOWN");
-        const now = performance.now();
-        gestureCooldownUntilRef.current = now + 150;
-        gestureUntilRef.current = now + 200;
-        dragCooldownUntilRef.current = now + 200;
-        polarArbiterRef.current.gestureLockedByNavigation = false;
-        polarArbiterRef.current.cooldownUntilMs = now + 180;
-        if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-        cooldownTimerRef.current = setTimeout(() => {
-          isMultiTouchGestureRef.current = false;
-          touchInteractionStateRef.current = "IDLE";
-          setTouchInteractionState("IDLE");
-        }, 160);
-      }
       return;
     }
-
-    if (ptrsRef.current.size === 0 && touchInteractionStateRef.current === "SINGLE_POINTER") {
-      touchInteractionStateRef.current = "IDLE";
-      setTouchInteractionState("IDLE");
-    }
-
-    // 3. Filtro de Arraste de Câmera (Pan Threshold):
-    // Se houve movimento de câmera (pan / pinça), nenhum clique de ferramenta ou Marco Geométrico pode ser disparado
-    if (wasCameraPannedRef.current) {
-      wasCameraPannedRef.current = false;
-      panRef.current = null;
+    if (wasPinching) {
+      dragCooldownUntilRef.current = performance.now() + 150;
       orbitDragRef.current = null;
-      previewGeometricMarkCandidateRef.current = null;
-      setPreviewGeometricMarkCandidate(null);
-      setMarquee(null);
       return;
     }
-
     panRef.current = null;
     if (orbitDragRef.current) {
-      const startPt = orbitStartClientRef.current;
       orbitDragRef.current = null;
-      orbitStartClientRef.current = null;
-
-      // Se foi um toque/clique curto sem arrasto (< 7px) em vista 3D, executa Raycasting 3D de Sub-Elementos (Faces / Arestas / Corpos)
-      if (
-        ev &&
-        startPt &&
-        Math.hypot(ev.clientX - startPt.x, ev.clientY - startPt.y) < 7 &&
-        (activeMode === "3d" || orbitProjection2D.isTilted) &&
-        svgRef.current
-      ) {
-        const rect = svgRef.current.getBoundingClientRect();
-        const localPt = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
-        const topoScene = buildDirectTopology3DScene(drawable, thickness);
-        const hit = hitTestSubElement3DInScreenSpace(
-          localPt,
-          topoScene,
-          orbitProjection2D,
-          view,
-          18,
-          subSelection3D.selectionScope ?? "auto",
-        );
-        const now = performance.now();
-        const isDoubleTap =
-          last3DTapRef.current !== null &&
-          now - last3DTapRef.current.time < 360 &&
-          Math.hypot(localPt.x - last3DTapRef.current.x, localPt.y - last3DTapRef.current.y) < 24;
-
-        if (hit.kind !== "none" && hit.body) {
-          const hitBody = hit.body;
-          if (activeDirect3DTool === "loft_3d" || tool === "loft_3d") {
-            triggerHaptic("selection");
-            setLoftSectionIds((prev) =>
-              prev.includes(hitBody.entityId)
-                ? prev.filter((id) => id !== hitBody.entityId)
-                : [...prev, hitBody.entityId],
-            );
-            setSelection([hitBody.entityId]);
-            return;
-          }
-          if (
-            isDoubleTap ||
-            hitBody.extrudeHeightMm <= 0.05 ||
-            activeDirect3DTool === "transform_3d" ||
-            hit.kind === "body" ||
-            subSelection3D.selectionScope === "body"
-          ) {
-            let nextBodyIds: string[] = [hitBody.bodyId];
-            setSubSelection3D((prev) => {
-              const currentBodies = prev.bodyIds;
-              if (
-                ev.shiftKey ||
-                (activeDirect3DTool === "transform_3d" &&
-                  !isDoubleTap &&
-                  currentBodies.length > 0)
-              ) {
-                nextBodyIds = currentBodies.includes(hitBody.bodyId)
-                  ? currentBodies.length > 1
-                    ? currentBodies.filter((id) => id !== hitBody.bodyId)
-                    : currentBodies
-                  : [...currentBodies, hitBody.bodyId];
-              } else {
-                nextBodyIds = [hitBody.bodyId];
-              }
-              return {
-                faceIds: [],
-                edgeIds: [],
-                bodyIds: nextBodyIds,
-                vertexIds: [],
-                selectionScope: prev.selectionScope ?? "body",
-                activePivot3D: hitBody.pivot3D,
-                activeHingeEdgeId: null,
-              };
-            });
-            setSelection(nextBodyIds);
-            if (
-              activeDirect3DTool !== "fillet_3d" &&
-              activeDirect3DTool !== "chamfer_3d" &&
-              activeDirect3DTool !== "shell_3d" &&
-              activeDirect3DTool !== "hole_3d" &&
-              activeDirect3DTool !== "array_3d"
-            ) {
-              setActiveDirect3DTool("transform_3d");
-            }
-            triggerHaptic("action");
-            last3DTapRef.current = null;
-          } else if (hit.kind === "vertex" && hit.vertex) {
-            const vertexId = hit.vertex.vertexId;
-            setSubSelection3D((prev) => {
-              const sameBodyVertices = (prev.vertexIds ?? []).filter((vid) =>
-                vid.startsWith(hitBody.bodyId),
-              );
-              const exists = sameBodyVertices.includes(vertexId);
-              let nextVertices: string[];
-              if (ev.shiftKey) {
-                nextVertices = exists
-                  ? sameBodyVertices.filter((id) => id !== vertexId)
-                  : [...sameBodyVertices, vertexId];
-                if (nextVertices.length === 0) nextVertices = [vertexId];
-              } else {
-                nextVertices = [vertexId];
-              }
-              return {
-                faceIds: [],
-                edgeIds: [],
-                bodyIds: [],
-                vertexIds: nextVertices,
-                selectionScope: prev.selectionScope ?? "vertex",
-                activePivot3D: hit.vertex!.position,
-                activeHingeEdgeId: null,
-              };
-            });
-            setSelection([hitBody.entityId]);
-            setActiveDirect3DTool("chamfer_3d");
-            triggerHaptic("selection");
-            last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now };
-          } else if (hit.kind === "edge" && hit.edge) {
-            const edgeId = hit.edge.edgeId;
-            const hasFaceOnSameBody =
-              subSelection3D.faceIds.length > 0 &&
-              subSelection3D.faceIds.some((fid) => fid.startsWith(hitBody.bodyId));
-
-            if (hasFaceOnSameBody && subSelection3D.edgeIds.length === 0 && !ev.shiftKey) {
-              setSubSelection3D((prev) => ({
-                ...prev,
-                edgeIds: [edgeId],
-                bodyIds: [],
-                vertexIds: [],
-                activePivot3D: hit.edge!.midpoint,
-                activeHingeEdgeId: edgeId,
-              }));
-              setActiveDirect3DTool("rotate_axis_3d");
-            } else {
-              setSubSelection3D((prev) => {
-                const sameBodyEdges = prev.edgeIds.filter((eid) =>
-                  eid.startsWith(hitBody.bodyId),
-                );
-                const exists = sameBodyEdges.includes(edgeId);
-                let nextEdges: string[];
-                if (ev.shiftKey) {
-                  nextEdges = exists
-                    ? sameBodyEdges.filter((id) => id !== edgeId)
-                    : [...sameBodyEdges, edgeId];
-                  if (nextEdges.length === 0) nextEdges = [edgeId];
-                } else {
-                  nextEdges = [edgeId];
-                }
-                return {
-                  faceIds: [],
-                  edgeIds: nextEdges,
-                  bodyIds: [],
-                  vertexIds: [],
-                  selectionScope: prev.selectionScope ?? "auto",
-                  activePivot3D: hit.edge!.midpoint,
-                  activeHingeEdgeId: null,
-                };
-              });
-              if (
-                activeDirect3DTool !== "fillet_3d" &&
-                activeDirect3DTool !== "chamfer_3d"
-              ) {
-                setActiveDirect3DTool("fillet_3d");
-              }
-            }
-            setSelection([hitBody.entityId]);
-            triggerHaptic("selection");
-            last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now };
-          } else if (hit.kind === "face" && hit.face) {
-            const faceId = hit.face.faceId;
-            setSubSelection3D((prev) => {
-              const sameBody = prev.faceIds.some((fid) => fid.startsWith(hitBody.bodyId));
-              const exists = prev.faceIds.includes(faceId);
-              let nextFaces: string[];
-              if (
-                ev.shiftKey ||
-                activeDirect3DTool === "array_3d" ||
-                (activeDirect3DTool === "shell_3d" && sameBody)
-              ) {
-                nextFaces = exists
-                  ? prev.faceIds.filter((id) => id !== faceId)
-                  : activeDirect3DTool === "array_3d" && prev.faceIds.length >= 2
-                    ? [prev.faceIds[prev.faceIds.length - 1]!, faceId]
-                    : [...prev.faceIds, faceId];
-                if (nextFaces.length === 0) nextFaces = [faceId];
-              } else {
-                nextFaces = [faceId];
-              }
-              return {
-                faceIds: nextFaces,
-                edgeIds: [],
-                bodyIds: prev.bodyIds,
-                vertexIds: [],
-                selectionScope: prev.selectionScope ?? "auto",
-                activePivot3D: hit.face!.centroid,
-                activeHingeEdgeId: null,
-              };
-            });
-            setSelection([hitBody.entityId]);
-            if (
-              activeDirect3DTool !== "shell_3d" &&
-              activeDirect3DTool !== "rotate_axis_3d" &&
-              activeDirect3DTool !== "array_3d"
-            ) {
-              setActiveDirect3DTool(
-                hitBody.extrudeHeightMm <= thickness + 0.5
-                  ? "extrude_3d"
-                  : "offset_face_3d",
-              );
-            }
-            triggerHaptic("selection");
-            last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now, faceId };
-          }
-        } else {
-          setSubSelection3D({
-            faceIds: [],
-            edgeIds: [],
-            bodyIds: [],
-            vertexIds: [],
-            selectionScope: "auto",
-            activePivot3D: null,
-            activeHingeEdgeId: null,
-          });
-          setSelection([]);
-          setActiveDirect3DTool("select_3d");
-          last3DTapRef.current = null;
-        }
-      }
-      return;
-    }
-
-    if (isDraggingArrayCenterRef.current) {
-      isDraggingArrayCenterRef.current = false;
-      setIsArrayPickingCenter(false);
-      triggerHaptic("action");
       return;
     }
 
     if (dragNode) {
       setDragNode(null);
       past.current = [...past.current, entities];
-      setEntities((list) => syncAssociativeGeometricMarks(revalidateShared(list)));
+      setEntities((list) => revalidateShared(list));
       return;
     }
     if (dragRafRef.current) {
@@ -8013,270 +4576,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }
           return translated;
         });
-        setEntities(syncAssociativeGeometricMarks(revalidateShared(finalEntities)));
+        setEntities(revalidateShared(finalEntities));
         toast.success("Peça posicionada com sucesso.");
         triggerHaptic("tap");
-        return;
-      }
-    }
-    if (tool === "freehand" && freehandDrawingRef.current) {
-      const rawPts = freehandRawPtsRef.current;
-      const startSnap = freehandStartSnapRef.current;
-      freehandDrawingRef.current = false;
-      freehandRawPtsRef.current = [];
-      freehandStartSnapRef.current = null;
-      setFreehandLivePts([]);
-
-      if (rawPts.length >= 2) {
-        const activeEndSnap =
-          snapOn && (smartSnap ?? snapHit) ? { ...(smartSnap ?? snapHit)!.p } : null;
-        const built = buildFreehandVectorEntity({
-          rawPointsWorld: rawPts,
-          cameraZoomK: view.k,
-          tolerancePx: freehandTolerancePx,
-          mode: freehandMode,
-          usageRole: freehandUsageRole,
-          orthoOn,
-          startSnapWorld: startSnap,
-          endSnapWorld: activeEndSnap,
-          forceClose: freehandAutoClose,
-          closeSnapRadiusMm: 10 / Math.max(0.2, view.k),
-          activeLayer,
-          strokeColor: activeStrokeColor,
-        });
-        if (built) {
-          commit((list) => [...list, built.entity]);
-          triggerHaptic("success");
-          if (built.suggestion) {
-            setFreehandSuggestion({
-              entityId: built.entity.id,
-              data: built.suggestion,
-            });
-          }
-        }
       }
       return;
     }
-
-    // Finaliza REF. POLAR somente em toque único limpo (100% blindado contra pinça 2 dedos)
-    if (tool === "polar_ref" && ev) {
-      const rawUp = toWorld(ev);
-      const act = polarArbiterPointerUp(polarArbiterRef.current, {
-        pointerId: ev.pointerId,
-        world: rawUp,
-        nowMs: performance.now(),
-      });
-      if (act.kind === "commit_single_tap") {
-        if (!polarRefOriginAnchor) {
-          const anchor = detectPolarRefOrigin(
-            act.worldPoint,
-            entities,
-            18 / Math.max(0.05, view.k),
-            temporaryOrigin?.p ?? null,
-          );
-          setPolarRefOriginAnchor(anchor);
-          setPolarRefLockedDist(null);
-          setPolarRefLockedAngle(null);
-          const live = evaluateLivePolarReference({
-            originAnchor: anchor,
-            rawCursor: anchor.point,
-            orthoOn,
-            polarSnapOn,
-          });
-          setPolarRefLivePreview({ originAnchor: anchor, ...live });
-          triggerHaptic("tap");
-          toast.info(`⌖ Origem Ref. Polar fixada (${anchor.label}). Arraste ou defina d / ∠ no Numpad.`);
-        } else {
-          const live = evaluateLivePolarReference({
-            originAnchor: polarRefOriginAnchor,
-            rawCursor: act.worldPoint,
-            orthoOn,
-            polarSnapOn,
-            lockedDistanceMm: polarRefLockedDist,
-            lockedAngleDeg: polarRefLockedAngle,
-          });
-          if (live.distanceMm >= 0.05) {
-            const item = createPolarReferenceItem({
-              origin: polarRefOriginAnchor.point,
-              distanceMm: live.distanceMm,
-              angleDeg: live.angleDeg,
-              originLabel: polarRefOriginAnchor.label,
-              isPerpendicularToEdge: live.isPerpendicularToEdge,
-            });
-            commitPolarRefs([...polarRefsRef.current, item]);
-            setPolarRefOriginAnchor(null);
-            setPolarRefLivePreview(null);
-            setPolarRefLockedDist(null);
-            setPolarRefLockedAngle(null);
-            triggerHaptic("success");
-            toast.success(
-              `⌖ Ref. Polar fixada: d = ${item.distanceMm.toFixed(1)} mm • ∠ ${item.angleDeg.toFixed(1)}°`,
-            );
-          } else {
-            toast.info("Afaste o cursor da origem ou toque nos chips d / ∠ para definir a medida.");
-          }
-        }
-      }
-      return;
-    }
-
-    // Finaliza TRAÇAR PEÇA (Toque direto alternando seleção ou Arraste "pincel / faca")
-    if (tool === "trace_part") {
-      const fence = traceFenceRef.current;
-      const downPt = tracePointerDownWorldRef.current ?? fence[0] ?? cursorRef.current;
-      const endPt = fence.length > 0 ? fence[fence.length - 1]! : cursorRef.current;
-      const isSwipe = fence.length >= 2 && dist(downPt, endPt) > 4 / Math.max(0.05, view.k);
-
-      traceFenceRef.current = [];
-      tracePointerDownWorldRef.current = null;
-      setTraceFenceTrail([]);
-
-      if (isSwipe) {
-        const crossed = collectTraceSubPiecesCrossedByFence(
-          fence,
-          entities,
-          10 / Math.max(0.05, view.k),
-        );
-        if (crossed.length > 0) {
-          setTraceMarkedKeys((prev) => Array.from(new Set([...prev, ...crossed.map((c) => c.key)])));
-          triggerHaptic("selection");
-        }
-        return;
-      }
-
-      const hitPiece = hitTestTraceSubPiece(downPt, entities, 14 / Math.max(0.05, view.k));
-      if (hitPiece) {
-        const hitKey = hitPiece.key;
-        setTraceMarkedKeys((prev) =>
-          prev.includes(hitKey) ? prev.filter((k) => k !== hitKey) : [...prev, hitKey],
-        );
-        triggerHaptic("selection");
-      }
-      return;
-    }
-
-    // Finaliza TRIM UNIFICADO (Toque direto ou Arraste tipo Faca com Confirmação Obrigatória)
-    if (tool === "smart_trim" || tool === "trim") {
-      const fence = swipeTrimFenceRef.current;
-      const downPt = trimPointerDownWorldRef.current ?? fence[0] ?? cursorRef.current;
-      const endPt = fence.length > 0 ? fence[fence.length - 1]! : cursorRef.current;
-      const isSwipe = fence.length >= 2 && dist(downPt, endPt) > 4 / Math.max(0.05, view.k);
-
+    // Finaliza Swipe-to-Trim se o usuário arrastou uma cerca de corte sobre segmentos
+    if ((tool === "smart_trim" || tool === "trim") && swipeTrimFenceRef.current.length >= 2) {
+      const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
       swipeTrimFenceRef.current = [];
-      trimPointerDownWorldRef.current = null;
-      setTrimFenceTrail([]);
       setSwipeTrimCutPreview([]);
-
-      if (isSwipe) {
-        const crossed = collectTrimSubPiecesCrossedByFence(fence, entities, smartTrimMode);
-        if (crossed.length > 0) {
-          const nextKeys = Array.from(
-            new Set([...trimMarkedKeys, ...crossed.map((c) => c.key)]),
-          );
-          if (trimInstantMode) {
-            const res = commitTrimBatch(entities, nextKeys, smartTrimMode);
-            if (res.removedSubPiecesCount > 0) {
-              commit(res.updatedEntities);
-              triggerHaptic("action");
-              toast.success(
-                `Trim Instantâneo: ${res.removedSubPiecesCount} trecho(s) aparado(s) em 1 Undo.`,
-              );
-            }
-            setTrimMarkedKeys([]);
-          } else {
-            setTrimMarkedKeys(nextKeys);
-            triggerHaptic("selection");
-          }
-        }
+      if (tx.trimmedCount > 0) {
+        commit(tx.updatedEntities);
+        triggerHaptic("action");
+        toast.success(`Swipe-to-Trim: ${tx.trimmedCount} trecho(s) aparado(s) em 1 operação Undo.`);
+        setSmartTrimPreview(null);
         return;
       }
-
-      // Toque direto: seleciona ou desmarca o sub-trecho exato sob o toque
-      const hitPiece = hitTestTrimSubPiece(
-        downPt,
-        entities,
-        14 / Math.max(0.05, view.k),
-        smartTrimMode,
-      );
-      if (hitPiece) {
-        const hitKey = hitPiece.subPiece.key;
-        if (trimInstantMode) {
-          const res = commitTrimBatch(entities, [hitKey], smartTrimMode);
-          if (res.removedSubPiecesCount > 0) {
-            commit(res.updatedEntities);
-            triggerHaptic("action");
-            toast.success("Trecho aparado instantaneamente.");
-          }
-          setTrimMarkedKeys([]);
-        } else {
-          setTrimMarkedKeys((prev) =>
-            prev.includes(hitKey) ? prev.filter((k) => k !== hitKey) : [...prev, hitKey],
-          );
-          triggerHaptic("selection");
-        }
-      }
-      return;
     }
     swipeTrimFenceRef.current = [];
-    trimPointerDownWorldRef.current = null;
-    setTrimFenceTrail([]);
     setSwipeTrimCutPreview([]);
-
-    // Fluxo de Toque com Smart Pick (<= 24px) e Ciclo do MARCO GEOMÉTRICO / ÂNCORA (A–E) (Seção 4.2):
-    // Se soltar sobre um candidato dentro de <= 24px (ou repetir toque na mesma entidade para Ciclar),
-    // cria/atualiza a Âncora A–E no ReferenceService e exibe confirmação.
-    // Se soltar no espaço vazio sem candidato <= 24px, NADA é criado (zero órfãos acidentais)!
-    if (interactionGuideMode === "purple_ref" && (tool === "select" || tool === "node")) {
-      const pickedCand =
-        smartPickCandidateRef.current ??
-        evaluateSmartPick(cursorRef.current, entities, view.k, {
-          maxPixelRadius: 24,
-          guideMeetings: ReferenceService.getState().meetings,
-        }).best;
-      smartPickCandidateRef.current = null;
-      setSmartPickCandidate(null);
-      previewGeometricMarkCandidateRef.current = null;
-      setPreviewGeometricMarkCandidate(null);
-
-      if (pickedCand) {
-        const tapRes = ReferenceService.handleCanvasTap(pickedCand, entities, (28 / Math.max(0.05, view.k)));
-        setMarquee(null);
-
-        if (tapRes.kind === "anchor_placed" && tapRes.anchor) {
-          triggerHaptic("success");
-          toast.success(
-            `✓ Âncora Local (X',Y') posicionada em (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm${tapRes.anchor.thetaDeg !== 0 ? ` • ∠${tapRes.anchor.thetaDeg.toFixed(1)}°` : ""}`,
-          );
-          return;
-        }
-        if (tapRes.kind === "anchor_cycled" && tapRes.anchor) {
-          triggerHaptic("selection");
-          toast.success(
-            `↻ Âncora Local ciclada para ${tapRes.anchor.badgeLabel} (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm`,
-          );
-          return;
-        }
-        if (tapRes.kind === "landmark_placed" && tapRes.anchor) {
-          triggerHaptic("success");
-          toast.success(
-            `✓ Marco ${tapRes.anchor.id} (${tapRes.anchor.badgeLabel}) fixado em (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm`,
-          );
-          return;
-        }
-        if (tapRes.kind === "landmark_cycled" && tapRes.anchor) {
-          triggerHaptic("selection");
-          toast.success(
-            `↻ Marco ${tapRes.anchor.id} ciclado para ${tapRes.anchor.badgeLabel} (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm`,
-          );
-          return;
-        }
-        if (tapRes.kind === "landmarks_paused_at_b") {
-          triggerHaptic("tap");
-          toast.info("Marcos A e B já definidos. Clique em [ + C ] na barra para adicionar mais marcos ou em um chip A/B para reposicioná-lo.");
-          return;
-        }
-      }
-    }
 
     if (marquee) {
       const box = {
@@ -8293,74 +4613,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setMarquee(null);
       return;
     }
-    if (draggingDraftGripIndex !== null) {
-      setDraggingDraftGripIndex(null);
-      triggerHaptic("tap");
-      return;
-    }
-
     const activeDraft = draftRef.current ?? draft;
     if (activeDraft && pending.length === 1 && tool !== "polyline" && tool !== "spline") {
       const box = boxOf(activeDraft);
       const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
       if (!empty) {
-        const p0 = pending[0]!;
-        const p1 = cursorRef.current;
-        const draftState =
-          drawingProjection !== "isometric"
-            ? createPendingDraftShapeState(tool, activeDraft, p0, p1, activeLayer, filletR, {
-                lineMode: tool === "line" ? lineMode : "end_to_end",
-                centerPoint: tool === "line" && lineMode === "center_radius" ? p0 : undefined,
-                rectMode,
-                circleMode,
-                polygonMode,
-                polygonSides,
-                polygonAcrossFlatsMm,
-                slotMode,
-                slotWidthMm,
-              })
-            : null;
+        const finalEntity: Entity =
+          !activeDraft.id || activeDraft.id === "draft" || activeDraft.id.startsWith("draft-")
+            ? { ...activeDraft, id: uid() }
+            : activeDraft;
+        commit((e) => [...e, finalEntity]);
+        // Desenho contínuo: tela limpa e pronta para o próximo traço (NÃO abre propriedades automaticamente)
+        setSelection([]);
+        setMobileEditorOpenManual(false);
 
-        if (draftState) {
-          setPendingDraftShape(draftState);
-          lastCreatedVertexRef.current = draftState.p1;
-          setSelection([]);
-          setMobileEditorOpenManual(false);
-          triggerHaptic("tap");
-        } else {
-          const hasAnyLockedConstraint =
-            lockedConstraints.lockedL != null ||
-            lockedConstraints.lockedDx != null ||
-            lockedConstraints.lockedDy != null ||
-            lockedConstraints.lockedDist != null;
-          const baseFinal: Entity =
-            !activeDraft.id || activeDraft.id === "draft" || activeDraft.id.startsWith("draft-")
-              ? { ...activeDraft, id: uid() }
-              : activeDraft;
-          const finalEntity: Entity = hasAnyLockedConstraint
-            ? {
-                ...baseFinal,
-                params: {
-                  ...baseFinal.params,
-                  lockedConstraints: { ...lockedConstraints },
-                },
-              }
-            : baseFinal;
-          commit((e) => [...e, finalEntity]);
-          lastCreatedVertexRef.current = p1;
-          setSelection([]);
-          setMobileEditorOpenManual(false);
-
-          if (dualToolSecondary === "dim") {
-            const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
-            setDims((list) => [...list, dim]);
-            toast.success("Cota técnica gerada automaticamente via Dual Tool.");
-            if (!dualToolPinned) setDualToolSecondary(null);
-          } else if (dualToolSecondary === "smart_trim") {
-            setTool("smart_trim");
-            toast.info("Dual Tool: selecione o trecho a aparar.");
-          }
+        // INTEGRAÇÃO DUAL TOOL
+        if (dualToolSecondary === "dim") {
+          const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
+          setDims((list) => [...list, dim]);
+          toast.success("Cota técnica gerada automaticamente via Dual Tool.");
+          if (!dualToolPinned) setDualToolSecondary(null);
+        } else if (dualToolSecondary === "smart_trim") {
+          setTool("smart_trim");
+          toast.info("Dual Tool: selecione o trecho a aparar.");
         }
+        // Ferramenta permanece ativa continuamente para desenhar múltiplas formas em sequência
       }
       setDraft(null);
       setPending([]);
@@ -8392,62 +4669,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }),
           ),
         );
-        const currentC = cursorRef.current;
         const nextC = {
-          x: Number((currentC.x + delta.x).toFixed(4)),
-          y: Number((currentC.y + delta.y).toFixed(4)),
+          x: Number((cursor.x + delta.x).toFixed(4)),
+          y: Number((cursor.y + delta.y).toFixed(4)),
         };
-        cursorRef.current = nextC;
         setCursor(nextC);
         setLoupeCadPos(nextC);
-        setTouchWorldPos((prev) =>
-          prev
-            ? {
-                x: Number((prev.x + delta.x).toFixed(4)),
-                y: Number((prev.y + delta.y).toFixed(4)),
-              }
-            : null,
-        );
         return;
       }
 
       // 2. Desloca o cursor ativo com precisão cirúrgica e atualiza o draft/cotas em tempo real
-      const basePt = (smartSnap ?? snapHit)?.p ?? cursorRef.current;
-      const rawNextCursor = {
+      const basePt = (smartSnap ?? snapHit)?.p ?? cursor;
+      const nextCursor = {
         x: Number((basePt.x + delta.x).toFixed(4)),
         y: Number((basePt.y + delta.y).toFixed(4)),
       };
-      const anchorForConstraint =
-        interactionGuideMode === "purple_ref" && temporaryOrigin
-          ? temporaryOrigin.p
-          : pending.length > 0
-            ? pending[pending.length - 1]!
-            : null;
-      const nextCursor = anchorForConstraint
-        ? applyDimensionalConstraintsToPoint(
-            anchorForConstraint,
-            rawNextCursor,
-            lockedConstraints,
-          )
-        : rawNextCursor;
       setSmartSnap(null);
       setSnapHit(null);
-      cursorRef.current = nextCursor;
       setCursor(nextCursor);
       setLoupeCadPos(nextCursor);
-      setTouchWorldPos((prev) =>
-        prev
-          ? {
-              x: Number((prev.x + delta.x).toFixed(4)),
-              y: Number((prev.y + delta.y).toFixed(4)),
-            }
-          : null,
-      );
 
       if (activeEdge) {
         setLiveDimensions(DynamicDimensionInteraction.generateEdgeOffsetDimensions(nextCursor, activeEdge, activeEdgeSide));
-      } else {
-        setLiveDimensions([]);
+      } else if (temporaryOrigin) {
+        setLiveDimensions(DynamicDimensionInteraction.generateRefOriginDimensions(nextCursor, temporaryOrigin));
       }
 
       if (tool === "polyline" && pending.length > 0) {
@@ -8479,81 +4724,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       } else if (tool === "measure" && pending.length === 1) {
         setLiveMeasure({ a: pending[0]!, b: nextCursor });
       } else if (pending.length === 1) {
-        setDraft(
-          buildDraft(tool, pending[0]!, nextCursor, activeLayer, filletR, drawingProjection, isoPlane, {
-            lineMode,
-            rectMode,
-            circleMode,
-            polygonMode,
-            polygonSides,
-            polygonAcrossFlatsMm,
-            slotMode,
-            slotWidthMm,
-          }),
-        );
-      } else if (tool === "polar_ref" && polarRefOriginAnchor) {
-        const live = evaluateLivePolarReference({
-          originAnchor: polarRefOriginAnchor,
-          rawCursor: nextCursor,
-          orthoOn,
-          polarSnapOn,
-          lockedDistanceMm: polarRefLockedDist,
-          lockedAngleDeg: polarRefLockedAngle,
-        });
-        setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...live });
-      } else if (pendingDraftShapeRef.current && pending.length === 0) {
-        const curDraftShape = pendingDraftShapeRef.current;
-        const nextP1 = {
-          x: Number((curDraftShape.p1.x + delta.x).toFixed(4)),
-          y: Number((curDraftShape.p1.y + delta.y).toFixed(4)),
-        };
-        const anchorPt =
-          curDraftShape.lineMode === "center_radius" && curDraftShape.centerPoint
-            ? curDraftShape.centerPoint
-            : curDraftShape.p0;
-        const rebuiltEntity = buildDraft(
-          curDraftShape.tool,
-          anchorPt,
-          nextP1,
-          activeLayer,
-          curDraftShape.cornerRadiusMm ?? filletR,
-          drawingProjection,
-          isoPlane,
-          {
-            lineMode: curDraftShape.lineMode,
-            rectMode: curDraftShape.rectMode,
-            circleMode: curDraftShape.circleMode ?? circleMode,
-            polygonMode: curDraftShape.polygonMode,
-            polygonSides: curDraftShape.polygonSides,
-            polygonAcrossFlatsMm: curDraftShape.polygonAcrossFlatsMm,
-            slotMode: curDraftShape.slotMode,
-            slotWidthMm: curDraftShape.slotWidthMm,
-          },
-        );
-        if (rebuiltEntity) {
-          const updatedState = createPendingDraftShapeState(
-            curDraftShape.tool,
-            { ...rebuiltEntity, id: curDraftShape.entity.id },
-            anchorPt,
-            nextP1,
-            activeLayer,
-            curDraftShape.cornerRadiusMm ?? filletR,
-            {
-              lineMode: curDraftShape.lineMode,
-              centerPoint: curDraftShape.centerPoint,
-              rectMode: curDraftShape.rectMode,
-              circleMode: curDraftShape.circleMode ?? circleMode,
-              polygonMode: curDraftShape.polygonMode,
-              polygonSides: curDraftShape.polygonSides,
-              polygonAcrossFlatsMm: curDraftShape.polygonAcrossFlatsMm,
-              slotMode: curDraftShape.slotMode,
-              slotWidthMm: curDraftShape.slotWidthMm,
-            },
-          );
-          if (updatedState) {
-            setPendingDraftShape(updatedState);
-          }
-        }
+        setDraft(buildDraft(tool, pending[0]!, nextCursor, activeLayer, filletR, drawingProjection, isoPlane));
       }
     },
     [
@@ -8572,57 +4743,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       temporaryOrigin,
       activeLayer,
       filletR,
-      lineMode,
-      rectMode,
-      circleMode,
-      polygonMode,
-      polygonSides,
-      polygonAcrossFlatsMm,
-      slotMode,
-      slotWidthMm,
-      polarRefOriginAnchor,
-      orthoOn,
-      polarSnapOn,
-      polarRefLockedDist,
-      polarRefLockedAngle,
-      interactionGuideMode,
-      lockedConstraints,
-      setPendingDraftShape,
     ],
   );
 
   const handleConfirmNudgePoint = useCallback(() => {
-    if (pendingDraftShapeRef.current && pending.length === 0) {
-      commitPendingDraftShape(pendingDraftShapeRef.current);
-      return;
-    }
-
     const p = (smartSnap ?? snapHit)?.p ?? cursor;
     if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
-
-    if (tool === "polar_ref") {
-      if (!polarRefOriginAnchor) {
-        const anchor = detectPolarRefOrigin(
-          p,
-          entities,
-          18 / Math.max(0.05, view.k),
-          temporaryOrigin?.p ?? null,
-        );
-        setPolarRefOriginAnchor(anchor);
-        const live = evaluateLivePolarReference({
-          originAnchor: anchor,
-          rawCursor: anchor.point,
-          orthoOn,
-          polarSnapOn,
-        });
-        setPolarRefLivePreview({ originAnchor: anchor, ...live });
-        triggerHaptic("tap");
-        toast.info(`⌖ Origem Ref. Polar fixada (${anchor.label}).`);
-      } else {
-        handleConfirmLivePolarRef();
-      }
-      return;
-    }
 
     if (tool === "point") {
       commit((e) => [...e, { id: uid(), layer: activeLayer, type: "point", x: p.x, y: p.y }]);
@@ -8634,22 +4760,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (shouldClosePolyline(pending, p, 10 / view.k)) {
         finishPolyline(true);
         return;
-      }
-      if (polylineCreationMode === "center_radius" && pending.length === 1) {
-        const geom = computeCenterRadiusLineGeometry(pending[0]!, p);
-        if (geom.lengthMm >= 0.05) {
-          setPending([geom.start, geom.end]);
-          setDraft({
-            id: uid(),
-            layer: activeLayer,
-            type: "line",
-            x1: geom.end.x,
-            y1: geom.end.y,
-            x2: geom.end.x,
-            y2: geom.end.y,
-          });
-          return;
-        }
       }
       setPending((q) => [...q, p]);
       setDraft({
@@ -8700,22 +4810,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "polygon" ||
       tool === "slot"
     ) {
-      const draftOpts = {
-        lineMode,
-        rectMode,
-        circleMode,
-        polygonMode,
-        polygonSides,
-        polygonAcrossFlatsMm,
-        slotMode,
-        slotWidthMm,
-      };
       if (pending.length === 0) {
         setPending([p]);
-        setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane, draftOpts));
+        setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane));
         toast.info(`Origem fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm. Ajuste o ponto final.`);
       } else {
-        const built = buildDraft(tool, pending[0]!, p, activeLayer, filletR, drawingProjection, isoPlane, draftOpts);
+        const built = buildDraft(tool, pending[0]!, p, activeLayer, filletR, drawingProjection, isoPlane);
         if (built) {
           const box = boxOf(built);
           const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
@@ -8732,28 +4832,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     snapHit,
     cursor,
     tool,
-    entities,
-    temporaryOrigin,
-    polarRefOriginAnchor,
-    orthoOn,
-    polarSnapOn,
-    handleConfirmLivePolarRef,
-    polylineCreationMode,
     commit,
-    commitPendingDraftShape,
     activeLayer,
     pending,
     view.k,
     finishPolyline,
     filletR,
-    lineMode,
-    rectMode,
-    circleMode,
-    polygonMode,
-    polygonSides,
-    polygonAcrossFlatsMm,
-    slotMode,
-    slotWidthMm,
     drawingProjection,
     isoPlane,
   ]);
@@ -8840,72 +4924,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return;
       }
       if (ev.key === "Escape") {
-        if (pendingDraftShapeRef.current) {
-          setPendingDraftShape(null);
-          setDraggingDraftGripIndex(null);
-          triggerHaptic("tap");
-          toast.info("Forma pendente descartada.");
-          return;
-        }
-        // Limpeza progressiva de 2 níveis do Marco Geométrico / Âncora (Seção 4.5.6):
-        // 1º ESC remove Guias e Eco; 2º ESC limpa as Âncoras A–E
-        const refNow = ReferenceService.getState();
-        if (
-          refNow.guides.length > 0 ||
-          refNow.echo.mode !== "off" ||
-          refNow.spanDivision !== null ||
-          refNow.anchors.length > 0
-        ) {
-          const clearedStage = ReferenceService.handleProgressiveClear();
-          if (clearedStage === "cleared_aux") {
-            triggerHaptic("tap");
-            toast.info("1º ESC: Guias infinitas, Encontros e Eco removidos.");
-            return;
-          }
-          if (clearedStage === "cleared_anchors") {
-            const res = clearGeometricMarksFromEntities(entities, false);
-            if (res.removedCount > 0) commit(res.cleaned);
-            triggerHaptic("tap");
-            toast.info("2º ESC: Âncoras A–E limpas.");
-            return;
-          }
-        }
         setPending([]);
         setDraft(null);
         setSelection([]);
         setMeasures([]);
         setFilletPreview(null);
-        setFilletFirstPick(null);
-        setUniversalFilletResult(null);
-        setFilletErrorHint(null);
-        setTrimMarkedKeys([]);
-        setTrimHoverPiece(null);
-        setTrimFenceTrail([]);
-        setPolarRefOriginAnchor(null);
-        setPolarRefLivePreview(null);
-        setPolarRefHoveredOrigin(null);
-        setPolarRefLockedDist(null);
-        setPolarRefLockedAngle(null);
         setChamferPreview(null);
         setScaleDialogOpen(false);
         setCenterDialogOpen(false);
         setIsOrbitToolActive(false);
-        setActiveArrayType(null);
-        setIsArrayPickingCenter(false);
         setTool("select");
-      }
-      if (ev.key === "Enter" && interactionGuideMode === "purple_ref") {
-        ev.preventDefault();
-        handleSetInteractionGuideMode("off");
-        triggerHaptic("success");
-        toast.success("✓ Referência concluída • Pontos ativos para Snap magnético.");
-        return;
-      }
-      if (ev.key === "Enter" && pendingDraftShapeRef.current) {
-        ev.preventDefault();
-        commitPendingDraftShape(pendingDraftShapeRef.current);
-        triggerHaptic("success");
-        return;
       }
       if (tool === "polyline") {
         if (ev.key === "Enter") {
@@ -8929,8 +4957,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       if (ev.key === "F5" || (ev.ctrlKey && ev.key.toLowerCase() === "e")) {
         ev.preventDefault();
-        setDrawingProjection("orthographic");
-        transitionTo2D();
+        setDrawingProjection("isometric");
+        setIsoPlane((prev) => {
+          const next = prev === "top" ? "left" : prev === "left" ? "right" : "top";
+          triggerHaptic("selection");
+          AudioManager.play("ui_select");
+          toast.info(`Plano Isométrico: ${ISO_PLANES[next].label} (${ISO_PLANES[next].name})`);
+          return next;
+        });
         return;
       }
       if (ev.key === "ArrowUp" || ev.key === "ArrowDown" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
@@ -9021,9 +5055,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       // mantendo a perspectiva 3D escolhida na tela (Seção 5.3)
       setIsOrbitToolActive(false);
       orbitDragRef.current = null;
-      if (id === "text") {
-        toast.info("Toque na prancheta onde deseja inserir a Anotação Técnica / Fórmula.");
-      }
+      if (id === "text") setTextOpen(true);
       if (id === "divide") {
         if (selected.length >= 1 && canDivideEntity(selected[0])) {
           setDivideTargetEntity(selected[0]);
@@ -9167,314 +5199,81 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [grid, view.k]);
 
   const gridStyles = useMemo(() => {
-    const parseRgbaColor = (
-      colorStr: string | undefined | null,
-      fallbackRgb: [number, number, number],
-      fallbackAlpha: number,
-    ): { rgb: [number, number, number]; alpha: number } => {
-      if (!colorStr || typeof colorStr !== "string") {
-        return { rgb: fallbackRgb, alpha: fallbackAlpha };
-      }
-      const m = colorStr.match(
-        /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)/i,
-      );
-      if (m) {
-        const a = m[4] !== undefined ? Number(m[4]) : fallbackAlpha;
-        return {
-          rgb: [Number(m[1]), Number(m[2]), Number(m[3])],
-          alpha: Number.isFinite(a) ? a : fallbackAlpha,
-        };
-      }
-      const clean = colorStr.replace(/^#/, "").trim();
-      if (clean.length === 6) {
-        const n = parseInt(clean, 16);
-        if (Number.isFinite(n)) {
-          return {
-            rgb: [(n >> 16) & 255, (n >> 8) & 255, n & 255],
-            alpha: fallbackAlpha,
-          };
-        }
-      }
-      return { rgb: fallbackRgb, alpha: fallbackAlpha };
-    };
+    if (isDark) {
+      // TEMA ESCURO — Fundo escuro (#0b0f17 / #090d14)
+      // Paleta técnica em tons ardósia fria (slate-400/300) que evita cansaço visual
+      const secOpacity = Math.max(0, Math.min(0.16, 0.14 * gridConfig.subFade));
+      const majOpacity = Math.max(0, Math.min(0.32, 0.28 * gridConfig.majorFade));
+      const macOpacity = 0.38;
 
-    const minorParsed = parseRgbaColor(
-      themeColors.gridMinor,
-      isDark ? [148, 163, 184] : [15, 23, 42],
-      isDark ? 0.035 : 0.04,
-    );
-    const majorParsed = parseRgbaColor(
-      themeColors.gridMajor,
-      isDark ? [148, 163, 184] : [15, 23, 42],
-      isDark ? 0.08 : 0.09,
-    );
-    const outerMinorParsed = parseRgbaColor(
-      themeColors.gridOuterMinor,
-      minorParsed.rgb,
-      minorParsed.alpha * 0.65,
-    );
-    const outerMajorParsed = parseRgbaColor(
-      themeColors.gridOuterMajor,
-      majorParsed.rgb,
-      majorParsed.alpha * 0.65,
-    );
+      return {
+        secondaryStroke: `rgba(148, 163, 184, ${secOpacity.toFixed(3)})`,
+        secondaryWidth: 0.75,
+        majorStroke: `rgba(148, 163, 184, ${majOpacity.toFixed(3)})`,
+        majorWidth: 1.0,
+        macroStroke: `rgba(203, 213, 225, ${macOpacity.toFixed(3)})`,
+        macroWidth: 1.35,
+        // Eixos do sistema CAD (X vermelho técnico, Y verde técnico, destaque 85%)
+        axisX: "rgba(239, 68, 68, 0.88)",
+        axisY: "rgba(34, 197, 94, 0.88)",
+        axisWidth: 1.75,
+        originFill: "#ef4444",
+        originRing: "rgba(255, 255, 255, 0.90)",
+        originText: "rgba(239, 68, 68, 0.95)",
+      };
+    } else {
+      // TEMA CLARO — Fundo claro (#f1f5f9 / papel técnico de engenharia)
+      // Linhas em ardósia neutra (slate-600/700) com contraste equilibrado sem competir com a geometria
+      const secOpacity = Math.max(0, Math.min(0.14, 0.12 * gridConfig.subFade));
+      const majOpacity = Math.max(0, Math.min(0.28, 0.24 * gridConfig.majorFade));
+      const macOpacity = 0.34;
 
-    const intSecOpacity = Math.max(0, minorParsed.alpha * gridConfig.subFade);
-    const intMajOpacity = Math.max(0, majorParsed.alpha * gridConfig.majorFade);
-    const intMacOpacity = Math.min(0.16, majorParsed.alpha * 1.25);
-
-    // Seção 6.4: Grade externa com opacidade fixa em 65% da grade interna
-    const outerFactor = themeColors.gridOuterOpacityFactor ?? 0.65;
-    const extSecOpacity = intSecOpacity * outerFactor;
-    const extMajOpacity = intMajOpacity * outerFactor;
-    const extMacOpacity = intMacOpacity * outerFactor;
-
-    return {
-      secondaryStroke: isDark ? "#233044" : "#F1F5F9",
-      secondaryWidth: isDark ? 0.5 : 0.75,
-      majorStroke: isDark ? "#29374F" : "#E2E8F0",
-      majorWidth: 1.0,
-      macroStroke: isDark ? "#334361" : "#CBD5E1",
-      macroWidth: 1.15,
-      extSecondaryStroke: isDark ? "#182030" : "#D8E0EA",
-      extMajorStroke: isDark ? "#1E283B" : "#CBD5E1",
-      extMacroStroke: isDark ? "#233044" : "#B8C4D4",
-      axisX: isDark ? "#F43F5E" : "#E11D48",
-      axisY: isDark ? "#10B981" : "#16A34A",
-      axisInfinite: isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(15, 23, 42, 0.10)",
-      axisWidth: 1.75,
-      originFill: isDark ? "#F43F5E" : "#E11D48",
-      originRing: isDark ? "rgba(251, 113, 133, 0.92)" : "rgba(15, 23, 42, 0.88)",
-      originText: isDark ? "#FB7185" : "#E11D48",
-    };
-  }, [isDark, gridConfig, themeColors, themeVersion]);
+      return {
+        secondaryStroke: `rgba(71, 85, 105, ${secOpacity.toFixed(3)})`,
+        secondaryWidth: 0.75,
+        majorStroke: `rgba(51, 65, 85, ${majOpacity.toFixed(3)})`,
+        majorWidth: 1.0,
+        macroStroke: `rgba(30, 41, 59, ${macOpacity.toFixed(3)})`,
+        macroWidth: 1.35,
+        // Eixos do sistema CAD (destaque 80%)
+        axisX: "rgba(220, 38, 38, 0.85)",
+        axisY: "rgba(22, 163, 74, 0.85)",
+        axisWidth: 1.75,
+        originFill: "#dc2626",
+        originRing: "rgba(15, 23, 42, 0.85)",
+        originText: "rgba(220, 38, 38, 0.95)",
+      };
+    }
+  }, [isDark, gridConfig]);
 
   const isMobile = useIsMobile();
-  const verticalLayout = useVerticalLayout();
-  const isLandscape = !verticalLayout.isVerticalCompactActive;
+  const [isLandscape, setIsLandscape] = useState(
+    typeof window !== "undefined" ? window.innerWidth >= window.innerHeight : true
+  );
 
   // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
-  // Inicia sempre recolhida (open = false) para preservar área máxima de desenho; abre exclusivamente pela seta (<) ou botões da doca (Seção 1.3)
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  // Inicia recolhida no modo retrato ou em telas menores para liberar toda a largura central para o desenho
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(
+    typeof window !== "undefined"
+      ? window.innerWidth >= 1024 && window.innerWidth >= window.innerHeight
+      : true
+  );
   const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
-  // Bottom Sheet Compacto em modo retrato para painéis longos (Propriedades, Camadas, Corte, Cotas, Eng. Reversa)
-  const [portraitDrawerOpen, setPortraitDrawerOpen] = useState(false);
-
-  // Modo de Casca da Interface do CHAMFER CAD: "compact" (Padrão Consolidado) | "prumo" (Interface Espacial Zero Barras)
-  const [uiShellMode, setUiShellMode] = useState<ChamferUiShellMode>(() =>
-    loadPersistedUiShellMode(),
-  );
-  const [uiShellTransitionDir, setUiShellTransitionDir] = useState<
-    "to-prumo" | "to-compact" | null
-  >(null);
-  const uiShellTransitionTimerRef = useRef<number | null>(null);
-  const smartAutoFitRafRef = useRef<number | null>(null);
-  const pendingLayoutGlideRef = useRef<{
-    targetMode: ChamferUiShellMode;
-    beforeRect: { left: number; top: number; width: number; height: number } | null;
-    prevView: { k: number; tx: number; ty: number };
-  } | null>(null);
-
-  // Animação monotônica única de câmera (Single-Pass Smooth Glide 500ms easeInOutCubic — Zero Vai e Vem)
-  useLayoutEffect(() => {
-    const glide = pendingLayoutGlideRef.current;
-    if (!glide) return;
-    pendingLayoutGlideRef.current = null;
-
-    if (smartAutoFitRafRef.current !== null) {
-      cancelAnimationFrame(smartAutoFitRafRef.current);
-      smartAutoFitRafRef.current = null;
-    }
-    if (arrayFrameAnimRafRef.current !== null) {
-      cancelAnimationFrame(arrayFrameAnimRafRef.current);
-      arrayFrameAnimRafRef.current = null;
-    }
-
-    const el = canvasRef.current ?? canvasViewportRef.current ?? svgRef.current;
-    const afterDomRect = el?.getBoundingClientRect();
-    const beforeRect = glide.beforeRect;
-
-    const oldW = Math.max(
-      200,
-      beforeRect?.width || canvasSize.w || (typeof window !== "undefined" ? window.innerWidth : 1024),
-    );
-    const oldH = Math.max(
-      160,
-      beforeRect?.height || canvasSize.h || (typeof window !== "undefined" ? window.innerHeight : 640),
-    );
-    const newW = Math.max(200, afterDomRect?.width || oldW);
-    const newH = Math.max(160, afterDomRect?.height || oldH);
-
-    // Compensa o deslocamento físico imediato do elemento <canvas> na tela quando as barras montam/desmontam
-    const dxLayout =
-      beforeRect && afterDomRect ? beforeRect.left - afterDomRect.left : 0;
-    const dyLayout =
-      beforeRect && afterDomRect ? beforeRect.top - afterDomRect.top : 0;
-
-    const startZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, glide.prevView.k || 1));
-    const startPanX = glide.prevView.tx + dxLayout;
-    const startPanY = glide.prevView.ty + dyLayout;
-
-    // Ponto focal do mundo que estava no centro visual antes da transição
-    const focalWorldX = (oldW / 2 - glide.prevView.tx) / startZoom;
-    const focalWorldY = (oldH / 2 - glide.prevView.ty) / startZoom;
-
-    // Variação contínua e unidirecional: sobe suavemente na PRUMO (* 1.08), desce suavemente na Compacta (/ 1.08)
-    const zoomFactor = glide.targetMode === "prumo" ? 1.08 : 1 / 1.08;
-    const targetZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, startZoom * zoomFactor));
-    const targetPanX = newW / 2 - focalWorldX * targetZoom;
-    const targetPanY = newH / 2 - focalWorldY * targetZoom;
-
-    if (
-      !Number.isFinite(targetZoom) ||
-      !Number.isFinite(targetPanX) ||
-      !Number.isFinite(targetPanY)
-    ) {
-      return;
-    }
-
-    setCanvasSize((prev) => {
-      const rw = Math.round(newW);
-      const rh = Math.round(newH);
-      return prev.w === rw && prev.h === rh ? prev : { w: rw, h: rh };
-    });
-
-    const initialSyncView = { k: startZoom, tx: startPanX, ty: startPanY };
-    viewRef.current = initialSyncView;
-    setView(initialSyncView);
-
-    const startTime = performance.now();
-    const durationMs = 500;
-    // Curva estritamente monotônica easeInOutCubic: f(t) = 3t^2 - 2t^3 (derivada >= 0 em [0,1], zero overshoot/bounce)
-    const easeInOutCubic = (t: number) => 3 * t * t - 2 * t * t * t;
-
-    const step = (now: number) => {
-      const elapsed = now - startTime;
-      const t = Math.min(1, Math.max(0, elapsed / durationMs));
-      const f = easeInOutCubic(t);
-
-      const nextView = {
-        k: startZoom + (targetZoom - startZoom) * f,
-        tx: startPanX + (targetPanX - startPanX) * f,
-        ty: startPanY + (targetPanY - startPanY) * f,
-      };
-      viewRef.current = nextView;
-      setView(nextView);
-
-      if (t < 1) {
-        smartAutoFitRafRef.current = requestAnimationFrame(step);
-      } else {
-        smartAutoFitRafRef.current = null;
-      }
-    };
-
-    smartAutoFitRafRef.current = requestAnimationFrame(step);
-  }, [uiShellMode, canvasSize.w, canvasSize.h]);
-
-  const handleSetUiShellMode = useCallback(
-    (nextMode: ChamferUiShellMode) => {
-      if (nextMode === uiShellMode) {
-        return;
-      }
-      if (uiShellTransitionTimerRef.current !== null) {
-        window.clearTimeout(uiShellTransitionTimerRef.current);
-        uiShellTransitionTimerRef.current = null;
-      }
-      if (smartAutoFitRafRef.current !== null) {
-        cancelAnimationFrame(smartAutoFitRafRef.current);
-        smartAutoFitRafRef.current = null;
-      }
-      if (arrayFrameAnimRafRef.current !== null) {
-        cancelAnimationFrame(arrayFrameAnimRafRef.current);
-        arrayFrameAnimRafRef.current = null;
-      }
-      if (isTransitioningLayoutTimerRef.current !== null) {
-        window.clearTimeout(isTransitioningLayoutTimerRef.current);
-        isTransitioningLayoutTimerRef.current = null;
-      }
-
-      // Trava de Destino Único (Single-Pass Animation Lock) durante os 520ms da transição
-      isTransitioningLayoutRef.current = true;
-      isTransitioningLayoutTimerRef.current = window.setTimeout(() => {
-        isTransitioningLayoutRef.current = false;
-        isTransitioningLayoutTimerRef.current = null;
-      }, 520);
-
-      const el = canvasRef.current ?? canvasViewportRef.current ?? svgRef.current;
-      const domRect = el?.getBoundingClientRect();
-      pendingLayoutGlideRef.current = {
-        targetMode: nextMode,
-        beforeRect: domRect
-          ? {
-              left: domRect.left,
-              top: domRect.top,
-              width: domRect.width,
-              height: domRect.height,
-            }
-          : null,
-        prevView: viewRef.current ?? { k: 1, tx: 0, ty: 0 },
-      };
-
-      if (nextMode === "prumo") {
-        setUiShellTransitionDir("to-prumo");
-        setUiShellMode("prumo");
-        savePersistedUiShellMode("prumo");
-        if (verticalLayout.isVerticalViewport) {
-          verticalLayout.setLayoutPreference("prumo");
-        }
-        uiShellTransitionTimerRef.current = window.setTimeout(() => {
-          setUiShellTransitionDir(null);
-        }, 380);
-      } else {
-        setUiShellTransitionDir("to-compact");
-        setUiShellMode("compact");
-        savePersistedUiShellMode("compact");
-        if (verticalLayout.isVerticalViewport) {
-          verticalLayout.setLayoutPreference("compact");
-        }
-        uiShellTransitionTimerRef.current = window.setTimeout(() => {
-          setUiShellTransitionDir(null);
-        }, 380);
-      }
-    },
-    [uiShellMode, verticalLayout],
-  );
-
-  // Visibilidade das Réguas Técnicas (18px <-> 0px ao tocar no canto "MM")
-  const [rulersVisible, setRulersVisible] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      return window.localStorage.getItem("chamfer_rulers_visible") !== "false";
-    } catch {
-      return true;
-    }
-  });
-
-  const handleToggleRulersVisible = useCallback(() => {
-    setRulersVisible((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem("chamfer_rulers_visible", String(next));
-      } catch {
-        // ignore
-      }
-      toast.info(next ? "Réguas técnicas visíveis (18px)." : "Réguas técnicas ocultas (0px).");
-      return next;
-    });
-  }, []);
-
-  // Nível Secundário Expansível da Barra Inferior de Status (Popover de Coordenadas/Unidade/Área/Seleção)
-  const [statusSecondaryLevelOpen, setStatusSecondaryLevelOpen] = useState(false);
-  // Popover compacto [ ✨ IA & BOM ▾ ] para telas estreitas (< 640px)
-  const [aiBomPopoverOpen, setAiBomPopoverOpen] = useState(false);
 
   useEffect(() => {
-    if (!isLandscape) {
-      setRightSidebarOpen(false);
-    } else {
-      setPortraitDrawerOpen(false);
-    }
-  }, [isLandscape]);
+    const handleResize = () => {
+      const nextLandscape = window.innerWidth >= window.innerHeight;
+      setIsLandscape((prev) => {
+        if (prev && !nextLandscape) {
+          // Ao girar para modo retrato (vertical), recolhe automaticamente a barra lateral direita
+          setRightSidebarOpen(false);
+        }
+        return nextLandscape;
+      });
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const [mobileEditorOpenManual, setMobileEditorOpenManual] = useState(false);
   const [activeEditingProp, setActiveEditingProp] = useState<{
@@ -9484,7 +5283,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     unit: string;
   } | null>(null);
 
-  // Entidade única selecionada
+  // Entidade única selecionada para o editor contextual mobile
   const selectedEntity = useMemo(() => {
     if (selected.length === 1) {
       return selected[0] ?? null;
@@ -9492,44 +5291,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return null;
   }, [selected]);
 
-  // Card flutuante grande sobre o meio do canvas desativado (Seção 1.2):
-  // Todas as propriedades foram unificadas no painel lateral direito PROPRIEDADES, mantendo no canvas apenas a pílula rápida horizontal de seleção.
-  const mobileEditorOpen = false;
+  // Editor contextual móvel aberto EXCLUSIVAMENTE sob solicitação explícita do usuário (Regra 3):
+  // 1. Tocar no botão de propriedades (ícone de ajustes na barra lateral / botão chapa);
+  // 2. Duplo clique / duplo toque intencional em cima de uma entidade já existente.
+  // JAMAIS abre automaticamente pós-criação de formas geométricas ou por desenho contínuo.
+  const mobileEditorOpen = !solidOpen && !divideEditorOpen && selectedEntity !== null && mobileEditorOpenManual;
 
-  const framingTargetEntities = useMemo(() => {
-    if (pendingDraftShape) return [pendingDraftShape.entity];
-    if (draft) return [draft];
-    if (selected.length > 0) return selected;
-    return entities;
-  }, [pendingDraftShape, draft, selected, entities]);
-
-  // Auto-Enquadramento Dinâmico e Fluido da Peça à Esquerda (Desativado no 3D e durante transições Compacta <-> PRUMO)
+  // Enquadramento Inteligente do CAD (Regra 7)
   useSmartFraming({
-    isOpen:
-      !is3DCameraActive &&
-      uiShellTransitionDir === null &&
-      Boolean(
-        mobileEditorOpen ||
-          directDimEditor?.open ||
-          liveDimEditor !== null ||
-          workspaceKeypadEditor !== null ||
-          elevationKeypadState.open,
-      ),
+    isOpen: mobileEditorOpen,
     selectedEntity,
-    targetEntities: framingTargetEntities,
-    nudgeHudVisible: !solidOpen && nudgeHudVisible,
     view,
     setView,
     canvasWidth: canvasSize.w,
     canvasHeight: canvasSize.h,
   });
 
-  // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades (exceto se o usuário estiver na bancada ENG. REV.)
+  // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades
   useEffect(() => {
     if (selected.length > 0) {
-      setActiveSidebarTab((prev) =>
-        prev === "propriedades" || prev === "eng_rev" ? prev : "propriedades",
-      );
+      setActiveSidebarTab((prev) => (prev === "propriedades" ? prev : "propriedades"));
     }
   }, [selected.length]);
 
@@ -9696,7 +5477,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onEditText: () => {
                   const current = selected[0];
                   if (!current || current.type !== "text") return;
-                  openRichNoteEditorForEntity(current);
+                  setEditingTextId(current.id);
+                  setTextSpec({
+                    text: current.text,
+                    width:
+                      current.width ??
+                      Math.max(current.size, current.text.length * current.size * 0.6),
+                    height: current.size,
+                    bold: !!current.bold,
+                    italic: !!current.italic,
+                  });
+                  setTextOpen(true);
                 },
               }
             : {})}
@@ -9747,21 +5538,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     </aside>
   ) : null;
 
-  const topologyScene3D = useMemo(
-    () => buildDirectTopology3DScene(drawable, thickness),
-    [drawable, thickness],
-  );
-
   const selectionText = useMemo(() => {
-    if (
-      (activeMode === "3d" || orbitProjection2D.isTilted) &&
-      (subSelection3D.edgeIds.length > 0 ||
-        subSelection3D.faceIds.length > 0 ||
-        subSelection3D.bodyIds.length > 0)
-    ) {
-      const telemetry3D = formatSubElementTelemetry3D(topologyScene3D, subSelection3D);
-      if (telemetry3D) return telemetry3D;
-    }
     if (selected.length === 0) return "Nenhuma seleção";
     if (selected.length === 1) {
       const ent = selected[0];
@@ -9798,34 +5575,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
     }
     return `${selected.length} entidades selecionadas`;
-  }, [
-    activeMode,
-    orbitProjection2D.isTilted,
-    subSelection3D,
-    topologyScene3D,
-    selected,
-  ]);
+  }, [selected]);
 
   const operationFeedback = useMemo(() => {
-    if (activeArrayType === "polar") {
-      return {
-        command: "PADRÃO CIRCULAR (POLAR)",
-        instruction: isArrayPickingCenter
-          ? "Toque no canvas para definir o centro do padrão polar (PCD)"
-          : `${arrayPolarParams.count} furos em ${arrayPolarParams.totalAngleDeg}° — altere valores no topo ou clique em Aplicar`,
-      };
-    }
-    if (activeArrayType === "linear") {
-      return {
-        command: "PADRÃO LINEAR (ARRAY)",
-        instruction: `Grade ${arrayLinearParams.cols}×${arrayLinearParams.rows} (passo ${arrayLinearParams.dx}×${arrayLinearParams.dy} mm) — altere valores ou clique em Aplicar`,
-      };
-    }
     return getOperationFeedback(tool, pending.length, selected.length);
-  }, [activeArrayType, isArrayPickingCenter, arrayPolarParams, arrayLinearParams, tool, pending.length, selected.length]);
-  void operationFeedback;
+  }, [tool, pending.length, selected.length]);
 
-
+  // Pré-aquece o chunk do CHAMFER INTENT e do CAD 3D Stage em background após o canvas 2D estar interativo
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadChamferSemanticPalette();
+      void import("@/components/lab2d/Cad3DStage");
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Memoiza a geometria calculada das cotas associativas e automáticas (evita recálculo a 60Hz no pointermove)
   const drawnDims = useMemo(
@@ -9838,258 +5601,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [showDims, drawable],
   );
 
-  const pendingShapeSpec = useMemo(() => {
-    const activeDraft = draftRef.current ?? draft;
-    if (activeDraft && pending.length > 0) {
-      if (activeDraft.type === "circle") {
-        return { type: "circle", center: { x: activeDraft.cx, y: activeDraft.cy }, r: activeDraft.r };
-      }
-      if (activeDraft.type === "rect") {
-        return {
-          type: "rect",
-          width: Math.abs(activeDraft.x2 - activeDraft.x1),
-          height: Math.abs(activeDraft.y2 - activeDraft.y1),
-        };
-      }
-    }
-    return null;
-  }, [draft, pending]);
-
   return (
     <div
       ref={wrapRef}
-      style={{
-        ...cssVariables,
-        backgroundColor: isDark ? "#111723" : "#F1F5F9",
-        color: isDark ? "#F1F5F9" : "#0F172A",
-      }}
       className={cn(
-        "chamfer-theme-fade-root chamfer-theme-fade-2s fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none select-none",
-        uiShellMode === "prumo" ? "gap-0 p-0" : isLandscape ? "gap-0.5 p-0.5" : "gap-0 p-0",
+        "fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col gap-1 overflow-hidden rounded-none p-1 transition-colors select-none",
+        isDark ? "bg-[#0b0f17] text-slate-100" : "bg-[#f1f5f9] text-slate-900",
         isMestre && "glow-ring",
       )}
     >
-      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (OCULTO NO MODO PRUMO ZERO BARRAS) */}
-      {!focus && uiShellMode !== "prumo" && !isLandscape && (
-        <ChamferPortraitTopBar
-          isDark={isDark}
-          topBarHeightPx={38}
-          viewportWidth={verticalLayout.viewportWidth}
-          projectName={project?.name ?? "Projeto 26"}
-          thickness={thickness}
-          onThicknessChange={setThickness}
-          plans={project?.plans.map((p) => ({ id: p.id, name: p.name })) ?? [{ id: planId, name: "P01" }]}
-          activePlanId={planId}
-          onSelectPlan={(nextPlanId) => {
-            if (!project || nextPlanId === planId) return;
-            const targetPlan = project.plans.find((x) => x.id === nextPlanId);
-            if (!targetPlan) return;
-            setProject((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    plans: prev.plans.map((x) =>
-                      x.id === planId
-                        ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
-                        : x,
-                    ),
-                  }
-                : prev,
-            );
-            setPlanId(targetPlan.id);
-            const seenPlanIds = new Set<string>();
-            const sanitizedPlanEntities = (targetPlan.entities ?? []).map((ent) => {
-              let entId = ent.id;
-              if (!entId || entId === "draft" || entId.startsWith("draft-") || seenPlanIds.has(entId)) {
-                entId = uid();
-              }
-              seenPlanIds.add(entId);
-              return ent.id === entId ? ent : { ...ent, id: entId };
-            });
-            setEntities(sanitizedPlanEntities);
-            setGroups(targetPlan.groups ?? []);
-            setDims(targetPlan.dims ?? []);
-            setCad3dTreeJson(targetPlan.cad3dTreeJson);
-            setRevEngData(sanitizeRevEngPlanData(targetPlan.revEng));
-            setRevEngCanvasMode("none");
-            setRevEngPickPoints([]);
-            setRevEngFittedPreview(null);
-            setSelection([]);
-            past.current = [];
-            future.current = [];
-          }}
-          onCreatePlan={() => {
-            if (!project) return;
-            const plan = emptyPlan(project.plans.length);
-            plan.name = planLabel(project.plans.length);
-            const next: Project = {
-              ...project,
-              plans: [
-                ...project.plans.map((x) =>
-                  x.id === planId
-                    ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
-                    : x,
-                ),
-                plan,
-              ],
-              lastPlanId: plan.id,
-            };
-            saveProject(next);
-            setProject(next);
-            setPlanId(plan.id);
-            setEntities([]);
-            setGroups([]);
-            setDims([]);
-            setCad3dTreeJson(undefined);
-            setRevEngData(createDefaultRevEngPlanData());
-            setRevEngCanvasMode("none");
-            setRevEngPickPoints([]);
-            setRevEngFittedPreview(null);
-            setSelection([]);
-            toast.success(`${plan.name} criado.`);
-          }}
-          onOpenNewProjectDialog={() => {
-            setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
-            setNewProjectDialogOpen(true);
-          }}
-          saveStatus={saveStatus}
-          onManualSave={handleManualSave}
-          onLeaveEditor={() => {
-            if (
-              saveStatus === "pendente" &&
-              (chamferSettings.autoSave || chamferSettings.recoveryEnabled)
-            ) {
-              performSave();
-            }
-            leaveEditor();
-          }}
-          activeMode={activeMode}
-          onSelect2D={() => transitionTo2D()}
-          onSelect3D={() => transitionTo3D("3d")}
-          drawingProjection="orthographic"
-          onSetDrawingProjection={() => {
-            setDrawingProjection("orthographic");
-            transitionTo2D();
-          }}
-          isoPlane={isoPlane}
-          onSelectIsoPlane={(p) => {
-            setIsoPlane(p);
-            toast.info(`Plano Isométrico: ${ISO_PLANES[p].label}`);
-          }}
-          isOrbitToolActive={isOrbitToolActive}
-          isOrbitTilted={orbitProjection2D.isTilted}
-          onToggleOrbitTool={(next) => {
-            const target = typeof next === "boolean" ? next : !isOrbitToolActive;
-            setIsOrbitToolActive(target);
-            if (target) {
-              if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-              }
-              toast.info("Modo Órbita 3D ativo — arraste na área de desenho para rotacionar a perspectiva.");
-            }
-          }}
-          renderStyle3D={renderStyle3D}
-          onChangeRenderStyle3D={(style) => {
-            userPickedArameIn3DRef.current = style === "wireframe";
-            setRenderStyle3D(style);
-            if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-              setIsOrbitToolActive(true);
-              animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-            }
-          }}
-          canUndo={historyState.canUndo || pending.length > 0}
-          canRedo={historyState.canRedo}
-          onUndo={undo}
-          onRedo={redo}
-          onOpenVision={() => setVisionOpen(true)}
-          onOpenIntent={() => setQuickCommandOpen(true)}
-          onOpenWorkshop={() => setIntegratedWorkshopOpen(true)}
-          onOpenExport={() => setExportOpen(true)}
-          onOpenCnc={() => setCncOpen(true)}
-          onCenterPiece={(moveGeometry) => centerPiece(moveGeometry)}
-          onFitWorkspace={() => fitFrame()}
-          onOpenPresets={() => setPresetsModalOpen(true)}
-          onOpenTechnicalSheet={() => setTechnicalSheetModalOpen(true)}
-          onOpenTopologyHealth={() => setTopologyHealthOpen(true)}
-          onOpenVariables={() => setVariablesModalOpen(true)}
-          onVerifyGeometry={() => {
-            const found = verify(entities);
-            setIssues(found);
-            if (found.length) {
-              toast.warning(`${found.length} problemas encontrados`);
-            } else {
-              toast.success("Geometria válida");
-            }
-          }}
-          onOptimizeGeometry={() => {
-            const res = optimize(entities);
-            commit(res.entities);
-            toast.success(`${res.removed + res.tiny} entidades limpas`);
-          }}
-          showDims={showDims}
-          onToggleShowDims={() => setShowDims((s) => !s)}
-          onToggleTheme={toggleTheme}
-          focus={focus}
-          onToggleFullscreen={toggleFullscreen}
-          layoutPreference={uiShellMode}
-          onChangeLayoutPreference={(pref) => {
-            handleSetUiShellMode(pref);
-          }}
-          activeLayer={activeLayer}
-          activeStrokeColor={activeStrokeColor}
-          onSelectColorAndLayer={handleSelectColorAndLayer}
-          onOpenProjectSettings={() => setProjectSettingsOpen(true)}
-          onToggleBenchCalc={handleToggleBenchCalc}
-          isBenchCalcOpen={benchCalcState.open}
-          isBenchCalcFloating={benchCalcState.dockMode === "floating"}
-        />
-      )}
-
-      {!focus && (uiShellMode !== "prumo" || uiShellTransitionDir === "to-prumo") && isLandscape && (
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (BARRA FIXA COM SWIPE HORIZONTAL) */}
+      {!focus && (
         <header
           ref={topBarRef}
-          data-testid="chamfer-landscape-topbar"
-          aria-label="Barra superior CHAMFER CAD Paisagem"
           onPointerDown={handleTopBarPointerDown}
           onPointerMove={handleTopBarPointerMove}
           onPointerUp={handleTopBarPointerUp}
           onPointerCancel={handleTopBarPointerUp}
-          onTouchStart={handleTopBarTouchStart}
-          onTouchMove={handleTopBarTouchMove}
-          onTouchEnd={handleTopBarPointerUp}
-          onClickCapture={handleTopBarClickCapture}
           onWheel={handleTopBarWheel}
-          style={{
-            backgroundColor: isDark ? "rgba(27, 36, 54, 0.92)" : "#FFFFFF",
-            backdropFilter: isDark ? "blur(14px)" : undefined,
-            WebkitBackdropFilter: isDark ? "blur(14px)" : undefined,
-            borderColor: isDark ? "#2D3B55" : "#E2E8F0",
-            color: isDark ? "#E2E8F0" : "#0F172A",
-            boxShadow: isDark
-              ? "0 4px 16px rgba(0, 0, 0, 0.28)"
-              : "0 2px 10px rgba(15, 23, 42, 0.04)",
-            transition:
-              "transform 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 340ms cubic-bezier(0.22, 1, 0.36, 1)",
-            transform:
-              uiShellTransitionDir === "to-prumo"
-                ? "translate3d(0, -14px, 0) scaleX(0.92)"
-                : "translate3d(0, 0, 0) scaleX(1)",
-            opacity: uiShellTransitionDir === "to-prumo" ? 0 : 1,
-            pointerEvents: uiShellTransitionDir === "to-prumo" ? "none" : undefined,
-            position: uiShellTransitionDir === "to-prumo" ? "absolute" : "relative",
-            top: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
-            left: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
-            right: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
-            zIndex: 42,
-          }}
           className={cn(
-            "chamfer-theme-fade-2s flex shrink-0 w-full items-center justify-between border-b shadow-xs backdrop-blur-md select-none",
-            "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing whitespace-nowrap",
-            "h-9 px-2 gap-1.5",
+            "flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md transition-colors select-none",
+            "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
+            isDark
+              ? "border-slate-800 bg-slate-950/95 text-slate-100"
+              : "border-slate-200 bg-white/95 text-slate-800 shadow-xs",
           )}
         >
-          {/* ZONA 1 (ESQUERDA — IDENTIDADE E ESTADO DO ARQUIVO): [ ← ] + [ NOME DO PROJETO ] + [ CHIP UNIFICADO ✓ Salvo ] */}
-          <div className="flex min-w-0 shrink-0 items-center gap-1">
+          {/* LADO ESQUERDO: [ ← SAIR ] + [ CHAMFER • NOME DO PROJETO ] + [ DOSSIÊ ] */}
+          <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={() => {
                 if (
@@ -10100,27 +5639,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }
                 leaveEditor();
               }}
-              data-cmd-id="nav.exit_editor"
               aria-label="Sair do editor e voltar aos Projetos"
               title="Sair do editor (salvar e voltar)"
-              style={{
-                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
-                borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
-                color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
-              }}
-              className="flex h-7 min-w-[34px] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110"
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap",
+                isDark
+                  ? "border-slate-700/80 bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+              )}
             >
-              <ArrowLeft className="size-3.5 shrink-0" />
-              <span className="hidden lg:inline">SAIR</span>
+              <ArrowLeft className="size-3.5 shrink-0" /> SAIR
             </button>
 
-            <div className="flex items-center gap-1 min-w-0 shrink-0">
-              <span
-                style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }}
-                className="hidden xl:inline font-mono text-[11px] font-extrabold tracking-wider shrink-0"
-              >
-                CHAMFER
-              </span>
+            <span className={cn("h-4 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-mono text-xs font-bold tracking-wider text-red-600 shrink-0">CHAMFER</span>
               {project && (
                 <button
                   type="button"
@@ -10129,59 +5663,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
                     setNewProjectDialogOpen(true);
                   }}
-                  style={{
-                    textOverflow: "ellipsis",
-                    color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
-                  }}
-                  className="hidden lg:inline-block font-mono text-[11px] font-bold transition-colors truncate whitespace-nowrap max-w-[130px] xl:max-w-[170px]"
+                  style={{ textOverflow: "ellipsis" }}
+                  className={cn(
+                    "inline-block font-mono text-[11px] font-semibold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]",
+                    isDark ? "text-slate-200 hover:text-white" : "text-slate-800 hover:text-slate-950",
+                  )}
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
                   • {project.name}
                 </button>
               )}
-
-              {/* CHIP INTERATIVO UNIFICADO [ ✓ Salvo ] NA ZONA 1 */}
-              <button
-                type="button"
-                data-testid="chamfer-landscape-unified-save-chip"
-                data-cmd-id="doc.save"
-                onClick={handleManualSave}
-                title="Salvar documento agora (Ctrl+S)"
-                className={cn(
-                  "flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 font-mono text-[9.5px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer",
-                  saveStatus === "salvo" &&
-                    (isDark
-                      ? "border-[#10B981]/40 bg-[#10B981]/12 text-[#34D399] hover:bg-[#10B981]/20"
-                      : "border-[#86EFAC] bg-[#DCFCE7] text-[#15803D] hover:bg-[#BBF7D0]"),
-                  saveStatus === "salvando" &&
-                    (isDark
-                      ? "border-[#F59E0B]/45 bg-[#F59E0B]/15 text-[#FBBF24]"
-                      : "border-[#FCD34D] bg-[#FEF3C7] text-[#D97706]"),
-                  saveStatus === "pendente" &&
-                    (isDark
-                      ? "border-[#F59E0B]/60 bg-[#F59E0B]/20 text-[#FBBF24] hover:bg-[#F59E0B]/30"
-                      : "border-[#F59E0B] bg-[#FEF3C7] text-[#D97706] hover:bg-[#FDE68A]"),
-                )}
-              >
-                {saveStatus === "salvando" ? (
-                  <>
-                    <Loader2 className="size-2.5 animate-spin text-[#F59E0B]" />
-                    <span>Salvando...</span>
-                  </>
-                ) : saveStatus === "pendente" ? (
-                  <>
-                    <span className="size-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
-                    <span>Salvar</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="size-1.5 rounded-full bg-[#10B981]" />
-                    <Check className="size-2.5 shrink-0" />
-                    <span>Salvo</span>
-                  </>
-                )}
-              </button>
-
               {dossier && (
                 <button
                   onClick={() =>
@@ -10191,20 +5682,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     })
                   }
                   title={`${dossier.projectName} · ${dossier.partName}`}
-                  style={
+                  className={cn(
+                    "hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]",
                     isDark
-                      ? {
-                          backgroundColor: "var(--chamfer-accent-soft)",
-                          borderColor: "var(--chamfer-accent-border)",
-                          color: "var(--chamfer-accent)",
-                        }
-                      : {
-                          backgroundColor: "#FFF1F2",
-                          borderColor: "#FECDD3",
-                          color: "#E11D48",
-                        }
-                  }
-                  className="hidden xl:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[110px]"
+                      ? "bg-red-950/50 text-red-300 border-red-500/30"
+                      : "bg-red-50 text-red-700 border-red-200",
+                  )}
                 >
                   {dossier.partCode || dossier.partName}
                 </button>
@@ -10212,85 +5695,96 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           </div>
 
-          {/* ZONA 2 (CENTRO — MODO E VISTA): [ 2D SKETCH | CAD 3D ] (28px) + [ ORTO 2D ] + [ ÓRBITA 3D ] */}
-          <div className="flex shrink-0 items-center justify-center gap-1">
+          {/* REGIÃO CENTRAL: CONTROLE PRINCIPAL DE MUDANÇA DE AMBIENTE [ 2D SKETCH | 3D SÓLIDO ] E MODO [ ORTO 2D | ISO 2D ] */}
+          <div className="flex shrink-0 items-center justify-center gap-1.5">
             <div
-              style={{
-                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
-                borderColor: isDark ? "var(--chamfer-border-strong)" : "#E2E8F0",
-              }}
-              className="flex h-7 shrink-0 items-center rounded-lg border p-0.5 shadow-xs"
+              className={cn(
+                "flex items-center rounded-lg border p-0.5 shadow-xs",
+                isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+              )}
             >
               <button
                 type="button"
-                data-cmd-id="mode.2d_sketch"
                 onClick={() => {
                   triggerHaptic("selection");
                   transitionTo2D();
                 }}
-                style={
+                className={cn(
+                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
                   activeMode === "2d"
-                    ? {
-                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#E11D48",
-                        color: isDark ? "var(--chamfer-accent-contrast)" : "#FFFFFF",
-                      }
-                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
-                }
-                className="flex h-6 shrink-0 items-center rounded-md px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : isDark
+                      ? "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-900",
+                )}
               >
-                {verticalLayout.viewportWidth < 900 ? "2D" : "2D SKETCH"}
+                2D SKETCH
               </button>
               <button
                 type="button"
-                data-cmd-id="mode.cad_3d"
                 onClick={() => {
                   triggerHaptic("selection");
                   transitionTo3D("3d");
                 }}
-                style={
+                className={cn(
+                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
                   activeMode === "3d"
-                    ? {
-                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#E11D48",
-                        color: isDark ? "var(--chamfer-accent-contrast)" : "#FFFFFF",
-                      }
-                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
-                }
-                className="flex h-6 shrink-0 items-center rounded-md px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : isDark
+                      ? "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-900",
+                )}
               >
-                {verticalLayout.viewportWidth < 900 ? "3D" : "CAD 3D"}
+                CAD 3D
               </button>
             </div>
 
-            {/* PÍLULA INDIVIDUAL DE PROJEÇÃO: [ ORTO 2D ] */}
+            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (SEMPRE PRESENTE NO WORKSPACE UNIFICADO EM PAISAGEM E RETRATO) */}
             {!solidOpen && (
               <div
-                style={{
-                  backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
-                  borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
-                }}
-                className="flex h-7 items-center rounded-lg border p-0.5 shadow-xs shrink-0"
+                className={cn(
+                  "flex items-center rounded-lg border p-0.5 shadow-xs shrink-0",
+                  isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                )}
               >
                 <button
                   type="button"
-                  data-cmd-id="view.ortho_2d"
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
                     setDrawingProjection("orthographic");
                     transitionTo2D();
                   }}
-                  style={
-                    !orbitProjection2D.isTilted && activeMode === "2d"
-                      ? {
-                          backgroundColor: isDark ? "var(--chamfer-accent-soft)" : "#F8FAFC",
-                          color: isDark ? "var(--chamfer-text-primary)" : "#1E293B",
-                        }
-                      : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
-                  }
-                  className="flex h-6 shrink-0 items-center rounded-md px-1.5 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
+                  className={cn(
+                    "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                    drawingProjection === "orthographic" && !orbitProjection2D.isTilted && activeMode === "2d"
+                      ? "bg-slate-700 text-white shadow-xs"
+                      : "text-slate-400 hover:text-slate-200",
+                  )}
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
-                  {verticalLayout.viewportWidth < 900 ? "ORTO" : "ORTO 2D"}
+                  ORTO 2D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setDrawingProjection("isometric");
+                    toast.info(
+                      `Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`,
+                    );
+                  }}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-1",
+                    drawingProjection === "isometric"
+                      ? "bg-sky-600 text-white shadow-xs"
+                      : "text-slate-400 hover:text-slate-200",
+                  )}
+                  title="Modo Isométrico 2D (Eixos 30°/90°/150° e 3 Planos Técnicos)"
+                >
+                  <BoxIcon className="w-3 h-3" />
+                  <span>ISO 2D</span>
                 </button>
               </div>
             )}
@@ -10321,84 +5815,67 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               isDark={isDark}
               renderStyle3D={renderStyle3D}
-              onChangeRenderStyle3D={(nextMode) => {
-                userPickedArameIn3DRef.current = nextMode === "wireframe";
-                setRenderStyle3D(nextMode);
-                if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                  setIsOrbitToolActive(true);
-                  animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-                }
-              }}
+              onChangeRenderStyle3D={setRenderStyle3D}
               wireframe3DStyle={wireframe3DStyle}
               onChangeWireframe3DStyle={setWireframe3DStyle}
-              zoomSensitivity={zoomSensitivity}
-              onChangeZoomSensitivity={handleChangeZoomSensitivity}
-              brepWireframeLayers={brepWireframeLayers}
-              onChangeBrepWireframeLayers={handleChangeBrepWireframeLayers}
             />
 
             {/* SELETOR DIRETO DE REPRESENTAÇÃO 3D NA BARRA SUPERIOR: [ SÓLIDO | SOMB | ARAME ] */}
             {(activeMode === "3d" || isOrbitToolActive || orbitProjection2D.isTilted) && (
               <div
                 data-testid="chamfer-topbar-3d-style-selector"
-                data-chamfer-hud="true"
-                style={{
-                  backgroundColor: "var(--chamfer-surface-elevated)",
-                  borderColor: "var(--chamfer-border-strong)",
-                }}
-                className="flex h-7 items-center rounded-lg border p-0.5 shadow-xs"
+                className={cn(
+                  "flex items-center rounded-lg border p-0.5 shadow-xs",
+                  isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                )}
               >
-                <button
-                  type="button"
-                  data-testid="chamfer-topbar-style-solid"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    AudioManager.play("ui_select");
-                    userPickedArameIn3DRef.current = false;
-                    setRenderStyle3D("shaded");
-                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                      setIsOrbitToolActive(true);
-                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-                    }
-                  }}
-                  style={
-                    renderStyle3D === "shaded"
-                      ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="SOMB (Caldra-Code): Sombreado Metálico Acetinado Puro sem Arestas Sobrepostas"
-                >
-                  SOMB
-                </button>
                 <button
                   type="button"
                   data-testid="chamfer-topbar-style-solid-edges"
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
-                    userPickedArameIn3DRef.current = false;
                     setRenderStyle3D("shaded-edges");
                     if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
                       setIsOrbitToolActive(true);
                       animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
                     }
                   }}
-                  style={
+                  className={cn(
+                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
                     renderStyle3D === "shaded-edges"
-                      ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="SOMB+AR (Caldra-Code): Sombreado Metálico Acetinado com Arestas Reais de Contorno"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-900",
+                  )}
+                  title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
                 >
-                  SOMB+AR
+                  SÓLIDO
+                </button>
+                <button
+                  type="button"
+                  data-testid="chamfer-topbar-style-solid"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setRenderStyle3D("shaded");
+                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                      setIsOrbitToolActive(true);
+                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                    }
+                  }}
+                  className={cn(
+                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                    renderStyle3D === "shaded"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-900",
+                  )}
+                  title="Sólido Metálico 3D Puro (Sem Arestas)"
+                >
+                  SOMB
                 </button>
                 <button
                   type="button"
@@ -10406,481 +5883,201 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
-                    userPickedArameIn3DRef.current = true;
                     setRenderStyle3D("wireframe");
-                    if (!brepWireframeLayers.showContours || !brepWireframeLayers.showHiddenXRay) {
-                      handleChangeBrepWireframeLayers({
-                        ...brepWireframeLayers,
-                        showContours: true,
-                        showHiddenXRay: true,
-                      });
-                    }
-                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                      setIsOrbitToolActive(true);
-                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-                    }
                   }}
-                  style={
+                  className={cn(
+                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
                     renderStyle3D === "wireframe"
-                      ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer whitespace-nowrap"
-                  title="Arame Técnico B-Rep 3D Invariante em Espaço de Tela com Raio-X e Cotas"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-900",
+                  )}
+                  title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
                 >
                   ARAME
                 </button>
               </div>
             )}
-
-            {/* BOTÃO RÁPIDO "📋 LISTA DE CORTE" NA BARRA SUPERIOR DO CAD 3D */}
-            {(activeMode === "3d" || isOrbitToolActive || orbitProjection2D.isTilted) && (
-              <button
-                type="button"
-                data-testid="chamfer-topbar-cutlist-btn"
-                onClick={() => {
-                  triggerHaptic("action");
-                  window.dispatchEvent(new CustomEvent("chamfer-toggle-cutlist-3d"));
-                }}
-                style={
-                  isDark
-                    ? {
-                        backgroundColor: "rgba(124, 58, 237, 0.2)",
-                        borderColor: "rgba(167, 139, 250, 0.55)",
-                        color: "#EDE9FE",
-                      }
-                    : {
-                        backgroundColor: "#F5F3FF",
-                        borderColor: "#C4B5FD",
-                        color: "#5B21B6",
-                      }
-                }
-                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-all shadow-xs hover:brightness-110 cursor-pointer"
-                title="Abrir Lista de Corte Estrutural 3D (Quantidade × Perfil × Comprimento × Esquadria + Massa Total)"
-              >
-                <span>📋 Corte</span>
-              </button>
-            )}
           </div>
 
-          {/* ZONA 3 (DIREITA — AÇÕES RÁPIDAS, IA, BOM, FOCO, PRUMO E MAIS OPÇÕES) */}
-          <div className="flex shrink-0 items-center gap-1">
-            {/* HISTÓRICO SEMPRE VISÍVEL (FORA DE QUALQUER OVERFLOW): [ ↶ ] [ ↷ ] */}
+          {/* LADO DIREITO: HISTÓRICO + SALVAMENTO/STATUS + FERRAMENTAS GLOBAIS */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* HISTÓRICO: [ DESFAZER | REFAZER ] */}
             <div
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-border-strong)",
-              }}
-              className="flex h-7 shrink-0 items-center rounded-lg border p-0.5"
+              className={cn(
+                "flex items-center rounded-lg border p-0.5",
+                isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+              )}
             >
               <button
                 type="button"
-                data-testid="chamfer-landscape-undo-btn"
-                data-cmd-id="history.undo"
                 disabled={!historyState.canUndo && pending.length === 0}
                 onClick={undo}
                 title="Desfazer alteração (Ctrl+Z)"
                 aria-label="Desfazer ação anterior"
-                style={{
-                  color:
-                    historyState.canUndo || pending.length > 0
-                      ? "var(--chamfer-text-primary)"
-                      : "var(--chamfer-text-muted)",
-                }}
                 className={cn(
-                  "flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
+                  "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canUndo || pending.length > 0
-                    ? "hover:brightness-110 cursor-pointer"
-                    : "opacity-35 cursor-not-allowed",
+                    ? isDark
+                      ? "text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
+                      : "text-slate-700 hover:bg-slate-200 hover:text-slate-900 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed text-slate-500",
                 )}
               >
                 <Undo2 className="size-3.5" />
+                <span className="hidden sm:inline">Desfazer</span>
               </button>
               <button
                 type="button"
-                data-testid="chamfer-landscape-redo-btn"
-                data-cmd-id="history.redo"
                 disabled={!historyState.canRedo}
                 onClick={redo}
                 title="Refazer alteração (Ctrl+Y)"
                 aria-label="Refazer ação desfeita"
-                style={{
-                  color: historyState.canRedo
-                    ? "var(--chamfer-text-primary)"
-                    : "var(--chamfer-text-muted)",
-                }}
                 className={cn(
-                  "flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
+                  "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canRedo
-                    ? "hover:brightness-110 cursor-pointer"
-                    : "opacity-35 cursor-not-allowed",
+                    ? isDark
+                      ? "text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
+                      : "text-slate-700 hover:bg-slate-200 hover:text-slate-900 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed text-slate-500",
                 )}
               >
                 <Redo2 className="size-3.5" />
+                <span className="hidden sm:inline">Refazer</span>
               </button>
             </div>
 
-            {/* AGRUPAMENTO INTELIGENTE EM TELAS ESTREITAS (< 900px): [ ✨ IA & BOM ▾ ] + PÍLULAS DIRETAS COM ZERO CORTE */}
-            {verticalLayout.viewportWidth < 900 ? (
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  data-testid="chamfer-ai-bom-popover-trigger"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerHaptic("tap");
-                    setAiBomPopoverOpen((v) => !v);
-                  }}
-                  style={
-                    isDark
-                      ? {
-                          backgroundColor: "rgba(14, 165, 233, 0.22)",
-                          borderColor: "#38BDF8",
-                          borderWidth: "1.5px",
-                          color: "#7DD3FC",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                      : {
-                          backgroundColor: "#E0F2FE",
-                          borderColor: "#7DD3FC",
-                          color: "#0284C7",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                  }
-                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 cursor-pointer touch-pan-x"
-                  title="Abrir menu rápido de IA (VISION, INTENT) e Produção (CORTE/BOM)"
-                >
-                  <Sparkles className="size-3.5 shrink-0" />
-                  <span>IA &amp; BOM ▾</span>
-                </button>
-                {aiBomPopoverOpen &&
-                  typeof document !== "undefined" &&
-                  document.body &&
-                  createPortal(
-                    <div
-                      data-testid="chamfer-ai-bom-popover-portal"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        position: "fixed",
-                        top: 42,
-                        right: 12,
-                        zIndex: 9999,
-                        backgroundColor: "var(--chamfer-popover-bg)",
-                        borderColor: "var(--chamfer-border-strong)",
-                        color: "var(--chamfer-text-primary)",
-                      }}
-                      className="flex flex-col gap-1 rounded-2xl border p-2 shadow-2xl backdrop-blur-xl w-56 font-mono text-[10px]"
-                    >
-                      <button
-                        type="button"
-                        data-cmd-id="ai.vision"
-                        onClick={() => {
-                          setAiBomPopoverOpen(false);
-                          setVisionOpen(true);
-                        }}
-                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left font-bold hover:bg-sky-500/15 text-sky-400 cursor-pointer"
-                      >
-                        <ScanEye className="size-4 shrink-0" />
-                        <span>VISION (Engenharia Reversa)</span>
-                      </button>
-                      <button
-                        type="button"
-                        data-cmd-id="ai.intent"
-                        onClick={() => {
-                          setAiBomPopoverOpen(false);
-                          setQuickCommandOpen(true);
-                        }}
-                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left font-bold hover:bg-amber-500/15 text-amber-400 cursor-pointer"
-                      >
-                        <Sparkles className="size-4 shrink-0" />
-                        <span>INTENT (Compilador IA)</span>
-                      </button>
-                      <button
-                        type="button"
-                        data-cmd-id="prod.workshop_bom"
-                        onClick={() => {
-                          setAiBomPopoverOpen(false);
-                          setIntegratedWorkshopOpen(true);
-                        }}
-                        className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left font-bold hover:bg-emerald-500/15 text-emerald-400 cursor-pointer"
-                      >
-                        <Boxes className="size-4 shrink-0" />
-                        <span>CORTE / BOM (Oficina)</span>
-                      </button>
-                    </div>,
-                    document.body,
-                  )}
-              </div>
-            ) : (
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  data-cmd-id="ai.vision"
-                  onClick={() => {
-                    triggerHaptic("action");
-                    setVisionOpen(true);
-                  }}
-                  title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
-                  aria-label="Abrir CHAMFER VISION"
-                  style={
-                    isDark
-                      ? {
-                          backgroundColor: "var(--chamfer-accent-soft)",
-                          borderColor: "var(--chamfer-accent-border)",
-                          color: "var(--chamfer-accent)",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                      : {
-                          backgroundColor: "#FFE4E6",
-                          borderColor: "#FDA4AF",
-                          color: "#E11D48",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                  }
-                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
-                >
-                  <ScanEye className="size-3.5 shrink-0" style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }} />
-                  <span>VISION</span>
-                </button>
-                <button
-                  type="button"
-                  data-cmd-id="ai.intent"
-                  onClick={() => {
-                    triggerHaptic("action");
-                    setQuickCommandOpen(true);
-                  }}
-                  title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
-                  aria-label="Abrir CHAMFER INTENT"
-                  style={
-                    isDark
-                      ? {
-                          backgroundColor: "var(--chamfer-surface-elevated)",
-                          borderColor: "var(--chamfer-accent-border)",
-                          color: "var(--chamfer-accent)",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                      : {
-                          backgroundColor: "#E0F2FE",
-                          borderColor: "#7DD3FC",
-                          color: "#0284C7",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                  }
-                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
-                >
-                  <Sparkles className="size-3.5 shrink-0" style={{ color: isDark ? "var(--chamfer-accent)" : "#0284C7" }} />
-                  <span>INTENT</span>
-                </button>
-                <button
-                  type="button"
-                  data-cmd-id="prod.workshop_bom"
-                  onClick={() => {
-                    triggerHaptic("action");
-                    setIntegratedWorkshopOpen(true);
-                  }}
-                  title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
-                  style={
-                    isDark
-                      ? {
-                          backgroundColor: "var(--chamfer-surface-elevated)",
-                          borderColor: "var(--chamfer-border-strong)",
-                          color: "var(--chamfer-text-primary)",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                      : {
-                          backgroundColor: "#FFFFFF",
-                          borderColor: "#CBD5E1",
-                          color: "#1E293B",
-                          padding: "0 7px",
-                          gap: "4px",
-                        }
-                  }
-                  className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
-                >
-                  <Boxes className="size-3.5 shrink-0" style={{ color: isDark ? "var(--chamfer-accent)" : "#0F766E" }} />
-                  <span>CORTE/BOM</span>
-                </button>
-              </div>
-            )}
-
-            {/* BOTÃO RÁPIDO MINI-CALCULADORA DE BANCADA [ 🧮 Calc ] COM RESGATE DETERMINÍSTICO */}
-            {activeMode === "2d" && !solidOpen && (
+            {/* BOTÃO SALVAR E INDICADOR DE ESTADO RESPEITANDO A CONFIGURAÇÃO */}
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                data-testid="chamfer-landscape-calc-btn"
-                data-cmd-id="global.bench_calc"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  handleToggleBenchCalc();
-                }}
-                title={
-                  benchCalcState.open && benchCalcState.dockMode === "floating"
-                    ? "Resgatar Calculadora Flutuante para a Direita"
-                    : "Abrir / Fechar Mini-Calculadora Científica & Metalúrgica de Bancada"
-                }
-                aria-label="Calculadora Científica e Metalúrgica de Bancada"
-                style={
-                  benchCalcState.open
-                    ? {
-                        backgroundColor: "rgba(14, 165, 233, 0.22)",
-                        borderColor: "#38BDF8",
-                        color: isDark ? "#7DD3FC" : "#0284C7",
-                        padding: "0 7px",
-                        gap: "4px",
-                      }
-                    : {
-                        backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
-                        borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
-                        color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
-                        padding: "0 7px",
-                        gap: "4px",
-                      }
-                }
-                className="relative flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
-              >
-                <Calculator className="size-3.5 shrink-0 text-[#38BDF8]" />
-                <span>Calc</span>
-                {benchCalcState.open && benchCalcState.dockMode === "floating" && (
-                  <span
-                    data-testid="landscape-calc-floating-dot"
-                    className="size-1.5 rounded-full bg-amber-400"
-                    title="Calculadora em modo flutuante — clique para resgatar à direita"
-                  />
+                onClick={handleManualSave}
+                title="Salvar documento agora (Ctrl+S)"
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
+                  saveStatus === "pendente"
+                    ? isDark
+                      ? "border-amber-500/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60"
+                      : "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    : isDark
+                      ? "border-slate-700/80 bg-slate-900/90 text-slate-200 hover:bg-slate-800 hover:text-white"
+                      : "border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-950",
                 )}
-              </button>
-            )}
-
-            {/* BOTÃO COMPACTO [ fx ] — PARÂMETROS & VARIANTES (INTEGRADO À BARRA SUPERIOR, MESMO FORMATO DO CALC) */}
-            {!solidOpen && (
-              <button
-                type="button"
-                data-testid="chamfer-topbar-fx-btn"
-                data-cmd-id="parameters.manage"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  dispatchChamferParametricPanel("parameters");
-                }}
-                title="Abrir / Fechar Gaveta de Parâmetros (fx), Sweep e Configurações"
-                aria-label="Parâmetros e Variantes"
-                style={
-                  parametricStatus.activePanel === "parameters"
-                    ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        borderColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
-                        padding: "0 7px",
-                        gap: "4px",
-                      }
-                    : {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
-                        borderColor: "var(--chamfer-border-strong)",
-                        color: "var(--chamfer-text-primary)",
-                        padding: "0 7px",
-                        gap: "4px",
-                      }
-                }
-                className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold tracking-wider transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
               >
-                <span
-                  style={{
-                    color:
-                      parametricStatus.activePanel === "parameters"
-                        ? "var(--chamfer-accent-contrast)"
-                        : "var(--chamfer-accent)",
-                  }}
-                >
-                  fx
-                </span>
+                {saveStatus === "salvando" ? (
+                  <Loader2 className="size-3 animate-spin text-amber-500" />
+                ) : (
+                  <Check className="size-3 text-emerald-500" />
+                )}
+                <span>Salvar</span>
               </button>
-            )}
 
-            {/* BOTÃO DE MODO FOCO RÁPIDO [ ⛶ Foco ] */}
+              {/* INDICADOR DISCRETO DO ESTADO DO DOCUMENTO */}
+              <span
+                className={cn(
+                  "hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-mono border font-semibold uppercase tracking-wider transition-colors",
+                  saveStatus === "salvo" &&
+                    (isDark
+                      ? "text-emerald-400 bg-emerald-950/60 border-emerald-500/30"
+                      : "text-emerald-700 bg-emerald-50 border-emerald-300"),
+                  saveStatus === "salvando" &&
+                    (isDark
+                      ? "text-amber-400 bg-amber-950/60 border-amber-500/30"
+                      : "text-amber-800 bg-amber-50 border-amber-300"),
+                  saveStatus === "pendente" &&
+                    (isDark
+                      ? "text-amber-300 bg-amber-950/60 border-amber-500/50 animate-pulse"
+                      : "text-amber-900 bg-amber-100/90 border-amber-400"),
+                )}
+                title={
+                  chamferSettings.autoSave
+                    ? `Salvamento automático ativo (a cada ${chamferSettings.autoSaveIntervalSec}s)`
+                    : "Salvamento manual ativado nas configurações do projeto"
+                }
+              >
+                {saveStatus === "salvo" && (
+                  <>
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    <span>Salvo</span>
+                  </>
+                )}
+                {saveStatus === "salvando" && (
+                  <>
+                    <Loader2 className="size-2.5 animate-spin text-amber-500" />
+                    <span>Salvando...</span>
+                  </>
+                )}
+                {saveStatus === "pendente" && (
+                  <>
+                    <span className="size-1.5 rounded-full bg-amber-500 animate-ping" />
+                    <span className="hidden md:inline">Alterações não salvas</span>
+                    <span className="md:hidden">Não salvo</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            <span className={cn("h-4 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            {/* FERRAMENTAS GLOBAIS */}
+            {/* CHAMFER VISION — FERRAMENTA OFICIAL DO CHAMFER COM ÍCONE OFICIAL */}
             <button
               type="button"
-              data-testid="chamfer-landscape-focus-btn"
-              data-cmd-id="ui.fullscreen_toggle"
-              onClick={toggleFullscreen}
-              title="Modo Foco Imersivo — ocultar barras e expandir o canvas a 100%"
-              style={{
-                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
-                borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
-                color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
-                padding: "0 7px",
-                gap: "4px",
+              onClick={() => {
+                triggerHaptic("action");
+                setVisionOpen(true);
               }}
-              className="flex h-7 shrink-0 items-center rounded-lg border font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
+              title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
+              aria-label="Abrir CHAMFER VISION"
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+                isDark
+                  ? "border-red-500/40 bg-red-950/40 text-red-300 hover:bg-red-900/60 hover:text-white hover:border-red-400"
+                  : "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-950 hover:border-red-400",
+              )}
             >
-              <Maximize className="size-3 text-[#38BDF8] shrink-0" />
-              <span>Foco</span>
+              <ScanEye className="size-3.5 text-red-500" />
+              <span className="hidden xl:inline">CHAMFER VISION</span>
+              <span className="xl:hidden">VISION</span>
             </button>
-
-            {/* ALTERNADOR RÁPIDO NÃO-DESTRUTIVO DE CASCA: [ Compacta | 📐 PRUMO ] */}
-            <div
-              data-testid="chamfer-header-shell-toggle"
-              style={{
-                backgroundColor: isDark ? "#232E45" : "#F1F5F9",
-                borderColor: isDark ? "#334361" : "#CBD5E1",
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("action");
+                setQuickCommandOpen(true);
               }}
-              className="flex shrink-0 h-7 items-center rounded-lg border p-0.5 text-[9px] font-mono font-bold touch-pan-x"
-              title="Alternar instantaneamente entre Interface Compacta e Interface Espacial PRUMO (Zero Barras) sem perder o desenho"
+              title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
+              aria-label="Abrir CHAMFER INTENT"
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+                isDark
+                  ? "border-sky-500/40 bg-sky-950/40 text-sky-300 hover:bg-sky-900/60 hover:text-white hover:border-sky-400"
+                  : "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-950 hover:border-sky-400",
+              )}
             >
-              <button
-                type="button"
-                data-testid="chamfer-header-shell-compact-btn"
-                onClick={() => handleSetUiShellMode("compact")}
-                style={
-                  uiShellMode === "compact"
-                    ? isDark
-                      ? {
-                          backgroundColor: "rgba(14, 165, 233, 0.22)",
-                          border: "1.5px solid #38BDF8",
-                          color: "#F8FAFC",
-                        }
-                      : {
-                          backgroundColor: "#0284C7",
-                          color: "#FFFFFF",
-                        }
-                    : { color: isDark ? "#CBD5E1" : "#475569" }
-                }
-                className="flex h-5.5 items-center rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
-              >
-                Compacta
-              </button>
-              <button
-                type="button"
-                data-testid="chamfer-header-shell-prumo-btn"
-                onClick={() => handleSetUiShellMode("prumo")}
-                style={
-                  uiShellMode === "prumo"
-                    ? isDark
-                      ? {
-                          backgroundColor: "rgba(14, 165, 233, 0.22)",
-                          border: "1.5px solid #38BDF8",
-                          color: "#F8FAFC",
-                        }
-                      : {
-                          backgroundColor: "#0284C7",
-                          color: "#FFFFFF",
-                        }
-                    : { color: isDark ? "#CBD5E1" : "#475569" }
-                }
-                className="flex h-5.5 items-center gap-1 rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
-              >
-                <span>📐</span>
-                <span>{UI_NAME}</span>
-              </button>
-            </div>
-
+              <Sparkles className="size-3.5 text-sky-400" />
+              <span className="hidden xl:inline">CHAMFER INTENT</span>
+              <span className="xl:hidden">INTENT</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("action");
+                setIntegratedWorkshopOpen(true);
+              }}
+              title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+                isDark
+                  ? "border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white hover:border-amber-400"
+                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-400",
+              )}
+            >
+              <Boxes className="size-3.5 text-amber-500" />
+              <span className="hidden xl:inline">OFICINA & CORTE</span>
+              <span className="xl:hidden">CORTE/BOM</span>
+            </button>
             <IconBtn
               label="Camadas"
               onClick={() => {
@@ -10894,400 +6091,211 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               icon={LayersIcon}
               active={rightSidebarOpen && activeSidebarTab === "camadas"}
               title="Gerenciamento de camadas técnicas"
-              isDark={isDark}
             />
             <IconBtn
               label="Exportar"
               onClick={() => setExportOpen(true)}
               icon={Download}
               title="Exportar DXF, SVG, PNG, PDF"
-              isDark={isDark}
             />
             <IconBtn
-              label={activeMode === "3d" ? "Seção 3D" : "Corte CNC"}
-              onClick={() => {
-                if (activeMode === "3d") {
-                  dispatchChamferParametricPanel("section");
-                } else {
-                  setCncOpen(true);
-                }
-              }}
+              label="Corte CNC"
+              onClick={() => setCncOpen(true)}
               icon={Scissors}
-              active={
-                activeMode === "3d" &&
-                (parametricStatus.activePanel === "section" || parametricStatus.sectionEnabled)
-              }
-              title={
-                activeMode === "3d"
-                  ? "Abrir Gaveta de Corte em Seção 3D (Hachurado) e Massa"
-                  : "Ferramenta de Corte e Exportação DXF CNC direta"
-              }
-              isDark={isDark}
+              title="Ferramenta de Corte e Exportação DXF CNC direta"
             />
             <IconBtn
-              label="Busca"
-              onClick={() => dispatchChamferParametricPanel("sbox")}
+              label="Comando (Q)"
+              onClick={() => setQuickCommandOpen(true)}
               icon={Search}
-              active={parametricStatus.activePanel === "sbox"}
-              title="Busca rápida de comandos CAD 2D/3D (Press-Pull, Thin Extrude, Furo Industrial, Chapa, Seção)"
-              isDark={isDark}
+              title="Busca rápida de comandos CAD (Atalho: Q ou Ctrl+K)"
             />
             <IconBtn
               label="Topologia"
               onClick={() => setTopologyHealthOpen(true)}
               icon={Activity}
               title="Auditoria de topologia e Auto-Heal (saúde do desenho)"
-              isDark={isDark}
             />
             <IconBtn
               label="Presets"
               onClick={() => setPresetsModalOpen(true)}
               icon={Boxes}
               title="Catálogo de presets paramétricos (Flanges, tubos, sapatas)"
-              isDark={isDark}
             />
-
-            {/* MENU COMPACTO [ ⋯ ] (MAIS OPÇÕES + ALTERNADOR INTERFACE DO CHAMFER: COMPACTA | CLÁSSICA) */}
             <div className="relative">
               <IconBtn
-                buttonRef={landscapeMoreTriggerRef}
                 label="Mais"
-                onClick={() => {
-                  updateLandscapeMorePosition();
-                  setMoreOpen((m) => !m);
-                }}
+                onClick={() => setMoreOpen((m) => !m)}
                 icon={MoreHorizontal}
                 active={moreOpen}
                 title="Mais opções e ferramentas avançadas"
-                isDark={isDark}
               />
-              {moreOpen &&
-                typeof document !== "undefined" &&
-                document.body &&
-                createPortal(
-                  <div
-                    ref={landscapeMoreMenuRef}
-                    data-testid="landscape-more-menu-portal"
-                    role="menu"
-                    aria-label="Mais opções do CHAMFER CAD"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: "fixed",
-                      top: landscapeMoreCoords.top,
-                      right: landscapeMoreCoords.right,
-                      zIndex: 9999,
-                      backgroundColor: "var(--chamfer-popover-bg)",
-                      borderColor: "var(--chamfer-border-strong)",
-                      color: "var(--chamfer-text-primary)",
+              {moreOpen && (
+                <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
+                  <MenuItem
+                    label="Oficina Digital (Corte, BOM e Orçamento)"
+                    icon={Boxes}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setIntegratedWorkshopOpen(true);
                     }}
-                    className="chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
-                  >
-                    {/* ALTERNADOR DE CASCA NO TOPO DO MENU ⋯: Interface do CHAMFER: [ Compacta | 📐 PRUMO ] */}
-                    <div
-                      className={cn(
-                        "mb-1.5 flex items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 font-mono text-[10px]",
-                        isDark ? "border-[#293444] bg-[#0B0F14]/90" : "border-[#CBD5E1] bg-[#F8FAFC]",
-                      )}
-                    >
-                      <span className="font-bold">Interface do CHAMFER:</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          data-testid="landscape-menu-shell-compact-btn"
-                          onClick={() => {
-                            handleSetUiShellMode("compact");
-                            setMoreOpen(false);
-                          }}
-                          className={cn(
-                            "rounded-md px-2 py-0.5 font-bold transition-colors cursor-pointer",
-                            uiShellMode === "compact"
-                              ? "bg-[#38BDF8] text-[#0B0F14]"
-                              : "opacity-70 hover:opacity-100",
-                          )}
-                        >
-                          Compacta
-                        </button>
-                        <button
-                          type="button"
-                          data-testid="landscape-menu-shell-prumo-btn"
-                          onClick={() => {
-                            handleSetUiShellMode("prumo");
-                            setMoreOpen(false);
-                          }}
-                          className={cn(
-                            "rounded-md px-2 py-0.5 font-bold transition-colors cursor-pointer",
-                            uiShellMode === "prumo"
-                              ? "bg-[#38BDF8] text-[#0B0F14]"
-                              : "opacity-70 hover:opacity-100",
-                          )}
-                        >
-                          📐 {UI_NAME}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 6 ITENS OBRIGATÓRIOS EM DESTAQUE NO TOPO DO MENU */}
-                    <MenuItem
-                      label="👁 VISION (Engenharia Reversa 1:1)"
-                      icon={ScanEye}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setVisionOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="✨ CHAMFER INTENT (Assistente IA)"
-                      icon={Sparkles}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setQuickCommandOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="⚙ CORTE / BOM (Lista e Nesting)"
-                      icon={Boxes}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setIntegratedWorkshopOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="⬇ Exportar CNC / DXF / Prancha"
-                      icon={Download}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setExportOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="✂ Corte CNC Direto"
-                      icon={Scissors}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setCncOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="⌖ Enquadrar Peça na Tela"
-                      icon={Crosshair}
-                      isDark={isDark}
-                      onClick={() => {
-                        centerPiece(false);
-                        setMoreOpen(false);
-                      }}
-                    />
-                    <MenuItem
-                      label="◐ Alternar Tema Claro / Escuro"
-                      icon={isDark ? Sun : Moon}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        toggleTheme();
-                      }}
-                    />
-                    <MenuItem
-                      label="⚙ Aparência e Preferências do Projeto"
-                      icon={Sliders}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setProjectSettingsOpen(true);
-                      }}
-                    />
-
-                    <div
-                      style={{ backgroundColor: "var(--chamfer-border)" }}
-                      className="my-1.5 h-px"
-                    />
-
-                    <MenuItem
-                      label="Camadas Técnicas"
-                      icon={LayersIcon}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setActiveSidebarTab("camadas");
-                        setRightSidebarOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="Auditoria de Topologia (Auto-Heal)"
-                      icon={Activity}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setTopologyHealthOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="Catálogo de Presets Paramétricos"
-                      icon={Boxes}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setPresetsModalOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="Folha Técnica e Legenda"
-                      icon={FileText}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setTechnicalSheetModalOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="Tabela de Variáveis"
-                      icon={Sliders}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setVariablesModalOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="Novo projeto CHAMFER"
-                      icon={FolderPlus}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
-                        setNewProjectDialogOpen(true);
-                      }}
-                    />
-                    <MenuItem
-                      label="Projetos salvos"
-                      icon={FolderOpen}
-                      isDark={isDark}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        leaveEditor();
-                      }}
-                    />
-                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
-                    <MenuItem
-                      label="Centralizar peça na prancheta"
-                      icon={Crosshair}
-                      isDark={isDark}
-                      onClick={() => {
-                        centerPiece(true);
-                        setMoreOpen(false);
-                      }}
-                    />
-                    <MenuItem
-                      label="Enquadrar área de trabalho"
-                      icon={Frame}
-                      isDark={isDark}
-                      onClick={() => {
-                        fitFrame();
-                        setMoreOpen(false);
-                      }}
-                    />
-                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
-                    <div className="px-2 py-1.5">
-                      <p className="tick-label mb-1 text-muted-foreground">Área de trabalho (mm)</p>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          aria-label="Largura da área de trabalho"
-                          value={frame.w}
-                          onChange={(ev) =>
-                            updateFrame({ w: clampSide(Number(ev.target.value), frame.w) })
-                          }
-                          className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
-                        />
-                        <span className="font-mono text-[10px] text-muted-foreground">×</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          aria-label="Altura da área de trabalho"
-                          value={frame.h}
-                          onChange={(ev) =>
-                            updateFrame({ h: clampSide(Number(ev.target.value), frame.h) })
-                          }
-                          className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
-                        />
-                      </div>
-                      <button
-                        onClick={() => updateFrame({ showDims: !frame.showDims })}
-                        className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 font-mono text-[9px] tracking-widest text-muted-foreground uppercase hover:text-foreground"
-                      >
-                        {frame.showDims ? "Ocultar dimensões" : "Mostrar dimensões"}
-                      </button>
-                    </div>
-                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
-                    <MenuItem
-                      label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
-                      icon={Ruler}
-                      isDark={isDark}
-                      onClick={() => {
-                        setShowDims((s) => !s);
-                        setMoreOpen(false);
-                      }}
-                    />
-                    <MenuItem
-                      label="Verificar geometria"
-                      icon={Triangle}
-                      isDark={isDark}
-                      onClick={() => {
-                        const found = verify(entities);
-                        setIssues(found);
-                        if (found.length) {
-                          toast.warning(`${found.length} problemas encontrados`);
-                        } else {
-                          toast.success("Geometria válida");
+                  />
+                  <MenuItem
+                    label="Folha Técnica e Legenda"
+                    icon={FileText}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setTechnicalSheetModalOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    label="Tabela de Variáveis"
+                    icon={Sliders}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setVariablesModalOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    label="Novo projeto CHAMFER"
+                    icon={FolderPlus}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+                      setNewProjectDialogOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    label="Projetos salvos"
+                    icon={FolderOpen}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      leaveEditor();
+                    }}
+                  />
+                  <div className="my-1 h-px bg-line" />
+                  <MenuItem
+                    label="Centralizar peça"
+                    icon={Crosshair}
+                    onClick={() => {
+                      centerPiece(true);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Enquadrar área de trabalho"
+                    icon={Frame}
+                    onClick={() => {
+                      fitFrame();
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <div className="my-1 h-px bg-line" />
+                  <div className="px-2 py-1.5">
+                    <p className="tick-label mb-1 text-muted-foreground">Área de trabalho (mm)</p>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        aria-label="Largura da área de trabalho"
+                        value={frame.w}
+                        onChange={(ev) =>
+                          updateFrame({ w: clampSide(Number(ev.target.value), frame.w) })
                         }
-                        setMoreOpen(false);
-                      }}
-                    />
-                    <MenuItem
-                      label="Otimizar"
-                      icon={Spline}
-                      isDark={isDark}
-                      onClick={() => {
-                        const res = optimize(entities);
-                        commit(res.entities);
-                        toast.success(`${res.removed + res.tiny} entidades limpas`);
-                        setMoreOpen(false);
-                      }}
-                    />
-                    {imageLayer && (
-                      <>
-                        <MenuItem
-                          label={imageLayer.visible ? "Ocultar imagem" : "Mostrar imagem"}
-                          icon={ImageIcon}
-                          isDark={isDark}
-                          onClick={() => {
-                            setImageLayer({ ...imageLayer, visible: !imageLayer.visible });
-                            setMoreOpen(false);
-                          }}
+                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                      />
+                      <span className="font-mono text-[10px] text-muted-foreground">×</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        aria-label="Altura da área de trabalho"
+                        value={frame.h}
+                        onChange={(ev) =>
+                          updateFrame({ h: clampSide(Number(ev.target.value), frame.h) })
+                        }
+                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => updateFrame({ showDims: !frame.showDims })}
+                      className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 font-mono text-[9px] tracking-widest text-muted-foreground uppercase hover:text-foreground"
+                    >
+                      {frame.showDims ? "Ocultar dimensões" : "Mostrar dimensões"}
+                    </button>
+                  </div>
+                  <div className="my-1 h-px bg-line" />
+                  <MenuItem
+                    label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
+                    icon={Ruler}
+                    onClick={() => {
+                      setShowDims((s) => !s);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Verificar geometria"
+                    icon={Triangle}
+                    onClick={() => {
+                      const found = verify(entities);
+                      setIssues(found);
+                      if (found.length) {
+                        toast.warning(`${found.length} problemas encontrados`);
+                      } else {
+                        toast.success("Geometria válida");
+                      }
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Otimizar"
+                    icon={Spline}
+                    onClick={() => {
+                      const res = optimize(entities);
+                      commit(res.entities);
+                      toast.success(`${res.removed + res.tiny} entidades limpas`);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label={isMestre ? "CHAMFER VISION" : "CHAMFER VISION · Mestre"}
+                    icon={ScanEye}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      if (!isMestre) {
+                        toast.info("CHAMFER VISION é exclusivo do Modo Mestre.");
+                        return;
+                      }
+                      setVisionOpen(true);
+                    }}
+                  />
+                  {imageLayer && (
+                    <>
+                      <MenuItem
+                        label={imageLayer.visible ? "Ocultar imagem" : "Mostrar imagem"}
+                        icon={ImageIcon}
+                        onClick={() => {
+                          setImageLayer({ ...imageLayer, visible: !imageLayer.visible });
+                          setMoreOpen(false);
+                        }}
+                      />
+                      <label className="flex items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground">
+                        <ImageIcon className="size-3.5" />
+                        <input
+                          type="range"
+                          min={0.05}
+                          max={1}
+                          step={0.05}
+                          value={imageLayer.opacity}
+                          onChange={(ev) =>
+                            setImageLayer({ ...imageLayer, opacity: Number(ev.target.value) })
+                          }
+                          className="w-full accent-[var(--accent)]"
                         />
-                        <label className="flex items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground">
-                          <ImageIcon className="size-3.5" />
-                          <input
-                            type="range"
-                            min={0.05}
-                            max={1}
-                            step={0.05}
-                            value={imageLayer.opacity}
-                            onChange={(ev) =>
-                              setImageLayer({ ...imageLayer, opacity: Number(ev.target.value) })
-                            }
-                            className="w-full accent-[var(--accent)]"
-                          />
-                        </label>
-                      </>
-                    )}
-                  </div>,
-                  document.body,
-                )}
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <IconBtn
@@ -11295,53 +6303,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               onClick={toggleTheme}
               icon={isDark ? Sun : Moon}
               title={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
-              isDark={isDark}
             />
             <IconBtn
               label="Tela Cheia"
               onClick={toggleFullscreen}
               icon={focus ? Minimize : Maximize}
               title="Alternar modo tela cheia / foco"
-              isDark={isDark}
             />
           </div>
         </header>
       )}
 
-      {/* CORPO DO WORKSPACE CAD: NO MODO PRUMO, O CANVAS OCUPA 100% DE PONTA A PONTA SEM BARRAS FIXAS */}
-      <div
-        className={cn(
-          "flex min-h-0 min-w-0 flex-1",
-          uiShellMode === "prumo"
-            ? "gap-0 p-0"
-            : isLandscape || activeMode === "3d"
-              ? "gap-0.5 p-0.5 pt-0"
-              : "gap-0 p-0",
-        )}
-      >
-        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (COREOGRAFIA DE TRANSIÇÃO COMPACTA <-> PRUMO 380ms) */}
-        {!focus &&
-          (uiShellMode !== "prumo" || uiShellTransitionDir === "to-prumo") &&
-          (isLandscape || activeMode === "3d") && (
-          <div
-            style={{
-              transition:
-                "transform 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 340ms cubic-bezier(0.22, 1, 0.36, 1)",
-              transform:
-                uiShellTransitionDir === "to-prumo"
-                  ? "translate3d(-16px, 140px, 0) scale(0.45)"
-                  : "translate3d(0, 0, 0) scale(1)",
-              transformOrigin: "bottom left",
-              opacity: uiShellTransitionDir === "to-prumo" ? 0 : 1,
-              pointerEvents: uiShellTransitionDir === "to-prumo" ? "none" : undefined,
-              position: uiShellTransitionDir === "to-prumo" ? "absolute" : "relative",
-              left: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
-              top: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
-              bottom: uiShellTransitionDir === "to-prumo" ? 0 : undefined,
-              zIndex: 42,
-              display: "flex",
-            }}
-          >
+      {/* CORPO DO WORKSPACE CAD: TOOLBAR VERTICAL (ESQUERDA) + CANVAS (CENTRO) + PROPRIEDADES (DIREITA) */}
+      <div className="flex min-h-0 min-w-0 flex-1 gap-1.5 p-1 pt-0">
+        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (8 GRUPOS CANÔNICOS CAD) */}
+        {!focus && (
           <ChamferCadToolbar
             tool={tool}
             onPickTool={pickTool}
@@ -11371,12 +6347,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onExplodeSelection={handleExplodeSelection}
             onDivideSelection={() => handleOpenDivide()}
             onCenterSelection={handleOpenCenterDialog}
-            onDeleteSelection={() => {
-              if (selection.length === 0) return;
-              commit((list) => list.filter((e) => !selection.includes(e.id)));
-              setSelection([]);
-              toast.success("Seleção removida.");
-            }}
             onArrayLinear={handleArrayLinear}
             onArrayPolar={handleArrayPolar}
             onOpenQuickCommand={() => setQuickCommandOpen(true)}
@@ -11413,29 +6383,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 return next;
               });
             }}
-            snapDivision={snapDivision}
-            onSetSnapDivision={setSnapDivision}
-            showAllSnaps={showAllSnaps}
-            onToggleShowAllSnaps={() => setShowAllSnaps((v) => !v)}
-            interactionGuideMode={interactionGuideMode}
-            onSetInteractionGuideMode={handleSetInteractionGuideMode}
-            onStartSetReferencePoint={() => {
-              if (interactionGuideMode === "off") {
-                handleSetInteractionGuideMode("purple_ref");
-              }
-              setIsSettingReferencePoint(true);
-              toast.info("Toque no vértice, centro ou ponto desejado para fixar o Centro de Referência");
-            }}
-            temporaryOrigin={temporaryOrigin}
-            onClearTemporaryOrigin={() => {
-              setTemporaryOrigin(null);
-              setPinnedMeetingPoints([]);
-              setLockedConstraints({});
-              toast.success("Ponto de referência limpo");
-            }}
-            guideModeOn={guideModeOn}
-            onToggleGuideMode={() => setGuideModeOn((v) => !v)}
-            guideEntitiesCount={guideEntitiesCount}
             dimKind={dimKind}
             onPickDimKind={(k) => {
               setDimKind(k);
@@ -11458,11 +6405,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 orbitDragRef.current = null;
               }
             }}
-            drawingProjection="orthographic"
+            drawingProjection={drawingProjection}
             onToggleDrawingProjection={() => {
-              setDrawingProjection("orthographic");
-              transitionTo2D();
-              toast.info("Modo Ortogonal 2D ativado");
+              setDrawingProjection((p) => {
+                const next = p === "isometric" ? "orthographic" : "isometric";
+                if (next === "isometric") {
+                  toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
+                } else {
+                  toast.info("Modo Ortogonal 2D ativado");
+                }
+                return next;
+              });
             }}
             isoPlane={isoPlane}
             onSelectIsoPlane={(p) => {
@@ -11484,244 +6437,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               triggerHaptic("success");
               toast.success(`REF (0,0) fixada em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
             }}
-            onOpenRevEngCategory={(category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => {
-              setRevEngData((prev) => ({
-                ...prev,
-                activeCategory: category,
-                activeWizardStep: wizardStep ?? prev.activeWizardStep,
-              }));
-              setActiveSidebarTab("eng_rev");
-              setRightSidebarOpen(true);
-            }}
-            activeDirect3DTool={activeDirect3DTool}
-            onSelectDirect3DTool={(next3DTool) => {
-              setActiveDirect3DTool(next3DTool);
-              if (next3DTool === "loft_3d") {
-                setTool("loft_3d");
-              } else if (tool === "loft_3d") {
-                setTool("select");
-              }
-            }}
-            selectionKind3D={
-              subSelection3D.faceIds.length > 0
-                ? "face"
-                : subSelection3D.edgeIds.length > 0 ||
-                    (subSelection3D.vertexIds?.length ?? 0) > 0
-                  ? "edge"
-                  : subSelection3D.bodyIds.length > 0
-                    ? "body"
-                    : "none"
-            }
-            onClearSelection3D={() => {
-              setSelection([]);
-              setSubSelection3D({
-                faceIds: [],
-                edgeIds: [],
-                bodyIds: [],
-                vertexIds: [],
-                selectionScope: "auto",
-                activePivot3D: null,
-                activeHingeEdgeId: null,
-              });
-              setActiveDirect3DTool("select_3d");
-            }}
-            onReturnToSketch2D={transitionTo2D}
             isDark={isDark}
-            compactMode={true}
-            activeStrokeColor={activeStrokeColor}
-            onSelectStrokeColor={handleSelectColorAndLayer}
           />
-          </div>
         )}
 
-        {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM RETRATO E NO MODO PRUMO) */}
+        {/* REGIÃO C — CANVAS CAD PRINCIPAL (DOMINANTE, OCUPANDO A MAIOR ÁREA POSSÍVEL) */}
         <div
           ref={canvasViewportRef}
-          data-chamfer-workspace="true"
-          style={{
-            backgroundColor: frame.visible ? canvasOuterBgColor : canvasBgColor,
-            borderColor: "var(--chamfer-border-strong)",
-          }}
           className={cn(
-            "relative min-h-0 min-w-0 flex-1 overflow-hidden",
-            uiShellMode === "prumo"
-              ? "rounded-none border-0"
-              : isLandscape
-                ? "rounded-xl border shadow-inner"
-                : "rounded-none border-0",
+            "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
+            drawingProjection === "isometric" ||
+              orbitProjection2D.isTilted ||
+              entities.some((e) => e.params?.isIsoSolidFace)
+              ? isDark
+                ? "border-slate-800/90 bg-[#050914] bg-[radial-gradient(ellipse_at_center,#0A1528_0%,#050914_78%)]"
+                : "border-slate-200 bg-[#F8FAFC]"
+              : isDark
+                ? "border-slate-800 bg-[#0d121c]"
+                : "border-slate-200 bg-[#ffffff]",
           )}
-          onPointerDownCapture={(ev) => {
-            if (!isHudInteractiveElement(ev.target)) {
-              ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-            }
-            if (ptrsRef.current.size >= 2) {
-              abortForMultiTouchGesture();
-              const [a, b] = [...ptrsRef.current.values()];
-              if (a && b) {
-                pinchRef.current = {
-                  dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
-                  mx: (a.x + b.x) / 2,
-                  my: (a.y + b.y) / 2,
-                };
-                pinchSessionRef.current = createPinchGestureSessionState(
-                  a.x,
-                  a.y,
-                  b.x,
-                  b.y,
-                  performance.now(),
-                );
-                panRef.current = null;
-                orbitDragRef.current = null;
-              }
-              ev.stopPropagation();
-            }
-          }}
-          onPointerMoveCapture={(ev) => {
-            if (ptrsRef.current.has(ev.pointerId)) {
-              ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-            }
-            if (ptrsRef.current.size >= 2) {
-              abortForMultiTouchGesture();
-              const [a, b] = [...ptrsRef.current.values()];
-              if (a && b) {
-                applyPinchZoomFromScreenPoints(a.x, a.y, b.x, b.y);
-              }
-              ev.stopPropagation();
-            }
-          }}
-          onPointerUpCapture={(ev) => {
-            const wasMulti =
-              isMultiTouchGestureRef.current ||
-              pinchRef.current !== null ||
-              ptrsRef.current.size >= 2;
-            const isInsideSvg = Boolean(
-              svgRef.current && ev.target instanceof Node && svgRef.current.contains(ev.target),
-            );
-            if (wasMulti) {
-              onPointerUp(ev);
-              ev.stopPropagation();
-              return;
-            }
-            if (!isInsideSvg) {
-              ptrsRef.current.delete(ev.pointerId);
-            }
-          }}
-          onPointerCancelCapture={(ev) => {
-            const wasMulti =
-              isMultiTouchGestureRef.current ||
-              pinchRef.current !== null ||
-              ptrsRef.current.size >= 2;
-            if (wasMulti) {
-              onPointerUp(ev);
-              ev.stopPropagation();
-              return;
-            }
-            ptrsRef.current.delete(ev.pointerId);
-          }}
-          onTouchStartCapture={(e) => {
-            if (e.touches.length >= 2) {
-              abortForMultiTouchGesture();
-              const t0 = e.touches[0]!;
-              const t1 = e.touches[1]!;
-              pinchRef.current = {
-                dist: Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY) || 1,
-                mx: (t0.clientX + t1.clientX) / 2,
-                my: (t0.clientY + t1.clientY) / 2,
-              };
-              pinchSessionRef.current = createPinchGestureSessionState(
-                t0.clientX,
-                t0.clientY,
-                t1.clientX,
-                t1.clientY,
-                performance.now(),
-              );
-              panRef.current = null;
-              orbitDragRef.current = null;
-              e.stopPropagation();
-            }
-          }}
-          onTouchMoveCapture={(e) => {
-            if (e.touches.length >= 2) {
-              abortForMultiTouchGesture();
-              const t0 = e.touches[0]!;
-              const t1 = e.touches[1]!;
-              applyPinchZoomFromScreenPoints(
-                t0.clientX,
-                t0.clientY,
-                t1.clientX,
-                t1.clientY,
-              );
-              e.stopPropagation();
-            }
-          }}
-          onTouchEndCapture={(e) => {
-            if (isMultiTouchGestureRef.current) {
-              if (e.touches.length < 2) {
-                pinchRef.current = null;
-                pinchSessionRef.current = null;
-              }
-              if (e.touches.length === 0) {
-                ptrsRef.current.clear();
-                const now = performance.now();
-                gestureCooldownUntilRef.current = now + 150;
-                gestureUntilRef.current = now + 200;
-                dragCooldownUntilRef.current = now + 200;
-                if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-                cooldownTimerRef.current = setTimeout(() => {
-                  isMultiTouchGestureRef.current = false;
-                  touchInteractionStateRef.current = "IDLE";
-                  setTouchInteractionState("IDLE");
-                }, 160);
-              }
-              e.stopPropagation();
-            }
-          }}
-          onClickCapture={(e) => {
-            if (
-              isMultiTouchGestureRef.current ||
-              performance.now() < gestureCooldownUntilRef.current
-            ) {
-              e.stopPropagation();
-              e.preventDefault();
-            }
-          }}
         >
-          {bgStyle === "fluido" && (
-            <div
-              aria-hidden="true"
-              data-paused={gesturing || solidOpen || isInPlaceSolid3DActive ? "true" : "false"}
-              className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-            >
-              <div className="silk-light-generator-bleed">
-                <div className="liquid-silk-field liquid-silk-field-1" />
-                <div className="liquid-silk-field liquid-silk-field-2" />
-                <div className="liquid-silk-field liquid-silk-field-3" />
-              </div>
-              <div className="silk-micro-dither" />
-            </div>
-          )}
-          {bgStyle === "suave" && (
-            <div
-              aria-hidden="true"
-              data-paused={gesturing || solidOpen || isInPlaceSolid3DActive ? "true" : "false"}
-              className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-            >
-              <div className="fluid-aurora-veils-bleed">
-                <div className="fluid-aurora-veil fluid-aurora-veil-amber" />
-                <div className="fluid-aurora-veil fluid-aurora-veil-coral" />
-                <div className="fluid-aurora-veil fluid-aurora-veil-cyan" />
-                <div className="fluid-aurora-veil fluid-aurora-veil-violet" />
-              </div>
-              <div className="silk-micro-dither" />
-            </div>
-          )}
-          {themeColors.canvasOverlayGradient !== "none" && (
-            <div
-              aria-hidden="true"
-              style={{ background: themeColors.canvasOverlayGradient }}
-              className="pointer-events-none absolute inset-[-35%] z-0"
-            />
-          )}
           {solidOpen && (
             <div
               className={cn(
@@ -11760,385 +6495,190 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )}
           <div
             className={cn(
-              "relative z-[2] size-full",
+              "relative size-full",
               solidOpen && morphState !== "PREPARING_3D" && "pointer-events-none",
             )}
           >
-              {/* CAMADAS 1 E 2 (FUNDO DA PRANCHETA + GRADE TÉCNICA INTERNA/EXTERNA — RENDERIZADAS ABAIXO DO CANVAS DE PEÇAS) */}
-              {(showGrid || frame.visible) &&
-                (!solidOpen || morphState === "PREPARING_3D") && (
+              {/* GRADE CAD REAL E FUNCIONAL (ACOMPANHA ZOOM, PAN E ORIGEM DE COORDENADAS) */}
+              {showGrid && (!solidOpen || morphState === "PREPARING_3D") && (
                 <svg className="pointer-events-none absolute inset-0 size-full">
                   <defs>
-                    {/* CLIP PATH DA ÁREA DE TRABALHO PARA SEPARAR GRADE INTERNA DA GRADE EXTERNA */}
-                    {frame.visible &&
-                      Number.isFinite(frame.w) &&
-                      Number.isFinite(frame.h) &&
-                      frame.w > 0 &&
-                      frame.h > 0 && (
-                        <clipPath id="chamfer-workspace-sheet-clip">
-                          <rect
-                            x={0}
-                            y={0}
-                            width={frame.w}
-                            height={frame.h}
-                            transform={`translate(${view.tx} ${view.ty}) scale(${view.k})${
-                              orbitProjection2D.isTilted ? ` ${orbitProjection2D.svgMatrix}` : ""
-                            }`}
-                          />
-                        </clipPath>
-                      )}
+                    {/* 1. GRID SECUNDÁRIO — subdivisões finas (10-18% Dark / 10-15% Light, adaptável ao zoom) */}
+                    {gridConfig.subFade > 0.02 && (
+                      <pattern
+                        id="chamfer-grid-secondary"
+                        width={Math.max(0.1, gridConfig.subStep * view.k)}
+                        height={Math.max(0.1, gridConfig.subStep * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={((view.tx % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
+                        y={((view.ty % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
+                      >
+                        <path
+                          d={`M ${gridConfig.subStep * view.k} 0 H 0 V ${gridConfig.subStep * view.k}`}
+                          fill="none"
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                          shapeRendering="crispEdges"
+                        />
+                      </pattern>
+                    )}
 
-                    {(() => {
-                      const safeGridK = Number.isFinite(view.k) && view.k > 1e-4 ? view.k : 1;
-                      const isTilted3D = orbitProjection2D.isTilted;
-                      const worldPatternTransform = isTilted3D
-                        ? `translate(${view.tx} ${view.ty}) scale(${safeGridK}) ${orbitProjection2D.svgMatrix}`
-                        : undefined;
-                      const tiltScaleComp = isTilted3D
-                        ? safeGridK *
-                          Math.sqrt(
-                            Math.max(0.28, Math.abs(orbitProjection2D.effectiveSinElevation ?? 1)),
-                          )
-                        : 1;
-                      const gridShapeRendering = isTilted3D ? "geometricPrecision" : "crispEdges";
+                    {/* 2. GRID PRINCIPAL — divisões intermediárias (25-35% Dark / 22-32% Light, ex: 50mm) */}
+                    {gridConfig.majorFade > 0.02 && (
+                      <pattern
+                        id="chamfer-grid-major"
+                        width={Math.max(0.1, gridConfig.majorStep * view.k)}
+                        height={Math.max(0.1, gridConfig.majorStep * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={((view.tx % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
+                        y={((view.ty % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
+                      >
+                        <path
+                          d={`M ${gridConfig.majorStep * view.k} 0 H 0 V ${gridConfig.majorStep * view.k}`}
+                          fill="none"
+                          stroke={gridStyles.majorStroke}
+                          strokeWidth={gridStyles.majorWidth}
+                          shapeRendering="crispEdges"
+                        />
+                      </pattern>
+                    )}
 
-                      const subCell = isTilted3D
-                        ? Math.max(0.1, gridConfig.subStep)
-                        : Math.max(0.1, gridConfig.subStep * safeGridK);
-                      const subOffX = isTilted3D
-                        ? 0
-                        : ((view.tx % subCell) + subCell) % subCell;
-                      const subOffY = isTilted3D
-                        ? 0
-                        : ((view.ty % subCell) + subCell) % subCell;
-                      const subStrokeW = gridStyles.secondaryWidth / tiltScaleComp;
-
-                      const majorCell = isTilted3D
-                        ? Math.max(0.1, gridConfig.majorStep)
-                        : Math.max(0.1, gridConfig.majorStep * safeGridK);
-                      const majorOffX = isTilted3D
-                        ? 0
-                        : ((view.tx % majorCell) + majorCell) % majorCell;
-                      const majorOffY = isTilted3D
-                        ? 0
-                        : ((view.ty % majorCell) + majorCell) % majorCell;
-                      const majorStrokeW = gridStyles.majorWidth / tiltScaleComp;
-
-                      const macroCell = isTilted3D
-                        ? Math.max(0.1, gridConfig.macroStep)
-                        : Math.max(0.1, gridConfig.macroStep * safeGridK);
-                      const macroOffX = isTilted3D
-                        ? 0
-                        : ((view.tx % macroCell) + macroCell) % macroCell;
-                      const macroOffY = isTilted3D
-                        ? 0
-                        : ((view.ty % macroCell) + macroCell) % macroCell;
-                      const macroStrokeW = gridStyles.macroWidth / tiltScaleComp;
-
-                      const isoCellW = isTilted3D
-                        ? Math.max(1, grid * Math.sqrt(3))
-                        : Math.max(1, grid * Math.sqrt(3) * safeGridK);
-                      const isoCellH = isTilted3D
-                        ? Math.max(1, grid)
-                        : Math.max(1, grid * safeGridK);
-                      const isoOffX = isTilted3D
-                        ? 0
-                        : ((view.tx % isoCellW) + isoCellW) % isoCellW;
-                      const isoOffY = isTilted3D
-                        ? 0
-                        : ((view.ty % isoCellH) + isoCellH) % isoCellH;
-
-                      return (
-                        <>
-                          {/* 1A. GRID SECUNDÁRIO INTERNO (DENTRO DA ÁREA DE TRABALHO — PROJETADO NO PLANO Z=0 EM 3D) */}
-                          {gridConfig.subFade > 0.02 && (
-                            <pattern
-                              id="chamfer-grid-secondary"
-                              width={subCell}
-                              height={subCell}
-                              patternUnits="userSpaceOnUse"
-                              x={subOffX}
-                              y={subOffY}
-                              patternTransform={worldPatternTransform}
-                            >
-                              <path
-                                d={`M ${subCell} 0 H 0 V ${subCell}`}
-                                fill="none"
-                                stroke={gridStyles.secondaryStroke}
-                                strokeWidth={subStrokeW}
-                                shapeRendering={gridShapeRendering}
-                              />
-                            </pattern>
-                          )}
-
-                          {/* 1B. GRID SECUNDÁRIO EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
-                          {gridConfig.subFade > 0.02 && (
-                            <pattern
-                              id="chamfer-grid-secondary-ext"
-                              width={subCell}
-                              height={subCell}
-                              patternUnits="userSpaceOnUse"
-                              x={subOffX}
-                              y={subOffY}
-                              patternTransform={worldPatternTransform}
-                            >
-                              <path
-                                d={`M ${subCell} 0 H 0 V ${subCell}`}
-                                fill="none"
-                                stroke={gridStyles.extSecondaryStroke}
-                                strokeWidth={subStrokeW}
-                                shapeRendering={gridShapeRendering}
-                              />
-                            </pattern>
-                          )}
-
-                          {/* 2A. GRID PRINCIPAL INTERNO (DENTRO DA ÁREA DE TRABALHO — PROJETADO NO PLANO Z=0 EM 3D) */}
-                          {gridConfig.majorFade > 0.02 && (
-                            <pattern
-                              id="chamfer-grid-major"
-                              width={majorCell}
-                              height={majorCell}
-                              patternUnits="userSpaceOnUse"
-                              x={majorOffX}
-                              y={majorOffY}
-                              patternTransform={worldPatternTransform}
-                            >
-                              <path
-                                d={`M ${majorCell} 0 H 0 V ${majorCell}`}
-                                fill="none"
-                                stroke={gridStyles.majorStroke}
-                                strokeWidth={majorStrokeW}
-                                shapeRendering={gridShapeRendering}
-                              />
-                            </pattern>
-                          )}
-
-                          {/* 2B. GRID PRINCIPAL EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
-                          {gridConfig.majorFade > 0.02 && (
-                            <pattern
-                              id="chamfer-grid-major-ext"
-                              width={majorCell}
-                              height={majorCell}
-                              patternUnits="userSpaceOnUse"
-                              x={majorOffX}
-                              y={majorOffY}
-                              patternTransform={worldPatternTransform}
-                            >
-                              <path
-                                d={`M ${majorCell} 0 H 0 V ${majorCell}`}
-                                fill="none"
-                                stroke={gridStyles.extMajorStroke}
-                                strokeWidth={majorStrokeW}
-                                shapeRendering={gridShapeRendering}
-                              />
-                            </pattern>
-                          )}
-
-                          {/* 3A. GRID MACRO INTERNO */}
-                          <pattern
-                            id="chamfer-grid-macro"
-                            width={macroCell}
-                            height={macroCell}
-                            patternUnits="userSpaceOnUse"
-                            x={macroOffX}
-                            y={macroOffY}
-                            patternTransform={worldPatternTransform}
-                          >
-                            <path
-                              d={`M ${macroCell} 0 H 0 V ${macroCell}`}
-                              fill="none"
-                              stroke={gridStyles.macroStroke}
-                              strokeWidth={macroStrokeW}
-                              shapeRendering={gridShapeRendering}
-                            />
-                          </pattern>
-
-                          {/* 3B. GRID MACRO EXTERNO */}
-                          <pattern
-                            id="chamfer-grid-macro-ext"
-                            width={macroCell}
-                            height={macroCell}
-                            patternUnits="userSpaceOnUse"
-                            x={macroOffX}
-                            y={macroOffY}
-                            patternTransform={worldPatternTransform}
-                          >
-                            <path
-                              d={`M ${macroCell} 0 H 0 V ${macroCell}`}
-                              fill="none"
-                              stroke={gridStyles.extMacroStroke}
-                              strokeWidth={macroStrokeW}
-                              shapeRendering={gridShapeRendering}
-                            />
-                          </pattern>
-
-                          {/* 4. GRADE ISOMÉTRICA ESPACIAL (EIXOS A 30°, 90°, 150°) */}
-                          {drawingProjection === "isometric" && (
-                            <pattern
-                              id="chamfer-grid-isometric"
-                              width={isoCellW}
-                              height={isoCellH}
-                              patternUnits="userSpaceOnUse"
-                              x={isoOffX}
-                              y={isoOffY}
-                              patternTransform={worldPatternTransform}
-                            >
-                              {/* Linhas a 90° (verticais) */}
-                              <line
-                                x1={0}
-                                y1={0}
-                                x2={0}
-                                y2={isoCellH}
-                                stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.12)"}
-                                strokeWidth={0.8 / tiltScaleComp}
-                              />
-                              <line
-                                x1={isoCellW / 2}
-                                y1={0}
-                                x2={isoCellW / 2}
-                                y2={isoCellH}
-                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                                strokeWidth={0.65 / tiltScaleComp}
-                              />
-                              {/* Linhas a 30° */}
-                              <line
-                                x1={0}
-                                y1={isoCellH / 2}
-                                x2={isoCellW / 2}
-                                y2={0}
-                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                                strokeWidth={0.65 / tiltScaleComp}
-                              />
-                              <line
-                                x1={0}
-                                y1={isoCellH}
-                                x2={isoCellW}
-                                y2={0}
-                                stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
-                                strokeWidth={0.85 / tiltScaleComp}
-                              />
-                              <line
-                                x1={isoCellW / 2}
-                                y1={isoCellH}
-                                x2={isoCellW}
-                                y2={isoCellH / 2}
-                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                                strokeWidth={0.65 / tiltScaleComp}
-                              />
-                              {/* Linhas a 150° */}
-                              <line
-                                x1={0}
-                                y1={isoCellH / 2}
-                                x2={isoCellW / 2}
-                                y2={isoCellH}
-                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                                strokeWidth={0.65 / tiltScaleComp}
-                              />
-                              <line
-                                x1={0}
-                                y1={0}
-                                x2={isoCellW}
-                                y2={isoCellH}
-                                stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
-                                strokeWidth={0.85 / tiltScaleComp}
-                              />
-                              <line
-                                x1={isoCellW / 2}
-                                y1={0}
-                                x2={isoCellW}
-                                y2={isoCellH / 2}
-                                stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
-                                strokeWidth={0.65 / tiltScaleComp}
-                              />
-                            </pattern>
-                          )}
-                        </>
-                      );
-                    })()}
+                    {/* 3. GRID MACRO / LINHA PRINCIPAL DE REFERÊNCIA — intervalos maiores (~35-40%, ex: 100mm) */}
+                    <pattern
+                      id="chamfer-grid-macro"
+                      width={Math.max(0.1, gridConfig.macroStep * view.k)}
+                      height={Math.max(0.1, gridConfig.macroStep * view.k)}
+                      patternUnits="userSpaceOnUse"
+                      x={((view.tx % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
+                      y={((view.ty % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
+                    >
+                      <path
+                        d={`M ${gridConfig.macroStep * view.k} 0 H 0 V ${gridConfig.macroStep * view.k}`}
+                        fill="none"
+                        stroke={gridStyles.macroStroke}
+                        strokeWidth={gridStyles.macroWidth}
+                        shapeRendering="crispEdges"
+                      />
+                    </pattern>
+                    {/* 4. GRADE ISOMÉTRICA ESPACIAL (EIXOS A 30°, 90°, 150°) */}
+                    {drawingProjection === "isometric" && (
+                      <pattern
+                        id="chamfer-grid-isometric"
+                        width={Math.max(1, grid * Math.sqrt(3) * view.k)}
+                        height={Math.max(1, grid * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={
+                          ((view.tx % (grid * Math.sqrt(3) * view.k)) +
+                            grid * Math.sqrt(3) * view.k) %
+                          (grid * Math.sqrt(3) * view.k)
+                        }
+                        y={((view.ty % (grid * view.k)) + grid * view.k) % (grid * view.k)}
+                      >
+                        {/* Linhas a 90° (verticais) */}
+                        <line
+                          x1={0}
+                          y1={0}
+                          x2={0}
+                          y2={grid * view.k}
+                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.12)"}
+                          strokeWidth={0.8}
+                        />
+                        <line
+                          x1={(grid * Math.sqrt(3) * view.k) / 2}
+                          y1={0}
+                          x2={(grid * Math.sqrt(3) * view.k) / 2}
+                          y2={grid * view.k}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
+                        />
+                        {/* Linhas a 30° */}
+                        <line
+                          x1={0}
+                          y1={(grid * view.k) / 2}
+                          x2={(grid * Math.sqrt(3) * view.k) / 2}
+                          y2={0}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
+                        />
+                        <line
+                          x1={0}
+                          y1={grid * view.k}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={0}
+                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
+                          strokeWidth={0.85}
+                        />
+                        <line
+                          x1={(grid * Math.sqrt(3) * view.k) / 2}
+                          y1={grid * view.k}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={(grid * view.k) / 2}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
+                        />
+                        {/* Linhas a 150° */}
+                        <line
+                          x1={0}
+                          y1={(grid * view.k) / 2}
+                          x2={(grid * Math.sqrt(3) * view.k) / 2}
+                          y2={grid * view.k}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
+                        />
+                        <line
+                          x1={0}
+                          y1={0}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={grid * view.k}
+                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
+                          strokeWidth={0.85}
+                        />
+                        <line
+                          x1={(grid * Math.sqrt(3) * view.k) / 2}
+                          y1={0}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={(grid * view.k) / 2}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
+                        />
+                      </pattern>
+                    )}
                   </defs>
 
-                  {/* PASSO 1 — Grade Externa Suave sobre a Superfície de Apoio (#DCE3EC no Claro / #060A11 no Escuro) */}
-                  {showGrid &&
-                    frame.visible &&
-                    drawingProjection !== "isometric" && (
-                      <>
-                        {gridConfig.subFade > 0.02 && (
-                          <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary-ext)" />
-                        )}
-                        {gridConfig.majorFade > 0.02 && (
-                          <rect width="100%" height="100%" fill="url(#chamfer-grid-major-ext)" />
-                        )}
-                        {gridConfig.macroStep * view.k >= 8 && (
-                          <rect width="100%" height="100%" fill="url(#chamfer-grid-macro-ext)" />
-                        )}
-                      </>
-                    )}
-
-                  {/* PASSO 2 — Superfície Interna da Área de Trabalho (Papel Técnico #FAFBFD no Claro / Azul-Noite #0D1526 no Escuro) */}
-                  {frame.visible &&
-                    Number.isFinite(frame.w) &&
-                    Number.isFinite(frame.h) &&
-                    frame.w > 0 &&
-                    frame.h > 0 && (
-                      <g
-                        transform={`translate(${view.tx} ${view.ty}) scale(${view.k})${
-                          orbitProjection2D.isTilted ? ` ${orbitProjection2D.svgMatrix}` : ""
-                        }`}
-                      >
-                        <rect
-                          x={0}
-                          y={0}
-                          width={frame.w}
-                          height={frame.h}
-                          fill={canvasBgColor}
-                          fillOpacity={bgStyle === "padrao" ? 1 : isDark ? 0.48 : 0.54}
-                        />
-                      </g>
-                    )}
-
-                  {/* PASSO 3 — Grade Técnica Interna Nítida (Recortada à Área de Trabalho ou em tela cheia se frame.visible=false) */}
-                  {showGrid &&
-                    (drawingProjection === "isometric" ? (
-                      <rect width="100%" height="100%" fill="url(#chamfer-grid-isometric)" />
-                    ) : (
-                      <g clipPath={frame.visible ? "url(#chamfer-workspace-sheet-clip)" : undefined}>
-                        {gridConfig.subFade > 0.02 && (
-                          <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
-                        )}
-                        {gridConfig.majorFade > 0.02 && (
-                          <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
-                        )}
-                        {gridConfig.macroStep * view.k >= 8 && (
-                          <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
-                        )}
-                      </g>
-                    ))}
+                  {/* Renderização em camadas ordenadas de profundidade e contraste */}
+                  {drawingProjection === "isometric" ? (
+                    <rect width="100%" height="100%" fill="url(#chamfer-grid-isometric)" />
+                  ) : (
+                    <>
+                      {gridConfig.subFade > 0.02 && (
+                        <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
+                      )}
+                      {gridConfig.majorFade > 0.02 && (
+                        <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
+                      )}
+                      {gridConfig.macroStep * view.k >= 8 && (
+                        <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
+                      )}
+                    </>
+                  )}
                 </svg>
               )}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
-          {/* MOTOR 3D SÓLIDO IN-PLACE ACOPLADO AO CANVAS UNIFICADO DO 2D SKETCH (LAZY-LOADED SOB DEMANDA) */}
-          {(isInPlaceSolid3DActive || cad3dTreeJson !== undefined) && (
-            <Suspense fallback={null}>
-              <ChamferUnified3DViewport
-                active={isInPlaceSolid3DActive}
-                entities={drawable}
-                thickness={thickness}
-                edgeMode={renderStyle3D}
-                brepWireframeLayers={brepWireframeLayers}
-                topologyScene={topologyScene3D}
-                view2D={view}
-                viewportSize={canvasSize}
-                azimuthDeg={orbitAzimuthDeg}
-                elevationDeg={orbitElevationDeg}
-                pivot2D={smartOrbitPivot}
-                isDark={isDark}
-                initialTreeJson={cad3dTreeJson}
-                onTreeChange={setCad3dTreeJson}
-                activeLoftPreviewMesh={activeLoftPreviewMesh}
-                subSelection3D={subSelection3D}
-              />
-            </Suspense>
-          )}
+          {/* MOTOR 3D SÓLIDO IN-PLACE ACOPLADO AO CANVAS UNIFICADO DO 2D SKETCH */}
+          <ChamferUnified3DViewport
+            active={isInPlaceSolid3DActive}
+            entities={drawable}
+            thickness={thickness}
+            edgeMode={renderStyle3D}
+            view2D={view}
+            viewportSize={canvasSize}
+            azimuthDeg={orbitAzimuthDeg}
+            elevationDeg={orbitElevationDeg}
+            pivot2D={smartOrbitPivot}
+            isDark={isDark}
+            initialTreeJson={cad3dTreeJson}
+            onTreeChange={setCad3dTreeJson}
+          />
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
           {!solidOpen && <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />}
 
@@ -12148,56 +6688,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               "absolute inset-0 size-full touch-none",
               isOrbitToolActive && "cursor-grab active:cursor-grabbing",
             )}
-            onTouchStart={(e) => {
-              if (e.touches.length >= 2) {
-                abortForMultiTouchGesture();
-              }
-            }}
-            onTouchMove={(e) => {
-              if (e.touches.length >= 2) {
-                abortForMultiTouchGesture();
-              }
-            }}
-            onTouchEnd={(e) => {
-              if (isMultiTouchGestureRef.current) {
-                if (e.touches.length === 0) {
-                  const now = performance.now();
-                  gestureCooldownUntilRef.current = now + 150;
-                  gestureUntilRef.current = now + 200;
-                  dragCooldownUntilRef.current = now + 200;
-                  if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-                  cooldownTimerRef.current = setTimeout(() => {
-                    isMultiTouchGestureRef.current = false;
-                    touchInteractionStateRef.current = "IDLE";
-                    setTouchInteractionState("IDLE");
-                  }, 160);
-                }
-              }
-            }}
-            onTouchCancel={() => {
-              if (isMultiTouchGestureRef.current) {
-                const now = performance.now();
-                gestureCooldownUntilRef.current = now + 150;
-                if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-                cooldownTimerRef.current = setTimeout(() => {
-                  isMultiTouchGestureRef.current = false;
-                  touchInteractionStateRef.current = "IDLE";
-                  setTouchInteractionState("IDLE");
-                }, 160);
-              }
-            }}
-            onPointerDown={(e) => {
-              if (
-                !isLandscape &&
-                shouldAutoCollapseDrawerOnCanvasTouch({
-                  drawerOpen: portraitDrawerOpen,
-                  isPickingCanvasPoints: revEngCanvasMode !== "none",
-                })
-              ) {
-                setPortraitDrawerOpen(false);
-              }
-              onPointerDown(e);
-            }}
+            onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
@@ -12210,18 +6701,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               const hit = hitTest(toWorld(e, true));
               if (hit) {
                 setSelection([hit.id]);
-                if (hit.type === "text") {
-                  openRichNoteEditorForEntity(hit);
-                  triggerHaptic("action");
-                  return;
-                }
+                setMobileEditorOpenManual(true);
+                setRightSidebarOpen(true);
                 setActiveSidebarTab("propriedades");
-                if (isLandscape) {
-                  setMobileEditorOpenManual(true);
-                  setRightSidebarOpen(true);
-                } else {
-                  setPortraitDrawerOpen(true);
-                }
                 triggerHaptic("action");
               }
             }}
@@ -12263,307 +6745,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* IMAGENS DE REFERÊNCIA DA BANCADA DE ENGENHARIA REVERSA (CALIBRADAS 1:1 — NUNCA VIRAM CORTE CNC) */}
-              {!solidOpen &&
-                outputMode === "completo" &&
-                revEngData.referenceImages
-                  .filter((img) => img.visible && (img.rectifiedSrc || img.src))
-                  .map((img) => {
-                    const wMm = Math.max(1, img.widthMm || img.naturalWidthPx * img.mmPerPx);
-                    const hMm = Math.max(1, img.heightMm || img.naturalHeightPx * img.mmPerPx);
-                    const cx = img.xMm + wMm / 2;
-                    const cy = img.yMm + hMm / 2;
-                    return (
-                      <g
-                        key={`reveng-img-${img.id}`}
-                        pointerEvents="none"
-                        transform={
-                          Math.abs(img.rotationDeg) > 1e-3
-                            ? `rotate(${img.rotationDeg} ${cx} ${cy})`
-                            : undefined
-                        }
-                      >
-                        <image
-                          href={img.rectifiedSrc || img.src}
-                          x={img.xMm}
-                          y={img.yMm}
-                          width={wMm}
-                          height={hMm}
-                          opacity={img.opacity}
-                          preserveAspectRatio="none"
-                        />
-                      </g>
-                    );
-                  })}
-
-              {/* LINHAS DE REFERÊNCIA ORTOGONAL INFINITAS SUAVIZADAS (DESENHADAS ANTES DA MOLDURA PARA NUNCA TINGIR A BORDA SUPERIOR DE VERMELHO) */}
-              {!solidOpen &&
-                showGrid &&
-                drawingProjection !== "isometric" && (
-                <g pointerEvents="none" aria-hidden="true">
-                  <line
-                    x1={-1e5}
-                    y1={0}
-                    x2={1e5}
-                    y2={0}
-                    stroke={gridStyles.axisInfinite}
-                    strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
-                  />
-                  <line
-                    x1={0}
-                    y1={-1e5}
-                    x2={0}
-                    y2={1e5}
-                    stroke={gridStyles.axisInfinite}
-                    strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
-                  />
-                </g>
-              )}
-
-              {/* CAMADA 3 — Moldura Uniforme nos 4 Lados, Cantoneiras Discretas, Margem e Cotas da Área de Trabalho */}
-              {frame.visible &&
-                !solidOpen &&
-                Number.isFinite(frame.w) &&
-                Number.isFinite(frame.h) &&
-                frame.w > 0 &&
-                frame.h > 0 &&
-                (() => {
-                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                  const cornerLen = Math.max(12 / safeK, Math.min(frame.w, frame.h) * 0.035);
-                  const marginInset = Math.min(20, Math.min(frame.w, frame.h) * 0.025);
-                  const borderColor = isDark ? "#38BDF8" : "#0284C7";
-                  const cornerColor = borderColor;
-                  const dashedMarginColor = "#38BDF8";
-                  const dimLineColor = "#38BDF8";
-                  const dimPillBg = isDark ? "#162A42" : "#FFFFFF";
-                  const dimPillBorder = isDark ? "#38BDF8" : "#7DD3FC";
-                  const dimPillText = isDark ? "#7DD3FC" : "#0284C7";
-                  const headerPillBg = isDark ? "#222E44" : "#FFFFFF";
-                  const headerPillBorder = isDark ? "#384B6B" : "#E2E8F0";
-                  const headerPillText = isDark ? "#F1F5F9" : "#1E293B";
-                  const dimOffsetPx = 18 / safeK;
-                  const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
-                  const rawHeaderPx = headerBadgeText.length * 5.8 + 14;
-                  const maxAllowedHeaderPx = Math.max(130, frame.w * safeK);
-                  const badgeScale = rawHeaderPx > maxAllowedHeaderPx ? maxAllowedHeaderPx / rawHeaderPx : 1;
-                  const headerFontSize = (9.5 * badgeScale) / safeK;
-                  const headerPadX = (7 * badgeScale) / safeK;
-                  const headerPadY = 4 / safeK;
-                  const headerW = (rawHeaderPx * badgeScale) / safeK;
-                  const headerH = 20 / safeK;
-                  const headerY = (frame.showDims ? -48 : -26) / safeK;
-                  // Offset horizontal para manter a origem (0,0) e as setas +X/+Y 100% desobstruídas
-                  const headerX = Math.max(
-                    118 / safeK,
-                    Math.min(frame.w * 0.18, Math.max(0, frame.w - headerW)),
-                  );
-                  const widthPillW = Math.min(92 / safeK, frame.w * 0.85);
-                  const widthPillCenterX =
-                    frame.w > headerX + headerW + widthPillW + 24 / safeK
-                      ? Math.max(frame.w / 2, headerX + headerW + widthPillW / 2 + 14 / safeK)
-                      : frame.w / 2;
-
-                  return (
-                    <g aria-label="Área de Trabalho CAD">
-                      {/* Contorno Técnico Uniforme nos 4 Lados */}
-                      <rect
-                        x={0}
-                        y={0}
-                        width={frame.w}
-                        height={frame.h}
-                        fill="none"
-                        stroke={borderColor}
-                        strokeOpacity={1}
-                        strokeWidth={2.0 / safeK}
-                        pointerEvents="none"
-                      />
-
-                      {/* Margem operacional interna tracejada sutil (fill="none") */}
-                      {frame.w > marginInset * 3 && frame.h > marginInset * 3 && (
-                        <rect
-                          x={marginInset}
-                          y={marginInset}
-                          width={frame.w - marginInset * 2}
-                          height={frame.h - marginInset * 2}
-                          fill="none"
-                          stroke={dashedMarginColor}
-                          strokeOpacity={isDark ? 0.45 : 0.75}
-                          strokeWidth={1 / safeK}
-                          strokeDasharray={`${6 / safeK} ${4 / safeK}`}
-                          pointerEvents="none"
-                        />
-                      )}
-
-                      {/* 4 Cantoneiras Técnicas Discretas e Alinhadas na Mesma Cor Técnica da Moldura */}
-                      {(
-                        [
-                          [0, 0, 1, 1],
-                          [frame.w, 0, -1, 1],
-                          [0, frame.h, 1, -1],
-                          [frame.w, frame.h, -1, -1],
-                        ] as const
-                      ).map(([cx, cy, sx, sy]) => (
-                        <g key={`corner-${cx}-${cy}`} pointerEvents="none">
-                          <path
-                            d={`M ${cx + sx * cornerLen} ${cy} L ${cx} ${cy} L ${cx} ${cy + sy * cornerLen}`}
-                            fill="none"
-                            stroke={cornerColor}
-                            strokeWidth={2.2 / safeK}
-                            strokeLinecap="square"
-                          />
-                        </g>
-                      ))}
-
-                      {/* Selo Técnico Interativo da Área de Trabalho (20px de altura, 9.5px font, deslocado de (0,0)) */}
-                      <g
-                        data-testid="chamfer-workspace-area-pill"
-                        pointerEvents="auto"
-                        style={{ cursor: "pointer" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerHaptic("selection");
-                          setStatusWorkspaceMenuOpen(true);
-                          setStatusPrecisionMenuOpen(false);
-                          setStatusCncMenuOpen(false);
-                        }}
-                      >
-                        <rect
-                          x={headerX}
-                          y={headerY}
-                          width={headerW}
-                          height={headerH}
-                          rx={5 / safeK}
-                          fill={headerPillBg}
-                          stroke={headerPillBorder}
-                          strokeWidth={1.1 / safeK}
-                        />
-                        <text
-                          x={headerX + headerPadX}
-                          y={headerY + headerH - headerPadY - 1.5 / safeK}
-                          fontSize={headerFontSize}
-                          fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'
-                          fontWeight="700"
-                          fill={headerPillText}
-                        >
-                          {headerBadgeText}
-                        </text>
-                      </g>
-
-                      {/* Cotas Totais Desobstruídas da Área de Trabalho (Largura e Altura) */}
-                      {frame.showDims && (
-                        <g pointerEvents="none" fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'>
-                          {/* Linha de Cota Superior (Largura Total) */}
-                          <line
-                            x1={0}
-                            y1={-dimOffsetPx}
-                            x2={frame.w}
-                            y2={-dimOffsetPx}
-                            stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.75 : 0.85}
-                            strokeWidth={1 / safeK}
-                            strokeDasharray={`${4 / safeK} ${3 / safeK}`}
-                          />
-                          <line
-                            x1={0}
-                            y1={-4 / safeK}
-                            x2={0}
-                            y2={-dimOffsetPx - 4 / safeK}
-                            stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.85 : 0.9}
-                            strokeWidth={1.1 / safeK}
-                          />
-                          <line
-                            x1={frame.w}
-                            y1={-4 / safeK}
-                            x2={frame.w}
-                            y2={-dimOffsetPx - 4 / safeK}
-                            stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.85 : 0.9}
-                            strokeWidth={1.1 / safeK}
-                          />
-                          <rect
-                            x={widthPillCenterX - widthPillW / 2}
-                            y={-dimOffsetPx - 8.5 / safeK}
-                            width={widthPillW}
-                            height={17 / safeK}
-                            rx={4 / safeK}
-                            fill={dimPillBg}
-                            stroke={dimPillBorder}
-                            strokeOpacity={1}
-                            strokeWidth={1 / safeK}
-                          />
-                          <text
-                            x={widthPillCenterX}
-                            y={-dimOffsetPx + 3.5 / safeK}
-                            fontSize={10.5 / safeK}
-                            fontWeight="700"
-                            fill={dimPillText}
-                            textAnchor="middle"
-                          >
-                            {frame.w.toFixed(2)} mm
-                          </text>
-
-                          {/* Linha de Cota Lateral Esquerda (Altura Total) */}
-                          <line
-                            x1={-dimOffsetPx}
-                            y1={0}
-                            x2={-dimOffsetPx}
-                            y2={frame.h}
-                            stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.75 : 0.85}
-                            strokeWidth={1 / safeK}
-                            strokeDasharray={`${4 / safeK} ${3 / safeK}`}
-                          />
-                          <line
-                            x1={-4 / safeK}
-                            y1={0}
-                            x2={-dimOffsetPx - 4 / safeK}
-                            y2={0}
-                            stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.85 : 0.9}
-                            strokeWidth={1.1 / safeK}
-                          />
-                          <line
-                            x1={-4 / safeK}
-                            y1={frame.h}
-                            x2={-dimOffsetPx - 4 / safeK}
-                            y2={frame.h}
-                            stroke={dimLineColor}
-                            strokeOpacity={isDark ? 0.85 : 0.9}
-                            strokeWidth={1.1 / safeK}
-                          />
-                          <g transform={`translate(${-dimOffsetPx} ${frame.h / 2}) rotate(-90)`}>
-                            <rect
-                              x={-46 / safeK}
-                              y={-9 / safeK}
-                              width={92 / safeK}
-                              height={18 / safeK}
-                              rx={4 / safeK}
-                              fill={dimPillBg}
-                              stroke={dimPillBorder}
-                              strokeOpacity={1}
-                              strokeWidth={1 / safeK}
-                            />
-                            <text
-                              x={0}
-                              y={3.5 / safeK}
-                              fontSize={10.5 / safeK}
-                              fontWeight="700"
-                              fill={dimPillText}
-                              textAnchor="middle"
-                            >
-                              {frame.h.toFixed(2)} mm
-                            </text>
-                          </g>
-                        </g>
-                      )}
-                    </g>
-                  );
-                })()}
-
-              {/* Eixos e Tríade de Origem (0,0) Separados da Moldura (+X em #E11D48, +Y em #10B981/#059669, Origem em #DC143C) */}
-              {!solidOpen &&
-                showGrid && (
+              {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
+              {!solidOpen && showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
                   {drawingProjection === "isometric" ? (
                     <>
@@ -12632,48 +6815,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   ) : (
                     <>
-                      {/* Setas Curtas e Nítidas de Orientação (~90 px visuais): +X (#E11D48) e +Y (#10B981 Escuro / #059669 Claro) */}
+                      {/* Eixo X: Vermelho técnico com destaque nítido sobre a grade */}
                       <line
-                        x1={0}
+                        x1={-1e5}
                         y1={0}
-                        x2={84 / view.k}
+                        x2={1e5}
                         y2={0}
                         stroke={gridStyles.axisX}
-                        strokeWidth={2 / view.k}
+                        strokeWidth={gridStyles.axisWidth / view.k}
                       />
-                      <polygon
-                        points={`${90 / view.k},0 ${81 / view.k},${-3.4 / view.k} ${81 / view.k},${3.4 / view.k}`}
-                        fill={gridStyles.axisX}
-                      />
+                      {/* Eixo Y: Verde técnico com destaque nítido sobre a grade */}
                       <line
                         x1={0}
-                        y1={0}
+                        y1={-1e5}
                         x2={0}
-                        y2={84 / view.k}
+                        y2={1e5}
                         stroke={gridStyles.axisY}
-                        strokeWidth={2 / view.k}
-                      />
-                      <polygon
-                        points={`0,${90 / view.k} ${-3.4 / view.k},${81 / view.k} ${3.4 / view.k},${81 / view.k}`}
-                        fill={gridStyles.axisY}
+                        strokeWidth={gridStyles.axisWidth / view.k}
                       />
 
-                      {/* Marcadores de orientação positiva +X e +Y com offset seguro */}
+                      {/* Marcadores discretos de orientação positiva +X e +Y */}
                       <text
-                        x={95 / view.k}
+                        x={40 / view.k}
                         y={-5 / view.k}
-                        fontSize={9.5 / view.k}
-                        fontFamily='"JetBrains Mono", ui-monospace, monospace'
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
                         fontWeight="700"
                         fill={gridStyles.axisX}
                       >
                         +X
                       </text>
                       <text
-                        x={7 / view.k}
-                        y={98 / view.k}
-                        fontSize={9.5 / view.k}
-                        fontFamily='"JetBrains Mono", ui-monospace, monospace'
+                        x={6 / view.k}
+                        y={40 / view.k}
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
                         fontWeight="700"
                         fill={gridStyles.axisY}
                       >
@@ -12682,64 +6858,101 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   )}
 
-                  {/* Marcador Circular Pequeno e Nítido de Origem (0,0) em Vermelho Carmesim Coral (#F43F5E / #E11D48) */}
+                  {/* Ponto e Rótulo de Origem (0,0) */}
                   <circle
                     cx={0}
                     cy={0}
-                    r={4.5 / view.k}
-                    fill="none"
-                    stroke={isDark ? "#F43F5E" : "#E11D48"}
-                    strokeOpacity={0.92}
-                    strokeWidth={1.3 / view.k}
-                  />
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={2.1 / view.k}
-                    fill={isDark ? "#F43F5E" : "#E11D48"}
+                    r={3.8 / view.k}
+                    fill={gridStyles.originFill}
+                    stroke={gridStyles.originRing}
+                    strokeWidth={1.2 / view.k}
                   />
                   <text
-                    x={8 / view.k}
-                    y={14 / view.k}
-                    fontSize={9 / view.k}
-                    fontFamily='"JetBrains Mono", ui-monospace, monospace'
-                    fontWeight="700"
-                    fill={isDark ? "#FB7185" : "#E11D48"}
+                    x={6 / view.k}
+                    y={-6 / view.k}
+                    fontSize={10 / view.k}
+                    fontFamily="ui-monospace, monospace"
+                    fontWeight="bold"
+                    fill={gridStyles.originText}
                   >
                     {drawingProjection === "isometric" ? "(0,0,0) ISO" : "(0,0)"}
                   </text>
                 </g>
               )}
 
+              {/* WORKSPACE_FRAME — área de trabalho (oculta no modo 3D Traçagem) */}
+              {frame.visible && !solidOpen && Number.isFinite(frame.w) && Number.isFinite(frame.h) && frame.w > 0 && frame.h > 0 && (
+                <g pointerEvents="none">
+                  <rect
+                    x={0}
+                    y={0}
+                    width={frame.w}
+                    height={frame.h}
+                    fill="none"
+                    stroke={REFERENCE_COLOR}
+                    strokeOpacity={0.85}
+                    strokeWidth={1.6 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                  />
+                  {/* diagonais de canto que fecham a moldura */}
+                  {(
+                    [
+                      [0, 0, 1, 1],
+                      [frame.w, 0, -1, 1],
+                      [0, frame.h, 1, -1],
+                      [frame.w, frame.h, -1, -1],
+                    ] as const
+                  ).map(([x, y, sx, sy]) => {
+                    const c = Math.min(frame.w, frame.h) * 0.06;
+                    return (
+                      <path
+                        key={`${x}-${y}`}
+                        d={`M ${x + sx * c} ${y} L ${x} ${y + sy * c}`}
+                        fill="none"
+                        stroke={REFERENCE_COLOR}
+                        strokeOpacity={0.6}
+                        strokeWidth={1 / view.k}
+                      />
+                    );
+                  })}
+                  {frame.showDims && (
+                    <g
+                      fill={REFERENCE_COLOR}
+                      fillOpacity={0.9}
+                      fontFamily="ui-monospace, monospace"
+                    >
+                      <text
+                        x={frame.w / 2}
+                        y={-8 / view.k}
+                        fontSize={13 / view.k}
+                        textAnchor="middle"
+                      >
+                        {frame.w.toFixed(2)} mm
+                      </text>
+                      <text
+                        x={-8 / view.k}
+                        y={frame.h / 2}
+                        fontSize={13 / view.k}
+                        textAnchor="middle"
+                        transform={`rotate(-90 ${-8 / view.k} ${frame.h / 2})`}
+                      >
+                        {frame.h.toFixed(2)} mm
+                      </text>
+                      <text
+                        x={6 / view.k}
+                        y={18 / view.k}
+                        fontSize={10 / view.k}
+                        fillOpacity={0.55}
+                      >
+                        ÁREA DE TRABALHO
+                      </text>
+                    </g>
+                  )}
+                </g>
+              )}
+
               {/* geometria principal: pintada no canvas sob este SVG */}
 
               {!solidOpen && draft && <EntityShape e={draft} k={view.k} preview />}
-
-              {/* Forma em Pré-Confirmação Editável (Draft-Then-Commit) + Grips Interativos */}
-              {!solidOpen && pendingDraftShape && (
-                <g>
-                  <EntityShape e={pendingDraftShape.entity} k={view.k} preview />
-                  {getPendingDraftShapeGrips(pendingDraftShape).map((grip) => (
-                    <g key={`draft-grip-${grip.index}`}>
-                      <circle
-                        cx={grip.p.x}
-                        cy={grip.p.y}
-                        r={9 / view.k}
-                        fill="rgba(16, 185, 129, 0.22)"
-                        stroke="none"
-                      />
-                      <circle
-                        cx={grip.p.x}
-                        cy={grip.p.y}
-                        r={4.5 / view.k}
-                        fill={grip.role === "center" ? "#38BDF8" : "#10B981"}
-                        stroke="#FFFFFF"
-                        strokeWidth={1.6 / view.k}
-                      />
-                    </g>
-                  ))}
-                </g>
-              )}
 
               {/* Pré-visualização da ferramenta DIVIDIR */}
               {!solidOpen && divideEditorOpen && previewDividedEntities.length > 0 && (
@@ -12803,83 +7016,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   </g>
                 )}
 
-              {/* PRÉVIA E MARCADORES DA ENGENHARIA REVERSA (PONTOS CAPTURADOS, CALIBRAÇÃO E AJUSTE ORTOGONAL LSQ) */}
-              {!solidOpen && (() => {
-                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                return (
-                  <g className="chamfer-reveng-overlay pointer-events-none">
-                    {/* Pontos de contorno capturados */}
-                    {revEngData.capturedPoints.map((pt, idx) => (
-                      <g key={`reveng-cap-pt-${pt.id || idx}`}>
-                        <circle
-                          cx={pt.x}
-                          cy={pt.y}
-                          r={3.5 / safeK}
-                          fill="#F59E0B"
-                          stroke="#0B0F14"
-                          strokeWidth={1.2 / safeK}
-                        />
-                        <text
-                          x={pt.x + 5 / safeK}
-                          y={pt.y - 4 / safeK}
-                          fontSize={8.5 / safeK}
-                          fontFamily="ui-monospace, monospace"
-                          fontWeight="700"
-                          fill="#FBBF24"
-                        >
-                          {`P${idx + 1}`}
-                        </text>
-                      </g>
-                    ))}
-
-                    {/* Pontos de calibração / homografia marcados no canvas */}
-                    {revEngPickPoints.length >= 2 && (
-                      <polyline
-                        points={[
-                          ...revEngPickPoints.map((p) => `${p.x},${p.y}`),
-                          ...(revEngPickPoints.length === 4
-                            ? [`${revEngPickPoints[0]!.x},${revEngPickPoints[0]!.y}`]
-                            : []),
-                        ].join(" ")}
-                        fill={revEngPickPoints.length === 4 ? "rgba(56, 189, 248, 0.08)" : "none"}
-                        stroke="#38BDF8"
-                        strokeWidth={1.6 / safeK}
-                        strokeDasharray={`${5 / safeK} ${3 / safeK}`}
-                      />
-                    )}
-                    {revEngPickPoints.map((pt, idx) => (
-                      <g key={`reveng-pick-${idx}`}>
-                        <circle
-                          cx={pt.x}
-                          cy={pt.y}
-                          r={4.5 / safeK}
-                          fill="#E11D48"
-                          stroke="#FFFFFF"
-                          strokeWidth={1.4 / safeK}
-                        />
-                        <text
-                          x={pt.x + 6 / safeK}
-                          y={pt.y - 5 / safeK}
-                          fontSize={9.5 / safeK}
-                          fontFamily="ui-monospace, monospace"
-                          fontWeight="700"
-                          fill="#38BDF8"
-                        >
-                          {revEngCanvasMode === "pick_homography_4pt" ? `C${idx + 1}` : `REF ${idx + 1}`}
-                        </text>
-                      </g>
-                    ))}
-
-                    {/* Prévia da primitiva ajustada por mínimos quadrados ortogonais */}
-                    {revEngFittedPreview?.entityPreview && (
-                      <g opacity={0.95}>
-                        <EntityShape e={revEngFittedPreview.entityPreview} k={safeK} preview />
-                      </g>
-                    )}
-                  </g>
-                );
-              })()}
-
               {!solidOpen && pending.length > 0 && tool === "polyline" && (
                 <polyline
                   points={pending.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -12891,7 +7027,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* NÓS E GRIPS TÉCNICOS DA SELEÇÃO (□ VÉRTICES, △ MEIOS, ⊕ CENTROS - SEÇÃO 3.2) */}
-              {!solidOpen && !isInPlaceSolid3DActive && (tool === "node" || tool === "select") && (() => {
+              {!solidOpen && (tool === "node" || tool === "select") && (() => {
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                 const gripHalf = 3.4 / safeK;
                 const snapDist = 15 / safeK;
@@ -13151,18 +7287,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 );
               })()}
 
-              {/* COTAS ASSOCIATIVAS — azul técnico (#38BDF8 escuro / #0284C7 claro), sempre medidas na geometria */}
+              {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
               {drawnDims.map(({ d, draw }) => {
                 const on = dimSel === d.id;
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                const dimColor = isDark ? "#38BDF8" : "#0284C7";
                 return (
                   <g
                     key={d.id}
-                    stroke={dimColor}
-                    fill={dimColor}
-                    strokeWidth={(on ? 1.8 : 1.1) / safeK}
-                    opacity={on ? 1 : 0.94}
+                    stroke={DIMENSION_COLOR}
+                    fill={DIMENSION_COLOR}
+                    strokeWidth={(on ? 1.8 : 1) / safeK}
+                    opacity={on ? 1 : 0.9}
                     onPointerDown={() => setDimSel(d.id)}
                   >
                     {draw.lines.map((l, i) => {
@@ -13230,16 +7365,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         <g key={`t${i}`} transform={`rotate(${rot} ${l.p.x} ${l.p.y})`}>
                           {/* Máscara de respiro ABNT para proteger a legibilidade do texto contra linhas de fundo */}
                           <rect
-                            x={l.p.x - (txtLen * sz * 0.3 + 4 / safeK)}
-                            y={l.p.y - sz * 1.0}
-                            width={txtLen * sz * 0.6 + 8 / safeK}
-                            height={sz * 1.35}
-                            fill={isDark ? "#151C27" : "#FFFFFF"}
-                            fillOpacity={0.96}
-                            rx={3 / safeK}
-                            stroke={dimColor}
-                            strokeOpacity={0.55}
-                            strokeWidth={0.85 / safeK}
+                            x={l.p.x - (txtLen * sz * 0.3 + 3 / safeK)}
+                            y={l.p.y - sz * 0.95}
+                            width={txtLen * sz * 0.6 + 6 / safeK}
+                            height={sz * 1.25}
+                            fill={
+                              isDark
+                                ? drawingProjection === "isometric" ||
+                                  entities.some((e) => e.params?.isIsoSolidFace)
+                                  ? "#050914"
+                                  : "#1A2028"
+                                : "#ffffff"
+                            }
+                            fillOpacity={0.94}
+                            rx={2 / safeK}
+                            stroke="none"
                           />
                           <text
                             x={l.p.x}
@@ -13247,8 +7387,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             fontSize={sz}
                             textAnchor="middle"
                             stroke="none"
-                            fill={dimColor}
-                            className="font-mono cursor-pointer hover:font-bold select-none font-semibold"
+                            fill={DIMENSION_COLOR}
+                            className="font-mono cursor-pointer hover:font-bold hover:fill-accent select-none font-medium"
                             onPointerDown={(ev) => {
                               ev.stopPropagation();
                               const r = svgRef.current?.getBoundingClientRect();
@@ -13290,9 +7430,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const my = (d.a.y + d.b.y) / 2;
                   const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
                   const flip = ang > 90 || ang < -90 ? 180 : 0;
-                  const dimColor = isDark ? "#38BDF8" : "#0284C7";
                   return (
-                    <g key={`dim-${i}`} stroke={dimColor} fill={dimColor}>
+                    <g key={`dim-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
                       <line
                         x1={d.a.x}
                         y1={d.a.y}
@@ -13310,7 +7449,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         fontSize={10 / safeK}
                         textAnchor="middle"
                         stroke="none"
-                        className="font-mono font-medium"
+                        className="font-mono"
                       >
                         {d.label}
                       </text>
@@ -13330,9 +7469,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 )
                   return null;
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                const dimColor = isDark ? "#38BDF8" : "#0284C7";
                 return (
-                  <g key={`measure-${i}`} stroke={dimColor} fill={dimColor}>
+                  <g key={`measure-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
                     <line
                       x1={m.a.x}
                       y1={m.a.y}
@@ -13351,7 +7489,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       fontSize={11 / safeK}
                       textAnchor="middle"
                       stroke="none"
-                      className="font-mono font-medium"
+                      className="font-mono"
                     >
                       {dist(m.a, m.b).toFixed(2)} mm ·{" "}
                       {(
@@ -13406,7 +7544,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <ChamferTechnicalCursorSvg
                 visible={
                   !solidOpen &&
-                  !isInPlaceSolid3DActive &&
                   tool !== "pan" &&
                   (activePointerType === "mouse" ||
                     touchOffsetActive ||
@@ -13426,584 +7563,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 isDark={isDark}
               />
 
-              {/* SMART SNAP OVERLAY CAD DE PRECISÃO (SOMENTE EM 2D — EVITA ÍCONES ◊ E □ SOBRE AS FACES 3D) */}
-              {snapOn && !isInPlaceSolid3DActive && (
+              {/* SMART SNAP OVERLAY CAD DE PRECISÃO */}
+              {snapOn && (
                 <ChamferSmartSnapOverlay
                   activeSnap={smartSnap}
                   referencePoints={relevantRefs}
-                  cursor={cursor}
                   viewK={view.k}
                   unit={unit}
                   isDark={isDark}
-                  showAllSnaps={showAllSnaps}
                 />
               )}
 
-              {/* OVERLAY DE COTAS VIVAS, REFERÊNCIA DE CRIAÇÃO DE LINHA (AZUL) E REFERÊNCIA DE PONTO DE ENCONTRO (ROXA) — EXCLUSIVO DO MODO 2D */}
-              {activeMode === "2d" &&
-                !isInPlaceSolid3DActive &&
-                !orbitProjection2D.isTilted &&
-                (() => {
-                const selectedSingleLine =
-                  selection.length === 1 && pending.length === 0
-                    ? entities.find((e) => e.id === selection[0] && e.type === "line")
-                    : null;
-                const activeStartPt: Vec2 | null =
-                  pending.length > 0
-                    ? pending[pending.length - 1]!
-                    : selectedSingleLine && selectedSingleLine.type === "line"
-                      ? { x: selectedSingleLine.x1, y: selectedSingleLine.y1 }
-                      : temporaryOrigin?.p ?? null;
-                const overlayCursor: Vec2 =
-                  selectedSingleLine && selectedSingleLine.type === "line" && pending.length === 0
-                    ? { x: selectedSingleLine.x2, y: selectedSingleLine.y2 }
-                    : cursor;
-                const effectiveConstraints: DimensionalConstraints =
-                  selectedSingleLine?.params?.lockedConstraints &&
-                  typeof selectedSingleLine.params.lockedConstraints === "object"
-                    ? {
-                        ...lockedConstraints,
-                        ...(selectedSingleLine.params.lockedConstraints as DimensionalConstraints),
-                      }
-                    : lockedConstraints;
+              {/* OVERLAY DE COTAS VIVAS, REF 0,0 E BORDA ATIVA */}
+              <ChamferLiveDimensionsOverlay
+                temporaryOrigin={temporaryOrigin}
+                activeEdge={activeEdge}
+                activeEdgeSide={activeEdgeSide}
+                liveDimensions={liveDimensions}
+                viewK={view.k}
+                isDark={isDark}
+                onDimensionClick={(dim, screenPos) => {
+                  setLiveDimEditor({
+                    dim,
+                    screenPos,
+                    currentValue: dim.value,
+                    label: dim.label,
+                    allowInvert: dim.kind === "offset",
+                  });
+                }}
+                onClearTemporaryOrigin={() => {
+                  setTemporaryOrigin(null);
+                  toast.success("Origem temporária limpa");
+                }}
+                onInvertEdgeSide={() => {
+                  setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
+                  triggerHaptic("selection");
+                }}
+              />
 
-                return (
-                  <>
-                    <ChamferGeometricAnchorOverlay
-                      referenceState={referenceState}
-                      entities={entities}
-                      draft={draft}
-                      cursor={overlayCursor}
-                      viewK={view.k}
-                      isDark={isDark}
-                      isAnchorToolActive={interactionGuideMode === "purple_ref"}
-                      smartPickPreview={smartPickCandidate}
-                      workspaceBounds={{ x: 0, y: 0, w: frame.w, h: frame.h }}
-                      onSelectAnchor={(id) => {
-                        ReferenceService.setActive(id);
-                        triggerHaptic("selection");
-                        toast.info(`Âncora ${id} ativada como quadro local (X', Y').`);
-                      }}
-                      onCaptureExtremity={(pt, anchor) => {
-                        const cand = evaluateSmartPick(pt, entities, view.k, {
-                          maxPixelRadius: 24,
-                          guideMeetings: referenceState.meetings,
-                        }).best;
-                        if (cand) {
-                          const nextAnchor = ReferenceService.upsertAnchor(cand);
-                          triggerHaptic("success");
-                          toast.success(
-                            `✓ Extremidade capturada como Âncora ${nextAnchor.id} (${nextAnchor.origin.x.toFixed(1)}, ${nextAnchor.origin.y.toFixed(1)}) mm`,
-                          );
-                        } else {
-                          cursorRef.current = pt;
-                          setCursor(pt);
-                          triggerHaptic("selection");
-                          toast.info(
-                            `Cursor posicionado na extremidade de ${anchor.id}: (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm`,
-                          );
-                        }
-                      }}
-                      onRadarChipAction={(chip, createDim) => {
-                        if (createDim) {
-                          const dim = makeDimension(
-                            "aligned",
-                            [
-                              { kind: "point", p: chip.fromPoint },
-                              { kind: "point", p: chip.toPoint },
-                            ],
-                            14,
-                          );
-                          setDims((prev) => [...prev, dim]);
-                          triggerHaptic("success");
-                          toast.success(`✓ Cota associativa (${chip.distanceMm.toFixed(1)} mm) criada a partir do Radar.`);
-                        } else {
-                          if (typeof navigator !== "undefined" && navigator.clipboard) {
-                            navigator.clipboard.writeText(chip.distanceMm.toFixed(2)).catch(() => {});
-                          }
-                          triggerHaptic("selection");
-                          toast.info(`Distância ${chip.directionLabel}: ${chip.distanceMm.toFixed(1)} mm copiada.`);
-                        }
-                      }}
-                    />
-                    <ChamferLiveDimensionsOverlay
-                      temporaryOrigin={temporaryOrigin}
-                      activeEdge={activeEdge}
-                      activeEdgeSide={activeEdgeSide}
-                      liveDimensions={liveDimensions}
-                      viewK={view.k}
-                      isDark={isDark}
-                      cursor={overlayCursor}
-                      activeStartPoint={activeStartPt}
-                      pinnedMeetingPoints={pinnedMeetingPoints}
-                      entities={entities}
-                      selectedIds={selection}
-                      pendingShape={pendingShapeSpec}
-                      interactionGuideMode={interactionGuideMode}
-                      lockedConstraints={effectiveConstraints}
-                      isMultitouchNavigating={
-                        isMultiTouchGestureRef.current ||
-                        touchInteractionState === "MULTITOUCH_NAVIGATION" ||
-                        touchInteractionState === "POST_GESTURE_COOLDOWN"
-                      }
-                      previewGeometricMarkCandidate={previewGeometricMarkCandidate}
-                      pendingGeometricMarkConfirmation={pendingGeometricMarkConfirmation}
-                    onConfirmPendingGeometricMark={() => {
-                      if (!pendingGeometricMarkConfirmation) return;
-                      const markEntity = pendingGeometricMarkConfirmation;
-                      commit((prev) => [...prev, markEntity]);
-                      setPendingGeometricMarkConfirmation(null);
-                      previewGeometricMarkCandidateRef.current = null;
-                      setPreviewGeometricMarkCandidate(null);
-                      triggerHaptic("success");
-                      toast.success(
-                        `✓ Marco Geométrico Associativo (${markEntity.label ?? "Marco"}) inserido em (${markEntity.x.toFixed(1)}, ${markEntity.y.toFixed(1)}) mm.`,
-                      );
-                    }}
-                    onStartRelationalFromPendingMark={() => {
-                      if (!pendingGeometricMarkConfirmation) return;
-                      const markEntity = pendingGeometricMarkConfirmation;
-                      const spec = getGeometricMarkSpec(markEntity);
-                      commit((prev) => [...prev, markEntity]);
-                      setRelationalPicks((prev) => {
-                        const nextPick: RelationalPickItem = {
-                          point: { x: markEntity.x, y: markEntity.y },
-                          entityId: spec?.parentEntityId,
-                          label: markEntity.label,
-                        };
-                        if (prev.length >= 2) {
-                          return [prev[prev.length - 1]!, nextPick];
-                        }
-                        if (
-                          prev.length === 1 &&
-                          Math.hypot(
-                            prev[0]!.point.x - nextPick.point.x,
-                            prev[0]!.point.y - nextPick.point.y,
-                          ) < 1e-3
-                        ) {
-                          return prev;
-                        }
-                        return [...prev, nextPick];
-                      });
-                      setPendingGeometricMarkConfirmation(null);
-                      previewGeometricMarkCandidateRef.current = null;
-                      setPreviewGeometricMarkCandidate(null);
-                      triggerHaptic("action");
-                      toast.info(
-                        relationalPicks.length === 0
-                          ? "1º ponto relacional confirmado! Deslize até o 2º ponto SNAP e confirme para dividir o vão (÷N) ou achar o ponto médio."
-                          : "2º ponto relacional capturado! Escolha a operação (⌖ Ponto Médio, ✕ Interseção ou ÷N).",
-                      );
-                    }}
-                    onCancelPendingGeometricMark={() => {
-                      setPendingGeometricMarkConfirmation(null);
-                      previewGeometricMarkCandidateRef.current = null;
-                      setPreviewGeometricMarkCandidate(null);
-                      triggerHaptic("tap");
-                    }}
-                    onClearAllGeometricMarks={() => {
-                      const res = clearGeometricMarksFromEntities(entities, false);
-                      setPendingGeometricMarkConfirmation(null);
-                      previewGeometricMarkCandidateRef.current = null;
-                      setPreviewGeometricMarkCandidate(null);
-                      setRelationalPicks([]);
-                      if (res.removedCount > 0) {
-                        commit(res.cleaned);
-                        triggerHaptic("action");
-                        toast.success(`🧹 ${res.removedCount} Marco(s) Geométrico(s) removido(s).`);
-                      } else {
-                        toast.info("Nenhum Marco Geométrico para limpar.");
-                      }
-                    }}
-                    relationalPicks={relationalPicks}
-                    onTriggerRelationalSynthesis={(mode: RelationalSynthesisMode, divN?: number) => {
-                      if (relationalPicks.length < 2) return;
-                      const pickA = relationalPicks[0]!;
-                      const pickB = relationalPicks[1]!;
-                      const entA = pickA.entityId ? entities.find((e) => e.id === pickA.entityId) ?? null : null;
-                      const entB = pickB.entityId ? entities.find((e) => e.id === pickB.entityId) ?? null : null;
-                      const newMarks = buildRelationalGeometricMarks(
-                        pickA.point,
-                        pickB.point,
-                        entA,
-                        entB,
-                        mode,
-                        activeLayer,
-                        divN,
-                      );
-                      if (newMarks.length === 0) {
-                        toast.warning("As duas referências são paralelas (sem interseção virtual).");
-                        return;
-                      }
-                      commit((prev) => [...prev, ...newMarks]);
-                      setRelationalPicks([]);
-                      triggerHaptic("success");
-                      toast.success(
-                        mode === "span_division"
-                          ? `✓ Vão dividido em ÷${divN ?? 2} (${newMarks.length} Marcos Geométricos associativos criados).`
-                          : mode === "virtual_intersection"
-                            ? "✓ Marco Geométrico de Interseção Virtual Projetada (✕) criado."
-                            : "✓ Marco Geométrico de Ponto Médio / Simetria (⌖) criado.",
-                      );
-                    }}
-                    onClearRelationalPicks={() => setRelationalPicks([])}
-                    activeDatumComponent={activeDatumComponent?.component ?? null}
-                    onSelectDatumComponent={(datumId, comp, currentVal, screenPos) => {
-                      const datumEnt = datumId
-                        ? entities.find((e) => e.id === datumId)
-                        : entities.find((e) => isPersistentDatumEntity(e));
-                      if (!datumEnt) return;
-                      setActiveDatumComponent({ datumId: datumEnt.id, component: comp });
-                      setSelection([datumEnt.id]);
-                      const spec = getPersistentDatumSpec(datumEnt);
-                      if (!spec) return;
-                      const dimKindMap: Record<"dx" | "dy" | "L" | "angle", LiveDimension["kind"]> = {
-                        dx: "dx",
-                        dy: "dy",
-                        L: "length",
-                        angle: "angle",
-                      };
-                      const labelMap: Record<"dx" | "dy" | "L" | "angle", string> = {
-                        dx: "Cateto Horizontal ΔX do Datum (mm)",
-                        dy: "Cateto Vertical ΔY do Datum (mm)",
-                        L: "Hipotenusa L do Datum (mm)",
-                        angle: "Ângulo ∠ do Datum (°)",
-                      };
-                      setLiveDimEditor({
-                        dim: {
-                          id: `pdatum-${datumEnt.id}-${comp}`,
-                          kind: dimKindMap[comp],
-                          value: currentVal,
-                          label: labelMap[comp],
-                          startPoint: spec.origin,
-                          endPoint: spec.target,
-                          midPoint: {
-                            x: (spec.origin.x + spec.target.x) / 2,
-                            y: (spec.origin.y + spec.target.y) / 2,
-                          },
-                          normalDir: comp === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
-                          isEditable: true,
-                          targetKey: comp === "L" ? "length" : comp,
-                          entityId: datumEnt.id,
-                        },
-                        screenPos,
-                        currentValue: currentVal,
-                        label: labelMap[comp],
-                        allowInvert: false,
-                        measureKind: comp,
-                        initialLocked: false,
-                      });
-                    }}
-                    onConvertDatumToLines={(datumId, component, originPt, targetPt) => {
-                      const datumEnt = datumId ? entities.find((e) => e.id === datumId) : undefined;
-                      const spec = datumEnt ? getPersistentDatumSpec(datumEnt) : null;
-                      const effOrigin = spec?.origin ?? originPt ?? temporaryOrigin?.p;
-                      const effTarget = spec?.target ?? targetPt ?? cursor;
-                      if (!effOrigin || !effTarget) return;
-                      const lines = convertDatumToCadLines(effOrigin, effTarget, component, activeLayer);
-                      if (lines.length === 0) {
-                        toast.info("Medida nula neste cateto para gerar linha.");
-                        return;
-                      }
-                      commit((prev) => [...prev, ...lines]);
-                      setSelection(lines.map((l) => l.id));
-                      triggerHaptic("success");
-                      toast.success(
-                        component === "both_legs"
-                          ? `✓ 2 linhas ortogonais dos catetos (ΔX + ΔY) geradas no projeto.`
-                          : `✓ Linha ${component === "dx" ? "ΔX" : component === "dy" ? "ΔY" : "L"} gerada a partir do Datum.`,
-                      );
-                    }}
-                    onConfirmReferenceAction={(originPt, targetPt, mode) => {
-                      if (mode === "blue_line") {
-                        // Persiste o DATUM com projeção nos dois catetos (ΔX, ΔY) e hipotenusa (L, ∠) no projeto e no Undo/Redo (Seção 3.1)
-                        const len = Math.hypot(targetPt.x - originPt.x, targetPt.y - originPt.y);
-                        if (len < 0.05) {
-                          toast.info("Desloque o ponto final para fixar o Vetor Datum.");
-                          return;
-                        }
-                        const datumEntity = createPersistentDatumEntity(originPt, targetPt, activeLayer);
-                        commit((prev) => [...prev, datumEntity]);
-                        setSelection([datumEntity.id]);
-                        setPending([]);
-                        setDraft(null);
-                        setTemporaryOrigin({
-                          id: "ref_origin",
-                          p: { x: targetPt.x, y: targetPt.y },
-                          label: "REF 0,0",
-                        });
-                        triggerHaptic("success");
-                        toast.success(
-                          `✓ Datum Persistente fixado (ΔX ${(targetPt.x - originPt.x).toFixed(1)}, ΔY ${(targetPt.y - originPt.y).toFixed(1)}, L ${len.toFixed(1)} mm).`,
-                        );
-                      } else if (mode === "purple_ref") {
-                        // Cria Marco Geométrico Associativo Violeta (+) somente sobre ponto SNAP de entidade real (PROIBIDO criar ÓRFÃO no vazio!)
-                        const fixedPt: Vec2 = {
-                          x: Number(targetPt.x.toFixed(4)),
-                          y: Number(targetPt.y.toFixed(4)),
-                        };
-                        const markEnt = inferValidGeometricMarkCandidate(
-                          fixedPt,
-                          entities,
-                          activeLayer,
-                          smartSnap,
-                          55 / view.k,
-                        );
-                        if (!markEnt) {
-                          toast.info(
-                            "Posicione a Mira 55px sobre um ponto real da geometria (Centro, Vértice, Ponto Médio, Interseção, Quadrante ou Tangência).",
-                          );
-                          return;
-                        }
-                        commit((prev) => [...prev, markEnt]);
-                        cursorRef.current = fixedPt;
-                        setCursor(fixedPt);
-                        triggerHaptic("success");
-                        toast.success(
-                          `✓ Marco Geométrico Associativo (+) criado em (${fixedPt.x.toFixed(1)}, ${fixedPt.y.toFixed(1)}) mm.`,
-                        );
-                      }
-                    }}
-                    onCancelReferenceAction={() => {
-                      setLockedConstraints({});
-                      if (temporaryOrigin) {
-                        const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                        const resetTarget: Vec2 = {
-                          x: Number((temporaryOrigin.p.x + 80 / safeK).toFixed(2)),
-                          y: Number((temporaryOrigin.p.y - 60 / safeK).toFixed(2)),
-                        };
-                        cursorRef.current = resetTarget;
-                        setCursor(resetTarget);
-                      }
-                      setPending([]);
-                      setDraft(null);
-                      triggerHaptic("selection");
-                      toast.info("Deslocamento da referência cancelado.");
-                    }}
-                    onEditMeasure={(kind, currentVal, screenPos) => {
-                      preEditKeypadSnapshotRef.current = {
-                        cursor: { ...cursor },
-                        draft: draft ? { ...draft } : null,
-                      };
-                      const anchorPt =
-                        interactionGuideMode === "purple_ref" && temporaryOrigin
-                          ? temporaryOrigin.p
-                          : activeStartPt ?? temporaryOrigin?.p ?? { x: 0, y: 0 };
-                      const dimKindMap: Record<ConstrainableMeasureKind, LiveDimension["kind"]> = {
-                        dx: "dx",
-                        dy: "dy",
-                        L: "length",
-                        angle: "angle",
-                        d: "distance",
-                        offset: "offset",
-                        u_along: "u_along",
-                        radius: "radius",
-                        diameter: "diameter",
-                      };
-                      const labelMap: Record<ConstrainableMeasureKind, string> = {
-                        dx:
-                          interactionGuideMode === "purple_ref"
-                            ? "ΔX do Ponto de Encontro (mm)"
-                            : "ΔX da Linha (mm)",
-                        dy:
-                          interactionGuideMode === "purple_ref"
-                            ? "ΔY do Ponto de Encontro (mm)"
-                            : "ΔY da Linha (mm)",
-                        L: "Comprimento L da Linha (mm)",
-                        angle: "Ângulo Livre ∠ da Linha (°)",
-                        d: "Distância Diagonal d (mm)",
-                        offset: "Offset (mm)",
-                        u_along: "Posição Longitudinal u (mm)",
-                        radius: "Raio R (mm)",
-                        diameter: "Diâmetro Ø (mm)",
-                      };
-                      const isCurrentlyLocked =
-                        (kind === "L" && effectiveConstraints.lockedL != null) ||
-                        (kind === "angle" && effectiveConstraints.lockedAngle != null) ||
-                        (kind === "dx" && effectiveConstraints.lockedDx != null) ||
-                        (kind === "dy" && effectiveConstraints.lockedDy != null) ||
-                        (kind === "d" && effectiveConstraints.lockedDist != null);
-
-                      const targetDim: LiveDimension = {
-                        id: `guide-${kind}`,
-                        kind: dimKindMap[kind],
-                        value: currentVal,
-                        label: labelMap[kind],
-                        startPoint: anchorPt,
-                        endPoint: overlayCursor,
-                        midPoint: {
-                          x: (anchorPt.x + overlayCursor.x) / 2,
-                          y: (anchorPt.y + overlayCursor.y) / 2,
-                        },
-                        normalDir: kind === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
-                        isEditable: true,
-                        targetKey: kind === "L" ? "length" : kind === "d" ? "distance" : kind,
-                        entityId: selectedSingleLine?.id,
-                      };
-                      setLiveDimEditor({
-                        dim: targetDim,
-                        screenPos,
-                        currentValue: currentVal,
-                        label: labelMap[kind],
-                        allowInvert: false,
-                        measureKind: kind,
-                        initialLocked: isCurrentlyLocked,
-                      });
-                    }}
-                    onEditDelta={(axis, currentVal, screenPos) => {
-                      preEditKeypadSnapshotRef.current = {
-                        cursor: { ...cursor },
-                        draft: draft ? { ...draft } : null,
-                      };
-                      const pStart = temporaryOrigin?.p ?? { x: 0, y: 0 };
-                      const targetDim: LiveDimension = {
-                        id: `ref-${axis}`,
-                        kind: axis,
-                        value: currentVal,
-                        label: `Δ${axis.toUpperCase()}`,
-                        startPoint: pStart,
-                        endPoint: cursor,
-                        midPoint: { x: (pStart.x + cursor.x) / 2, y: (pStart.y + cursor.y) / 2 },
-                        normalDir: axis === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
-                        isEditable: true,
-                        targetKey: axis,
-                      };
-                      setLiveDimEditor({
-                        dim: targetDim,
-                        screenPos,
-                        currentValue: currentVal,
-                        label: `Δ${axis.toUpperCase()} a partir da REF (mm)`,
-                        allowInvert: false,
-                        measureKind: axis,
-                        initialLocked:
-                          axis === "dx"
-                            ? effectiveConstraints.lockedDx != null
-                            : effectiveConstraints.lockedDy != null,
-                      });
-                    }}
-                    onDimensionClick={(dim, screenPos) => {
-                      preEditKeypadSnapshotRef.current = {
-                        cursor: { ...cursor },
-                        draft: draft ? { ...draft } : null,
-                      };
-                      setLiveDimEditor({
-                        dim,
-                        screenPos,
-                        currentValue: dim.value,
-                        label: dim.label,
-                        allowInvert: dim.kind === "offset",
-                      });
-                    }}
-                    onClearTemporaryOrigin={() => {
-                      setTemporaryOrigin(null);
-                      setPinnedMeetingPoints([]);
-                      toast.success("Vetor Datum limpo");
-                    }}
-                    onUnlockMeasure={(kind) => {
-                      setLockedConstraints((prev) => {
-                        const next = { ...prev };
-                        if (kind === "L") delete next.lockedL;
-                        if (kind === "angle") delete next.lockedAngle;
-                        if (kind === "dx") delete next.lockedDx;
-                        if (kind === "dy") delete next.lockedDy;
-                        if (kind === "d") delete next.lockedDist;
-                        return next;
-                      });
-                      if (kind === "L") {
-                        setLockedDims((prev) => ({ ...prev, lockedLengthMm: null }));
-                      } else if (kind === "angle") {
-                        setLockedDims((prev) => ({ ...prev, lockedAngleDeg: null }));
-                      }
-                      triggerHaptic("tap");
-                      toast.info(`Trava ${kind.toUpperCase()} destravada`);
-                    }}
-                    onInvertEdgeSide={() => {
-                      setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
-                      triggerHaptic("selection");
-                    }}
-                  />
-                  </>
-                );
-              })()}
-
-              {/* REF. POLAR — OVERLAY NÃO-VETORIAL (LINHA VERMELHA PONTILHADA + ALVO MAGNÉTICO ⊕) */}
-              {(polarRefs.length > 0 || polarRefLivePreview || polarRefHoveredOrigin) && (
-                <ChamferPolarReferenceSvgOverlay
-                  polarRefs={polarRefs}
-                  livePreview={polarRefLivePreview}
-                  hoveredOriginAnchor={polarRefHoveredOrigin}
-                  isPolarRefToolActive={tool === "polar_ref"}
-                  viewK={view.k}
-                  datumOrigin={temporaryOrigin?.p ?? null}
-                />
-              )}
-
-              {/* TRAÇAR PEÇA (TRIM INVERSO / PASSAR A LIMPO) — OVERLAY ANIMADO SOBRE ARCOS E LINHAS REAIS */}
-              {tool === "trace_part" && (
-                <ChamferTracePartSvgOverlay
-                  preview={tracePartPreview}
-                  hoverPiece={traceHoverPiece}
-                  fenceTrail={traceFenceTrail}
-                  viewK={view.k}
-                />
-              )}
-
-              {/* MARCADOR DE CENTRO FIXO (C) PARA LINHA / POLILINHA NO MODO CENTRO-RAIO */}
-              {(() => {
-                const centerMarker: Vec2 | null =
-                  (tool === "line" && lineMode === "center_radius" && pending.length === 1
-                    ? pending[0]!
-                    : tool === "polyline" &&
-                        polylineCreationMode === "center_radius" &&
-                        pending.length === 1
-                      ? pending[0]!
-                      : pendingDraftShape?.lineMode === "center_radius" &&
-                          pendingDraftShape.centerPoint
-                        ? pendingDraftShape.centerPoint
-                        : null);
-                if (!centerMarker) return null;
-                const safeK = Math.max(0.05, view.k);
-                return (
-                  <g pointerEvents="none" aria-label="Centro Fixo da Linha Simétrica">
-                    <circle
-                      cx={centerMarker.x}
-                      cy={centerMarker.y}
-                      r={6 / safeK}
-                      fill="rgba(56, 189, 248, 0.22)"
-                      stroke="#38BDF8"
-                      strokeWidth={1.6 / safeK}
-                    />
-                    <line
-                      x1={centerMarker.x - 9 / safeK}
-                      y1={centerMarker.y}
-                      x2={centerMarker.x + 9 / safeK}
-                      y2={centerMarker.y}
-                      stroke="#38BDF8"
-                      strokeWidth={1.25 / safeK}
-                    />
-                    <line
-                      x1={centerMarker.x}
-                      y1={centerMarker.y - 9 / safeK}
-                      x2={centerMarker.x}
-                      y2={centerMarker.y + 9 / safeK}
-                      stroke="#38BDF8"
-                      strokeWidth={1.25 / safeK}
-                    />
-                    <circle
-                      cx={centerMarker.x}
-                      cy={centerMarker.y}
-                      r={2.2 / safeK}
-                      fill="#38BDF8"
-                    />
-                  </g>
-                );
-              })()}
-
-              {/* TRIM UNIFICADO SVG PREVIEW (ANIMAÇÃO DE CORTE EM CURVAS REAIS + RASTRO DE FACA) */}
-              {(tool === "trim" || tool === "smart_trim") && (
+              {/* SMART TRIM SVG PREVIEW */}
+              {tool === "smart_trim" && (
                 <ChamferSmartTrimSvgOverlay
-                  preview={trimBatchPreview}
-                  fenceTrail={trimFenceTrail}
+                  preview={smartTrimPreview}
                   viewK={view.k}
                 />
               )}
@@ -14065,94 +7666,50 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })()}
 
-              {/* PRÉ-VISUALIZAÇÃO DO FILLET 2D UNIVERSAL (LINHA, ARCO, CÍRCULO, POLILINHA) */}
+              {/* PRÉ-VISUALIZAÇÃO DE FILETE */}
               {tool === "fillet" &&
-                (universalFilletResult?.activeSolution || filletFirstPick) && (() => {
+                filletPreview &&
+                filletPreview.corner?.corner &&
+                Number.isFinite(filletPreview.corner.corner.x) &&
+                Number.isFinite(filletPreview.corner.corner.y) && (() => {
                   const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                  const sol = universalFilletResult?.activeSolution ?? null;
                   return (
-                    <g pointerEvents="none" aria-label="Pré-visualização do Fillet 2D Universal">
-                      {filletFirstPick && (
-                        <circle
-                          cx={filletFirstPick.clickPoint.x}
-                          cy={filletFirstPick.clickPoint.y}
-                          r={6 / safeK}
-                          fill="var(--chamfer-accent, #E11D48)"
-                          fillOpacity={0.28}
-                          stroke="var(--chamfer-accent, #E11D48)"
-                          strokeWidth={1.8 / safeK}
-                        />
-                      )}
-                      {sol && (
-                        <>
-                          {/* PRÉVIA HONESTA 1: Corpos principais que SERÃO MANTIDOS (Verde Esmeralda) */}
-                          {sol.keptBodies?.map((prim, idx) => (
-                            <path
-                              key={`fillet-kept-${idx}`}
-                              data-testid="fillet-preview-kept-body"
-                              d={trimPrimitiveToSvgPath(prim)}
-                              fill="none"
-                              stroke="#10B981"
-                              strokeWidth={2.8 / safeK}
-                              strokeOpacity={0.85}
-                              strokeLinecap="round"
-                            />
-                          ))}
-
-                          {/* PRÉVIA HONESTA 2: Bicos excedentes do canto que SERÃO APAGADOS (Vermelho Tracejado) */}
-                          {sol.removedBeaks?.map((prim, idx) => (
-                            <path
-                              key={`fillet-beak-${idx}`}
-                              data-testid="fillet-preview-removed-beak"
-                              d={trimPrimitiveToSvgPath(prim)}
-                              fill="none"
-                              stroke="#EF4444"
-                              strokeWidth={2.4 / safeK}
-                              strokeDasharray={`${5 / safeK} ${3.5 / safeK}`}
-                              strokeOpacity={0.95}
-                              strokeLinecap="round"
-                            />
-                          ))}
-
-                          {/* PRÉVIA HONESTA 3: Novo arco tangente R em cor de destaque sólida */}
+                    <g pointerEvents="none" aria-label="Pré-visualização do filete">
+                      <circle
+                        cx={filletPreview.corner.corner.x}
+                        cy={filletPreview.corner.corner.y}
+                        r={7 / safeK}
+                        fill="#06b6d4"
+                        fillOpacity={0.25}
+                        stroke="#06b6d4"
+                        strokeWidth={1.8 / safeK}
+                      />
+                      {(() => {
+                        const c = filletPreview.calc;
+                        if (!c || !c.arcCenter || !Number.isFinite(c.arcCenter.x) || !Number.isFinite(c.arcCenter.y) || !Number.isFinite(c.radius)) return null;
+                        const f = (n: number) => n.toFixed(3);
+                        const p0 = {
+                          x: c.arcCenter.x + c.radius * Math.cos(c.startAngle),
+                          y: c.arcCenter.y + c.radius * Math.sin(c.startAngle),
+                        };
+                        const p1 = {
+                          x: c.arcCenter.x + c.radius * Math.cos(c.endAngle),
+                          y: c.arcCenter.y + c.radius * Math.sin(c.endAngle),
+                        };
+                        let sweep = c.endAngle - c.startAngle;
+                        while (sweep < 0) sweep += Math.PI * 2;
+                        const large = sweep > Math.PI ? 1 : 0;
+                        const d = `M ${f(p0.x)} ${f(p0.y)} A ${f(c.radius)} ${f(c.radius)} 0 ${large} 1 ${f(p1.x)} ${f(p1.y)}`;
+                        return (
                           <path
-                            data-testid="fillet-preview-arc"
-                            d={filletArcToSvgPath(
-                              sol.arcCenter,
-                              sol.radius,
-                              sol.startAngle,
-                              sol.endAngle,
-                            )}
+                            d={d}
                             fill="none"
-                            stroke="var(--chamfer-accent, #38BDF8)"
-                            strokeWidth={3.2 / safeK}
-                            strokeLinecap="round"
+                            stroke="#06b6d4"
+                            strokeWidth={2.5 / safeK}
+                            strokeDasharray={`${6 / safeK},${3 / safeK}`}
                           />
-                          <circle
-                            cx={sol.tangentA.x}
-                            cy={sol.tangentA.y}
-                            r={4.2 / safeK}
-                            fill="#FFFFFF"
-                            stroke="var(--chamfer-accent, #38BDF8)"
-                            strokeWidth={1.8 / safeK}
-                          />
-                          <circle
-                            cx={sol.tangentB.x}
-                            cy={sol.tangentB.y}
-                            r={4.2 / safeK}
-                            fill="#FFFFFF"
-                            stroke="var(--chamfer-accent, #38BDF8)"
-                            strokeWidth={1.8 / safeK}
-                          />
-                          <circle
-                            cx={sol.arcCenter.x}
-                            cy={sol.arcCenter.y}
-                            r={2.5 / safeK}
-                            fill="var(--chamfer-accent, #38BDF8)"
-                            fillOpacity={0.8}
-                          />
-                        </>
-                      )}
+                        );
+                      })()}
                     </g>
                   );
                 })()}
@@ -14193,510 +7750,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </g>
                   );
                 })()}
-
-              {/* PRÉ-VISUALIZAÇÃO DE PADRÃO GEOMÉTRICO (ARRAY POLAR / LINEAR ENRIQUECIDO) */}
-              {activeArrayType !== null && arrayPreview && (() => {
-                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                const isError = !arrayValidation.isValid;
-                const baseStrokeColor = isError ? "#ef4444" : "#06b6d4";
-                const guides = arrayPreview.guides;
-                const pcdCycle = 10 / safeK;
-                const pcdDashOffset =
-                  (arrayPolarParams.clockwise ? 1 : -1) *
-                  computeFlowDashOffset(arrayAnimNowMs, pcdCycle, 0.025 / safeK);
-                const axisCycle = 12 / safeK;
-                const axisDashOffset = computeFlowDashOffset(
-                  arrayAnimNowMs,
-                  axisCycle,
-                  0.03 / safeK,
-                );
-
-                const renderGhostEntity = (
-                  inst: Entity,
-                  keyPrefix: string,
-                  color: string,
-                  opacity: number,
-                  dashed = true,
-                ) => {
-                  if (inst.type === "circle") {
-                    return (
-                      <g key={keyPrefix} opacity={opacity}>
-                        <circle
-                          cx={inst.cx}
-                          cy={inst.cy}
-                          r={inst.r}
-                          fill={color}
-                          fillOpacity={0.14}
-                          stroke={color}
-                          strokeWidth={2 / safeK}
-                          strokeDasharray={dashed ? `${5 / safeK},${3 / safeK}` : undefined}
-                        />
-                        <circle cx={inst.cx} cy={inst.cy} r={2.2 / safeK} fill={color} />
-                      </g>
-                    );
-                  }
-                  if (inst.type === "arc") {
-                    const sweep = inst.a1 - inst.a0;
-                    const large = Math.abs(sweep) > Math.PI ? 1 : 0;
-                    const p0x = inst.cx + inst.r * Math.cos(inst.a0);
-                    const p0y = inst.cy + inst.r * Math.sin(inst.a0);
-                    const p1x = inst.cx + inst.r * Math.cos(inst.a1);
-                    const p1y = inst.cy + inst.r * Math.sin(inst.a1);
-                    const d = `M ${p0x.toFixed(2)} ${p0y.toFixed(2)} A ${inst.r.toFixed(2)} ${inst.r.toFixed(2)} 0 ${large} 1 ${p1x.toFixed(2)} ${p1y.toFixed(2)}`;
-                    return (
-                      <path
-                        key={keyPrefix}
-                        d={d}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={2 / safeK}
-                        strokeDasharray={dashed ? `${5 / safeK},${3 / safeK}` : undefined}
-                        opacity={opacity}
-                      />
-                    );
-                  }
-                  const segs = segmentsOf(inst);
-                  return (
-                    <g key={keyPrefix} opacity={opacity}>
-                      {segs.map((s, sIdx) => {
-                        if (!s || !s[0] || !s[1]) return null;
-                        return (
-                          <line
-                            key={`${keyPrefix}-seg-${sIdx}`}
-                            x1={s[0].x}
-                            y1={s[0].y}
-                            x2={s[1].x}
-                            y2={s[1].y}
-                            stroke={color}
-                            strokeWidth={2 / safeK}
-                            strokeDasharray={dashed ? `${5 / safeK},${3 / safeK}` : undefined}
-                          />
-                        );
-                      })}
-                    </g>
-                  );
-                };
-
-                return (
-                  <g pointerEvents="none" aria-label="Pré-visualização do padrão geométrico">
-                    {/* CÍRCULO PCD GUIA COM ANIMAÇÃO DE FLUXO DIRECIONAL (CW / CCW) */}
-                    {guides.pcdCircle && Number.isFinite(guides.pcdCircle.cx) && (
-                      <circle
-                        cx={guides.pcdCircle.cx}
-                        cy={guides.pcdCircle.cy}
-                        r={guides.pcdCircle.r}
-                        fill="none"
-                        stroke={baseStrokeColor}
-                        strokeWidth={1.6 / safeK}
-                        strokeDasharray={`${6 / safeK},${4 / safeK}`}
-                        strokeDashoffset={pcdDashOffset}
-                        strokeOpacity={0.78}
-                      />
-                    )}
-
-                    {/* LINHAS RADIAIS (POLAR) */}
-                    {guides.radialLines?.map((line, idx) => (
-                      <line
-                        key={`guide-rad-${idx}`}
-                        x1={line.x1}
-                        y1={line.y1}
-                        x2={line.x2}
-                        y2={line.y2}
-                        stroke={baseStrokeColor}
-                        strokeWidth={1 / safeK}
-                        strokeDasharray={`${3 / safeK},${3 / safeK}`}
-                        strokeOpacity={0.38}
-                      />
-                    ))}
-
-                    {/* EIXOS DIRECIONAIS X/Y COM ANIMAÇÃO DE FLUXO DIRECIONAL (LINEAR) */}
-                    {guides.axes?.map((axis, idx) => (
-                      <line
-                        key={`guide-axis-${idx}`}
-                        x1={axis.x1}
-                        y1={axis.y1}
-                        x2={axis.x2}
-                        y2={axis.y2}
-                        stroke={baseStrokeColor}
-                        strokeWidth={1.8 / safeK}
-                        strokeDasharray={`${8 / safeK},${4 / safeK}`}
-                        strokeDashoffset={axisDashOffset}
-                        strokeOpacity={0.8}
-                      />
-                    ))}
-
-                    {/* CENTROS CANDIDATOS (QUANDO CONFIANÇA MÉDIA / MÚLTIPLOS CENTROS) */}
-                    {activeArrayType === "polar" &&
-                      arrayHostInfo.candidateCenters.length > 1 &&
-                      arrayHostInfo.candidateCenters.map((cand, cIdx) => {
-                        const isSelected =
-                          dist(cand.point, arrayPolarParams.center) < 0.1;
-                        if (isSelected) return null;
-                        return (
-                          <g key={`cand-center-${cIdx}`} opacity={0.85}>
-                            <circle
-                              cx={cand.point.x}
-                              cy={cand.point.y}
-                              r={10 / safeK}
-                              fill="rgba(245, 158, 11, 0.12)"
-                              stroke="#f59e0b"
-                              strokeWidth={1.5 / safeK}
-                              strokeDasharray={`${3 / safeK},${2 / safeK}`}
-                            />
-                            <circle
-                              cx={cand.point.x}
-                              cy={cand.point.y}
-                              r={2.5 / safeK}
-                              fill="#f59e0b"
-                            />
-                          </g>
-                        );
-                      })}
-
-                    {/* PIVÔ CENTRAL ARRASTÁVEL VERMELHO CARMESIM (#DC143C) DO PADRÃO POLAR */}
-                    {guides.center && Number.isFinite(guides.center.x) && (
-                      <g>
-                        <circle
-                          cx={guides.center.x}
-                          cy={guides.center.y}
-                          r={18 / safeK}
-                          fill="rgba(220, 20, 60, 0.08)"
-                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_RING}
-                          strokeWidth={1.3 / safeK}
-                          strokeDasharray={`${4 / safeK},${3 / safeK}`}
-                        />
-                        <circle
-                          cx={guides.center.x}
-                          cy={guides.center.y}
-                          r={7 / safeK}
-                          fill="none"
-                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
-                          strokeWidth={2 / safeK}
-                        />
-                        <circle
-                          cx={guides.center.x}
-                          cy={guides.center.y}
-                          r={3.2 / safeK}
-                          fill={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
-                        />
-                        <line
-                          x1={guides.center.x - 13 / safeK}
-                          y1={guides.center.y}
-                          x2={guides.center.x + 13 / safeK}
-                          y2={guides.center.y}
-                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
-                          strokeWidth={1.5 / safeK}
-                        />
-                        <line
-                          x1={guides.center.x}
-                          y1={guides.center.y - 13 / safeK}
-                          x2={guides.center.x}
-                          y2={guides.center.y + 13 / safeK}
-                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
-                          strokeWidth={1.5 / safeK}
-                        />
-                      </g>
-                    )}
-
-                    {/* PRÉ-VISUALIZAÇÃO DA SEMENTE k=0 QUANDO REPOSICIONADA ([ ⌖ Centralizar na aba ] ou Auto-Fit) */}
-                    {arrayPreview.repositionedOriginals?.map((origEnt, oIdx) =>
-                      renderGhostEntity(
-                        origEnt,
-                        `repositioned-orig-${oIdx}`,
-                        "#10b981",
-                        0.95,
-                        true,
-                      ),
-                    )}
-
-                    {/* SLOTS FANTASMA (ATIVOS, OMITIDOS E COM DIAGNÓSTICO DE COLISÃO INDIVIDUAL) */}
-                    {arrayPreview.ghostSlots.map((slot) => {
-                      const diag = arrayValidation.slotDiagnostics[slot.index];
-                      const slotColor =
-                        diag?.status === "error"
-                          ? "#ef4444"
-                          : diag?.status === "warning"
-                            ? "#f59e0b"
-                            : "#06b6d4";
-
-                      return (
-                        <g key={`ghost-slot-${slot.index}`}>
-                          {!slot.isOriginal &&
-                            slot.entities.map((inst, eIdx) =>
-                              renderGhostEntity(
-                                inst,
-                                `slot-${slot.index}-ent-${eIdx}`,
-                                slot.isSkipped ? "#64748b" : slotColor,
-                                slot.isSkipped ? 0.32 : 0.9,
-                                true,
-                              ),
-                            )}
-
-                          {/* Ícone ✕ discreto em instâncias omitidas pelo usuário (1-Tap Skip) */}
-                          {slot.isSkipped && !slot.isOriginal && (
-                            <g>
-                              <circle
-                                cx={slot.center.x}
-                                cy={slot.center.y}
-                                r={8 / safeK}
-                                fill="rgba(15, 23, 42, 0.85)"
-                                stroke="#64748b"
-                                strokeWidth={1.2 / safeK}
-                              />
-                              <line
-                                x1={slot.center.x - 4 / safeK}
-                                y1={slot.center.y - 4 / safeK}
-                                x2={slot.center.x + 4 / safeK}
-                                y2={slot.center.y + 4 / safeK}
-                                stroke="#94a3b8"
-                                strokeWidth={1.6 / safeK}
-                              />
-                              <line
-                                x1={slot.center.x + 4 / safeK}
-                                y1={slot.center.y - 4 / safeK}
-                                x2={slot.center.x - 4 / safeK}
-                                y2={slot.center.y + 4 / safeK}
-                                stroke="#94a3b8"
-                                strokeWidth={1.6 / safeK}
-                              />
-                            </g>
-                          )}
-
-                          {/* Sem rótulos de texto sobrepostos no canvas: colisão indicada apenas pelo contorno tracejado vermelho/âmbar */}
-                        </g>
-                      );
-                    })}
-                  </g>
-                );
-              })()}
             </g>
           </svg>
 
-          {/* MINI-CHIP DISCRETO DE REFERÊNCIA CONCLUÍDA NO CANTO SUPERIOR ESQUERDO (Seção 3.2) */}
-          {!solidOpen &&
-            activeMode !== "3d" &&
-            interactionGuideMode !== "purple_ref" &&
-            (Boolean(referenceState.localAnchor) ||
-              referenceState.landmarks.length > 0 ||
-              referenceState.spanDivision !== null ||
-              referenceState.guides.length > 0) && (
-              <div
-                className={cn(
-                  "pointer-events-auto absolute left-7 z-35 flex items-center",
-                  uiShellMode === "prumo" ? "top-[52px]" : "top-7",
-                )}
-              >
-                <ChamferGeometricAnchorBar
-                  visible={true}
-                  isCapturingReference={false}
-                  referenceState={referenceState}
-                  entities={entities}
-                  selectedIds={selection}
-                  isDark={isDark}
-                  onConcludeReference={() => handleSetInteractionGuideMode("off")}
-                  onEditReference={() => handleSetInteractionGuideMode("purple_ref")}
-                  onCycleAnchor={() => {}}
-                  onSetAnchorAngle={(thetaDeg) => ReferenceService.setActiveAnchorAngle(thetaDeg, true)}
-                  onAddGuide={(kind, opts) => ReferenceService.addConstructionGuide(kind, { ...opts, entities })}
-                  onMidpointAB={() => ReferenceService.createMidpointBetweenAnchors()}
-                  onAlignAxisAB={() => ReferenceService.alignAxisByAnchors()}
-                  onDivideSpanAB={(divN) => ReferenceService.divideSpanBetweenAnchors(divN)}
-                  onDimensionAB={() => {}}
-                  onToggleRadar={() => ReferenceService.setRadarEnabled(!referenceState.radarEnabled)}
-                  onSetEchoMode={(mode) => ReferenceService.setEchoConfig({ mode })}
-                  onCommitEchoEntities={() => {}}
-                  onGenerateTable={() => {}}
-                  onProgressiveClear={() => {
-                    ReferenceService.clearAll();
-                    const res = clearGeometricMarksFromEntities(entities, false);
-                    if (res.removedCount > 0) commit(res.cleaned);
-                    triggerHaptic("action");
-                    toast.success("🗑️ Referência, marcos, divisões e guias removidos.");
-                  }}
-                  onClearAll={() => {
-                    ReferenceService.clearAll();
-                    const res = clearGeometricMarksFromEntities(entities, false);
-                    if (res.removedCount > 0) commit(res.cleaned);
-                    triggerHaptic("action");
-                    toast.success("🗑️ Referência, marcos, divisões e guias removidos.");
-                  }}
-                />
-              </div>
-            )}
-
-          {activeMode !== "3d" && (
-            <Rulers
-              view={view}
-              isDark={isDark}
-              themeColors={themeColors}
-              majorStep={gridConfig.majorStep}
-              unit={unit}
-              width={canvasSize.w}
-              height={canvasSize.h}
-              cursor={cursor}
-              frame={frame}
-              compactPortrait={!isLandscape}
-              slimMode={uiShellMode === "compact"}
-              prumoMode={uiShellMode === "prumo"}
-              rulersVisible={rulersVisible}
-              onToggleRulersVisible={handleToggleRulersVisible}
-              onCenterWorkspace={() => {
-                triggerHaptic("selection");
-                fitFrame();
-                toast.info(`Área de Trabalho (${Math.round(frame.w)} × ${Math.round(frame.h)} mm) enquadrada na tela`);
-              }}
-            />
-          )}
-
-          {/* HOST ÚNICO DE NOTIFICAÇÕES COMPACTAS DO CHAMFER CAD (ANCORADO NO TOPO CENTRAL DO CANVAS, ~8PX ABAIXO DA RÉGUA HORIZONTAL) */}
-          <ChamferCompactToastHost
-            themeMode={themeColors.mode}
-            accentColor={themeColors.accent}
-            isLandscape={isLandscape}
-            hasTopCommandBanner={
-              uiShellMode === "prumo" ||
-              (isLandscape && (divideEditorOpen || tool === "fillet" || tool === "chamfer"))
-            }
+          <Rulers
+            view={view}
+            isDark={isDark}
+            majorStep={gridConfig.majorStep}
+            unit={unit}
+            width={canvasSize.w}
+            height={canvasSize.h}
           />
-
-          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (OCULTA NO MODO PRUMO E CAD 3D) */}
-          {!isLandscape && uiShellMode !== "prumo" && !focus && !solidOpen && activeMode !== "3d" && (
-            <ChamferPortraitCanvasMicroPill
-              isDark={isDark}
-              planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
-              plans={project?.plans.map((p) => ({ id: p.id, name: p.name })) ?? [{ id: planId, name: "P01" }]}
-              activePlanId={planId}
-              onSelectPlan={(nextPlanId) => {
-                if (!project || nextPlanId === planId) return;
-                const targetPlan = project.plans.find((x) => x.id === nextPlanId);
-                if (!targetPlan) return;
-                setProject((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        plans: prev.plans.map((x) =>
-                          x.id === planId
-                            ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
-                            : x,
-                        ),
-                      }
-                    : prev,
-                );
-                setPlanId(targetPlan.id);
-                setEntities(targetPlan.entities ?? []);
-                setGroups(targetPlan.groups ?? []);
-                setDims(targetPlan.dims ?? []);
-                setCad3dTreeJson(targetPlan.cad3dTreeJson);
-                setRevEngData(sanitizeRevEngPlanData(targetPlan.revEng));
-                setSelection([]);
-              }}
-              onCreatePlan={() => {
-                if (!project) return;
-                const plan = emptyPlan(project.plans.length);
-                plan.name = planLabel(project.plans.length);
-                const next: Project = {
-                  ...project,
-                  plans: [
-                    ...project.plans.map((x) =>
-                      x.id === planId
-                        ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
-                        : x,
-                    ),
-                    plan,
-                  ],
-                  lastPlanId: plan.id,
-                };
-                saveProject(next);
-                setProject(next);
-                setPlanId(plan.id);
-                setEntities([]);
-                setGroups([]);
-                setDims([]);
-                setCad3dTreeJson(undefined);
-                setRevEngData(createDefaultRevEngPlanData());
-                setSelection([]);
-                toast.success(`${plan.name} criado.`);
-              }}
-              cursor={cursor}
-              snapOn={snapOn}
-              onToggleSnap={() => setSnapOn((s) => !s)}
-              temporaryOrigin={temporaryOrigin}
-              onClearTemporaryOrigin={() => {
-                setTemporaryOrigin(null);
-                setPinnedMeetingPoints([]);
-                setLockedConstraints({});
-                toast.success("Vetor Datum limpo");
-              }}
-              onSetRefAtCursor={() => {
-                setTemporaryOrigin({
-                  id: uid(),
-                  p: cursor,
-                  label: "DATUM",
-                  kind: "origin",
-                  timestamp: Date.now(),
-                });
-                triggerHaptic("success");
-                toast.success(`⌖ DATUM fixado em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
-              }}
-              onReanchorDatumHere={() => {
-                const targetPt =
-                  pending.length > 0
-                    ? pending[pending.length - 1]!
-                    : Math.hypot(lastCreatedVertexRef.current.x, lastCreatedVertexRef.current.y) > 1e-3
-                      ? lastCreatedVertexRef.current
-                      : cursor;
-                setTemporaryOrigin({
-                  id: uid(),
-                  p: targetPt,
-                  label: "DATUM",
-                  kind: "origin",
-                  timestamp: Date.now(),
-                });
-                triggerHaptic("action");
-                toast.success(`⌖ DATUM reancorado em (${targetPt.x.toFixed(1)}, ${targetPt.y.toFixed(1)}) mm`);
-              }}
-              onResetDatumZero={() => {
-                setTemporaryOrigin({
-                  id: uid(),
-                  p: { x: 0, y: 0 },
-                  label: "0,0",
-                  kind: "origin",
-                  timestamp: Date.now(),
-                });
-                triggerHaptic("action");
-                toast.success("⌖ DATUM resetado para a origem (0, 0) mm");
-              }}
-              zoomPercent={Math.round(view.k * 100)}
-              onFitPiece={() => fitTo(entities)}
-              onFitWorkspace={() => fitFrame()}
-              onResetZoom100={() =>
-                setView((v) => ({
-                  ...v,
-                  k: 1,
-                }))
-              }
-              onZoomStep={(factor) =>
-                setView((v) => {
-                  const nextK = Math.max(0.05, Math.min(40, v.k * factor));
-                  const cx = canvasSize.w / 2;
-                  const cy = canvasSize.h / 2;
-                  return {
-                    k: nextK,
-                    tx: cx - ((cx - v.tx) / v.k) * nextK,
-                    ty: cy - ((cy - v.ty) / v.k) * nextK,
-                  };
-                })
-              }
-              gridMm={grid}
-              showGrid={showGrid}
-              onToggleGrid={() => setShowGrid((s) => !s)}
-              onSelectGridMm={(mm) => {
-                setGrid(mm);
-                setShowGrid(() => true);
-              }}
-              selectedCount={selection.length}
-            />
-          )}
 
           {clipboardMenu && clipboardRef.current && (
             <div
@@ -14756,18 +7820,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* HUD DINÂMICO TOUCH CAD (OCULTO ENQUANTO O HUD DE ARRAY ESTIVER ABERTO PARA ZERO SOBREPOSIÇÃO) */}
-          {activeArrayType === null && (
+          {/* HUD DINÂMICO TOUCH CAD (CHIPS INTERATIVOS + PÍLULAS DE MEDIDA + MINI-KEYPAD + DESAMBIGUAÇÃO + PUSH/PULL Z) */}
           <ChamferTouchDynamicHud
             activeTool={tool}
             pendingCount={pending.length}
             basePoint={pending.length > 0 ? pending[pending.length - 1]! : null}
             cursorPoint={cursor}
             isDark={isDark}
-            lineMode={lineMode}
-            onChangeLineMode={setLineMode}
-            polylineCreationMode={polylineCreationMode}
-            onChangePolylineCreationMode={setPolylineCreationMode}
             polylineSegMode={polylineSegMode}
             onTogglePolylineSegMode={() =>
               setPolylineSegMode((prev) => (prev === "line" ? "tangent_arc" : "line"))
@@ -14816,13 +7875,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               const base = pending.length > 0 ? pending[pending.length - 1]! : cursor;
               const curAngRad =
                 typeof angleDeg === "number" && Number.isFinite(angleDeg)
-                  ? (-angleDeg * Math.PI) / 180
+                  ? (angleDeg * Math.PI) / 180
                   : Math.atan2(cursor.y - base.y, cursor.x - base.x);
               const effLen =
                 typeof lengthMm === "number" && Number.isFinite(lengthMm) && lengthMm > 0
-                  ? tool === "line" && lineMode === "center_radius"
-                    ? lengthMm / 2
-                    : lengthMm
+                  ? lengthMm
                   : typeof radiusMm === "number" && Number.isFinite(radiusMm) && radiusMm > 0
                     ? radiusMm
                     : dist(base, cursor);
@@ -14832,20 +7889,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               };
 
               if (tool === "polyline" || tool === "spline") {
-                if (
-                  tool === "polyline" &&
-                  polylineCreationMode === "center_radius" &&
-                  pending.length === 1
-                ) {
-                  const geom = computeCenterRadiusLineGeometry(pending[0]!, targetPt);
+                if (pending.length > 0) {
                   polylineSegModesRef.current.push(polylineSegMode);
-                  setPending([geom.start, geom.end]);
-                } else {
-                  if (pending.length > 0) {
-                    polylineSegModesRef.current.push(polylineSegMode);
-                  }
-                  setPending((q) => [...q, targetPt]);
                 }
+                setPending((q) => [...q, targetPt]);
               } else if (pending.length === 1) {
                 const finalDraft = buildDraft(
                   tool,
@@ -14856,7 +7903,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   drawingProjection,
                   isoPlane,
                   {
-                    lineMode,
                     rectMode,
                     circleMode,
                     polygonMode,
@@ -14896,832 +7942,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }
             thicknessMm={thickness}
             onChangeThicknessMm={(zMm) => {
+              setThickness(zMm);
               commit((list) =>
                 list.map((e) =>
                   selection.includes(e.id)
-                    ? {
-                        ...e,
-                        extrudeHeight: zMm,
-                        params: { ...e.params, extrudeHeight: zMm, extrudeHeightMm: zMm },
-                      }
+                    ? { ...e, params: { ...e.params, extrudeHeightMm: zMm } }
                     : e,
                 ),
               );
             }}
-            uiShellMode={uiShellMode}
           />
-          )}
 
-          {/* BARRA UNIFICADA DE CONFIRMAÇÃO DO TRIM / APARAR (CONFIRMAÇÃO OBRIGATÓRIA + INSTANTÂNEO OFF POR PADRÃO) */}
-          {(tool === "trim" || tool === "smart_trim") &&
-            activeMode === "2d" &&
-            !solidOpen &&
-            !isInPlaceSolid3DActive && (
-              <ChamferSmartTrimControlBar
-                markedCount={trimMarkedKeys.length}
-                mode={smartTrimMode}
-                instantMode={trimInstantMode}
-                onToggleMode={setSmartTrimMode}
-                onToggleInstantMode={() => {
-                  setTrimInstantMode((v) => !v);
-                  triggerHaptic("selection");
-                }}
-                onConfirmCut={handleConfirmTrimCut}
-                onUnmarkLast={() => {
-                  setTrimMarkedKeys((prev) => prev.slice(0, -1));
-                  triggerHaptic("tap");
-                }}
-                onClearMarks={() => {
-                  setTrimMarkedKeys([]);
-                  triggerHaptic("tap");
-                }}
-                onExit={() => {
-                  setTrimMarkedKeys([]);
-                  setTrimHoverPiece(null);
-                  setTool("select");
-                }}
-                uiShellMode={uiShellMode}
-              />
-            )}
-
-          {/* BARRA DE CONTROLE DA REF. POLAR (NÃO-VETORIAL, COMPATÍVEL COM GRAUS, DATUM, UNDO/REDO E LIMPAR REFS) */}
-          {activeMode === "2d" &&
-            !solidOpen &&
-            !isInPlaceSolid3DActive &&
-            (tool === "polar_ref" || polarRefs.length > 0) && (
-              <ChamferPolarReferenceControlBar
-                visible={tool === "polar_ref"}
-                livePreview={polarRefLivePreview}
-                polarRefsCount={polarRefs.length}
-                lockedDistanceMm={polarRefLockedDist}
-                lockedAngleDeg={polarRefLockedAngle}
-                polarSnapOn={polarSnapOn}
-                onChangeLockedDistance={(d) => {
-                  setPolarRefLockedDist(d);
-                  if (polarRefOriginAnchor) {
-                    const evalRes = evaluateLivePolarReference({
-                      originAnchor: polarRefOriginAnchor,
-                      rawCursor: cursorRef.current,
-                      orthoOn,
-                      polarSnapOn,
-                      lockedDistanceMm: d,
-                      lockedAngleDeg: polarRefLockedAngle,
-                    });
-                    setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...evalRes });
-                  }
-                }}
-                onChangeLockedAngle={(ang) => {
-                  setPolarRefLockedAngle(ang);
-                  if (polarRefOriginAnchor) {
-                    const evalRes = evaluateLivePolarReference({
-                      originAnchor: polarRefOriginAnchor,
-                      rawCursor: cursorRef.current,
-                      orthoOn,
-                      polarSnapOn,
-                      lockedDistanceMm: polarRefLockedDist,
-                      lockedAngleDeg: ang,
-                    });
-                    setPolarRefLivePreview({ originAnchor: polarRefOriginAnchor, ...evalRes });
-                  }
-                }}
-                onTogglePolarSnap={() => setPolarSnapOn((v) => !v)}
-                onCommitPolarRef={handleConfirmLivePolarRef}
-                onClearAllPolarRefs={() => {
-                  if (polarRefsRef.current.length === 0) return;
-                  commitPolarRefs([]);
-                  setPolarRefOriginAnchor(null);
-                  setPolarRefLivePreview(null);
-                  triggerHaptic("action");
-                  toast.success("Referências Polares limpas (reversível com Desfazer).");
-                }}
-                onExit={() => {
-                  setPolarRefOriginAnchor(null);
-                  setPolarRefLivePreview(null);
-                  setTool("select");
-                }}
-                uiShellMode={uiShellMode}
-                isDark={isDark}
-              />
-            )}
-
-          {/* BARRA DA FERRAMENTA "TRAÇAR PEÇA" (PASSAR A LIMPO SOBRE GABARITOS) */}
-          {tool === "trace_part" &&
-            activeMode === "2d" &&
-            !solidOpen &&
-            !isInPlaceSolid3DActive && (
-              <ChamferTracePartControlBar
-                markedCount={traceMarkedKeys.length}
-                guideCount={guideEntitiesCount}
-                guidesHidden={guidesHidden}
-                onCreatePart={handleConfirmTracePartCreate}
-                onUnmarkLast={() => {
-                  setTraceMarkedKeys((prev) => prev.slice(0, -1));
-                  triggerHaptic("tap");
-                }}
-                onClearMarks={() => {
-                  setTraceMarkedKeys([]);
-                  triggerHaptic("tap");
-                }}
-                onToggleHideGuides={() => {
-                  setGuidesHidden((v) => !v);
-                  triggerHaptic("selection");
-                }}
-                onDeleteAllGuides={handleDeleteAllReferenceGuides}
-                onExit={() => {
-                  setTraceMarkedKeys([]);
-                  setTraceHoverPiece(null);
-                  setTool("select");
-                }}
-                uiShellMode={uiShellMode}
-              />
-            )}
-
-          {/* INDICADOR DISCRETO DE MODO GABARITO ATIVO (NÃO-VETORIAL) */}
-          {guideModeOn &&
-            activeMode === "2d" &&
-            !solidOpen &&
-            !isInPlaceSolid3DActive &&
-            tool !== "trace_part" &&
-            tool !== "polar_ref" && (
-              <div
-                data-testid="chamfer-guide-mode-banner"
-                onPointerDown={(e) => e.stopPropagation()}
-                style={{
-                  top: uiShellMode === "prumo" ? 50 : 20,
-                  backgroundColor: "var(--chamfer-popover-bg, rgba(15, 23, 42, 0.9))",
-                  borderColor: "rgba(239, 68, 68, 0.55)",
-                  color: "var(--chamfer-text-primary, #f8fafc)",
-                }}
-                className="pointer-events-auto absolute right-3 z-35 flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[9.5px] font-bold shadow-md backdrop-blur-md select-none"
-              >
-                <span className="size-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-red-400">MODO GABARITO (NÃO-VETORIAL)</span>
-                {guideEntitiesCount > 0 && (
-                  <button
-                    type="button"
-                    data-testid="guide-banner-trace-btn"
-                    onClick={() => {
-                      setGuidesHidden(false);
-                      setTool("trace_part");
-                      triggerHaptic("selection");
-                    }}
-                    style={{ backgroundColor: "var(--chamfer-accent, #10B981)", color: "#FFFFFF" }}
-                    className="rounded-full px-2 py-0.5 text-[9.5px] font-extrabold cursor-pointer active:scale-95"
-                  >
-                    ✒️ Traçar Peça
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGuideModeOn(false);
-                    triggerHaptic("tap");
-                  }}
-                  className="rounded-full px-1 opacity-75 hover:opacity-100 cursor-pointer"
-                  title="Desativar Modo Gabarito"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-          {/* BARRA UNIFICADA DE MEDIDAS EM TEMPO REAL E CONFIRMAÇÃO (60 FPS AO VIVO + PÓS-SOLTURA) — EXCLUSIVA DO MODO 2D PLANO PARA ZERO COLISÃO COM BARRAS 3D */}
-          {!solidOpen &&
-            activeMode === "2d" &&
-            !isInPlaceSolid3DActive &&
-            !orbitProjection2D.isTilted &&
-            tool !== "loft_3d" &&
-            tool !== "trim" &&
-            tool !== "smart_trim" &&
-            tool !== "polar_ref" &&
-            tool !== "trace_part" &&
-            (() => {
-            const hasSubmodeBar =
-              tool === "line" ||
-              tool === "polyline" ||
-              tool === "rect" ||
-              tool === "circle" ||
-              tool === "polygon" ||
-              tool === "slot" ||
-              tool === "node" ||
-              tool === "offset" ||
-              tool === "construction_line" ||
-              tool === "spline";
-
-            const activeUnifiedDraftShape: PendingDraftShapeState | null =
-              pendingDraftShape ??
-              (pending.length >= 1 && draft
-                ? createPendingDraftShapeState(
-                    tool,
-                    draft,
-                    tool === "polyline" || tool === "spline"
-                      ? pending[pending.length - 1]!
-                      : pending[0]!,
-                    cursor,
-                    activeLayer,
-                    filletR,
-                    {
-                      lineMode:
-                        tool === "line"
-                          ? lineMode
-                          : tool === "polyline" && pending.length === 1
-                            ? polylineCreationMode
-                            : "end_to_end",
-                      centerPoint:
-                        (tool === "line" && lineMode === "center_radius") ||
-                        (tool === "polyline" &&
-                          polylineCreationMode === "center_radius" &&
-                          pending.length === 1)
-                          ? pending[0]!
-                          : undefined,
-                      rectMode,
-                      circleMode,
-                      polygonMode,
-                      polygonSides,
-                      polygonAcrossFlatsMm,
-                      slotMode,
-                      slotWidthMm,
-                      arcMidPoint: pending.length >= 2 ? pending[1] : undefined,
-                      isLiveDraft: true,
-                    },
-                  )
-                : selected.length === 1 && !solidOpen && activeMode !== "3d"
-                  ? createSelectedEntityDraftState(selected[0])
-                  : null);
-
-            const topStackOffsetPx =
-              uiShellMode === "prumo"
-                ? hasSubmodeBar
-                  ? 82
-                  : 52
-                : hasSubmodeBar
-                  ? 50
-                  : 24;
-
-            return (
-              <div
-                data-testid="chamfer-top-bars-flex-stack"
-                style={{
-                  position: "absolute",
-                  top: topStackOffsetPx,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 5,
-                  zIndex: 45,
-                  pointerEvents: "none",
-                  maxWidth: "96vw",
-                }}
-              >
-                <ChamferDraftConfirmationBubble
-                  pendingShape={activeUnifiedDraftShape}
-                  view={view}
-                  canvasWidth={canvasSize.w}
-                  canvasHeight={canvasSize.h}
-                  isDark={isDark}
-                  hasSubmodeBar={hasSubmodeBar}
-                  stackedInTopContainer={true}
-                  onUpdatePendingShape={(next) => {
-                    if (next.isSelectedEntity) {
-                      commit((list) =>
-                        revalidateShared(
-                          list.map((e) => (e.id === next.entity.id ? { ...next.entity, id: e.id } : e)),
-                        ),
-                      );
-                      return;
-                    }
-                    lastCreatedVertexRef.current = next.p1;
-                    if (next.tool === "polygon") {
-                      setPolygonSides(next.polygonSides);
-                      setPolygonMode(next.polygonMode);
-                      setPolygonAcrossFlatsMm(next.polygonAcrossFlatsMm);
-                    } else if (next.tool === "slot") {
-                      setSlotWidthMm(next.slotWidthMm);
-                    } else if (next.tool === "rect" || next.tool === "rrect") {
-                      setFilletR(next.cornerRadiusMm);
-                    }
-                    if (pendingDraftShape) {
-                      setPendingDraftShape(next);
-                    } else if (pending.length >= 1) {
-                      cursorRef.current = next.p1;
-                      setCursor(next.p1);
-                      draftRef.current = next.entity;
-                      setDraft(next.entity);
-                      if (
-                        next.tool !== "polyline" &&
-                        next.tool !== "spline" &&
-                        next.tool !== "construction_line"
-                      ) {
-                        setPendingDraftShape({ ...next, isLiveDraft: false });
-                        setPending([]);
-                        setDraft(null);
-                      }
-                    }
-                  }}
-                  onConfirmPendingShape={() => {
-                    if (pendingDraftShape) {
-                      commitPendingDraftShape(pendingDraftShape);
-                    } else if (activeUnifiedDraftShape) {
-                      if (tool === "polyline") {
-                        if (pending.length >= 1) {
-                          const lastPt = pending[pending.length - 1]!;
-                          const d = Math.hypot(cursor.x - lastPt.x, cursor.y - lastPt.y);
-                          if (d > 0.05) {
-                            const allPts = [...pending, cursor];
-                            if (allPts.length >= 2) {
-                              commit((list) => [
-                                ...list,
-                                {
-                                  id: uid(),
-                                  layer: activeLayer,
-                                  type: "polyline",
-                                  pts: allPts,
-                                  closed: false,
-                                },
-                              ]);
-                            }
-                          } else if (pending.length >= 2) {
-                            finishPolyline(false);
-                          }
-                        }
-                        setPending([]);
-                        setDraft(null);
-                      } else if (tool === "spline") {
-                        finishPolyline(false);
-                      } else {
-                        commitPendingDraftShape({ ...activeUnifiedDraftShape, isLiveDraft: false });
-                        setPending([]);
-                        setDraft(null);
-                      }
-                    }
-                  }}
-                  onCancelPendingShape={() => {
-                    setPendingDraftShape(null);
-                    setPending([]);
-                    setDraft(null);
-                    setDraggingDraftGripIndex(null);
-                    setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
-                    toast.info("Forma descartada.");
-                  }}
-                />
-
-                {interactionGuideMode === "purple_ref" && (
-                  <div className="pointer-events-auto flex items-center justify-center">
-                    <ChamferGeometricAnchorBar
-                      visible={true}
-                      isCapturingReference={true}
-                      referenceState={referenceState}
-                      entities={entities}
-                      selectedIds={selection}
-                      isDark={isDark}
-                      onConcludeReference={() => {
-                        handleSetInteractionGuideMode("off");
-                        triggerHaptic("success");
-                        toast.success("✓ Referência concluída • Pontos ativos para Snap magnético.");
-                      }}
-                      onEditReference={() => handleSetInteractionGuideMode("purple_ref")}
-                      onCycleAnchor={() => {
-                        const cycled = ReferenceService.cycleActiveAnchor(entities);
-                        if (cycled) {
-                          triggerHaptic("selection");
-                          toast.success(
-                            `↻ ${cycled.id === "ANCHOR" ? "Âncora Local" : `Marco ${cycled.id}`} ciclado para ${cycled.badgeLabel} (${cycled.origin.x.toFixed(1)}, ${cycled.origin.y.toFixed(1)}) mm`,
-                          );
-                        } else {
-                          toast.info("Toque em uma geometria primeiro para ciclar seus candidatos.");
-                        }
-                      }}
-                      onSetAnchorAngle={(thetaDeg) => {
-                        ReferenceService.setActiveAnchorAngle(thetaDeg, true);
-                        triggerHaptic("selection");
-                      }}
-                      onAddGuide={(kind, opts) => {
-                        ReferenceService.addConstructionGuide(kind, {
-                          ...opts,
-                          entities,
-                        });
-                        triggerHaptic("action");
-                      }}
-                      onMidpointAB={() => {
-                        const midAnchor = ReferenceService.createMidpointBetweenAnchors();
-                        if (midAnchor) {
-                          triggerHaptic("success");
-                          toast.success(
-                            `✓ Ponto Médio A–B calculado em (${midAnchor.origin.x.toFixed(1)}, ${midAnchor.origin.y.toFixed(1)}) mm`,
-                          );
-                        }
-                      }}
-                      onAlignAxisAB={() => {
-                        const angle = ReferenceService.alignAxisByAnchors();
-                        if (angle !== null) {
-                          triggerHaptic("success");
-                          toast.success(`✓ Eixo X' alinhado por A→B (∠${angle.toFixed(2)}°)`);
-                        }
-                      }}
-                      onDivideSpanAB={(divN) => {
-                        ReferenceService.divideSpanBetweenAnchors(divN);
-                      }}
-                      onDimensionAB={() => {
-                        const metrics = ReferenceService.computeAnchorPairMetrics();
-                        if (!metrics) return;
-                        const dim = makeDimension(
-                          "aligned",
-                          [
-                            { kind: "point", p: metrics.fromAnchor.origin },
-                            { kind: "point", p: metrics.toAnchor.origin },
-                          ],
-                          18,
-                        );
-                        setDims((prev) => [...prev, dim]);
-                        triggerHaptic("success");
-                        toast.success(
-                          `✓ Cota ${metrics.fromAnchor.id}–${metrics.toAnchor.id} (${metrics.distance.toFixed(1)} mm) inserida.`,
-                        );
-                      }}
-                      onToggleRadar={() => {
-                        const nextRadar = !referenceState.radarEnabled;
-                        ReferenceService.setRadarEnabled(nextRadar);
-                        triggerHaptic("selection");
-                        toast.info(nextRadar ? "Radar de Bordas ativado." : "Radar de Bordas ocultado.");
-                      }}
-                      onSetEchoMode={(mode) => {
-                        ReferenceService.setEchoConfig({ mode });
-                        triggerHaptic("selection");
-                      }}
-                      onCommitEchoEntities={() => {
-                        const act = ReferenceService.getActive();
-                        if (!act) return;
-                        const sources =
-                          selection.length > 0
-                            ? entities.filter((e) => selection.includes(e.id))
-                            : draft
-                              ? [draft]
-                              : entities.slice(-1);
-                        const echoed = ReferenceService.computeEchoEntities(sources, act);
-                        if (echoed.length === 0) {
-                          toast.info("Selecione ou desenhe uma geometria para aplicar o Eco.");
-                          return;
-                        }
-                        commit((prev) => [...prev, ...echoed]);
-                        ReferenceService.setEchoConfig({ mode: "off" });
-                        triggerHaptic("success");
-                        toast.success(`✓ ${echoed.length} entidade(s) confirmada(s) pelo Eco de Simetria.`);
-                      }}
-                      onGenerateTable={(exportCsv) => {
-                        const { rows, csv, cadEntities } =
-                          ReferenceService.generateAnchorCoordinateTable(entities, selection, undefined, "cotas");
-                        if (cadEntities.length > 0) {
-                          commit((prev) => [...prev, ...cadEntities]);
-                        }
-                        if (exportCsv && typeof document !== "undefined") {
-                          const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = url;
-                          a.download = `tabela-marcos-ancora.csv`;
-                          a.click();
-                          URL.revokeObjectURL(url);
-                          toast.success(`✓ Tabela CSV exportada (${rows.length} coordenadas em X', Y').`);
-                        } else {
-                          toast.success(
-                            `✓ ${cadEntities.length} cota(s) por ordenada (X', Y') inserida(s) na camada COTAS.`,
-                          );
-                        }
-                        triggerHaptic("success");
-                      }}
-                      onProgressiveClear={() => {
-                        ReferenceService.clearAll();
-                        const res = clearGeometricMarksFromEntities(entities, false);
-                        if (res.removedCount > 0) commit(res.cleaned);
-                        triggerHaptic("action");
-                        toast.success("🗑️ Todas as Âncoras, Marcos, Divisões e Guias foram limpos.");
-                      }}
-                      onClearAll={() => {
-                        ReferenceService.clearAll();
-                        const res = clearGeometricMarksFromEntities(entities, false);
-                        if (res.removedCount > 0) commit(res.cleaned);
-                        triggerHaptic("action");
-                        toast.success("🗑️ Todas as Âncoras, Marcos, Divisões e Guias foram limpos.");
-                      }}
-                      onUseActiveAnchorInTool={(anchor) => {
-                        const pt = { x: anchor.origin.x, y: anchor.origin.y };
-                        cursorRef.current = pt;
-                        setCursor(pt);
-                        if (activeArrayType === "polar") {
-                          setArrayPolarParams((prev) => {
-                            const baseCenter = selected.length > 0 ? getGroupCenter(selected) : pt;
-                            return {
-                              ...prev,
-                              center: pt,
-                              radius: dist(pt, baseCenter),
-                              startAngleDeg:
-                                Math.atan2(baseCenter.y - pt.y, baseCenter.x - pt.x) * (180 / Math.PI),
-                            };
-                          });
-                          setIsArrayPickingCenter(false);
-                          triggerHaptic("success");
-                          toast.success(
-                            `✓ Origem aplicada como centro do Array Polar (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm`,
-                          );
-                          return;
-                        }
-                        if (
-                          tool === "line" ||
-                          tool === "construction_line" ||
-                          tool === "polyline" ||
-                          tool === "spline" ||
-                          tool === "rect" ||
-                          tool === "circle" ||
-                          tool === "ellipse" ||
-                          tool === "arc" ||
-                          tool === "measure"
-                        ) {
-                          setPending((prev) => [...prev, pt]);
-                          triggerHaptic("success");
-                          return;
-                        }
-                        setTemporaryOrigin({
-                          id: `anchor_${anchor.id}`,
-                          p: pt,
-                          label: anchor.id === "ANCHOR" ? "ÂNCORA X',Y'" : `MARCO ${anchor.id}`,
-                        });
-                        triggerHaptic("success");
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* GIZMO 3D DE TRANSLAÇÃO (X, Y, +Z ORTHO) E MOTOR INTERATIVO LOFT 3D MULTISSEÇÃO */}
-          <Suspense fallback={null}>
-          <Chamfer3DGizmoAndLoftOverlay
-            entities={entities}
-            selectedIds={selectionSet}
-            view={view}
-            onSetView={setView}
-            width={canvasSize.w}
-            height={canvasSize.h}
-            activeMode={activeMode}
-            uiShellMode={uiShellMode}
-            renderStyle3D={renderStyle3D}
-            brepWireframeLayers={brepWireframeLayers}
-            onChangeBrepWireframeLayers={handleChangeBrepWireframeLayers}
-            isDark={isDark}
-            isIsometric={drawingProjection === "isometric"}
-            isoPlane={isoPlane}
-            orbitProjection={orbitProjection2D}
-            is3DViewActive={orbitProjection2D.isTilted || activeMode === "3d"}
-            isPortrait={!isLandscape}
-            onLiveElevateSelection={(newElevationZ) => {
-              setEntities((prev) =>
-                prev.map((ent) =>
-                  selectionSet.has(ent.id) ? setEntityElevationZ(ent, newElevationZ) : ent,
-                ),
-              );
-            }}
-            onCommitElevateSelection={(newElevationZ) => {
-              commit((list) =>
-                list.map((ent) =>
-                  selectionSet.has(ent.id) ? setEntityElevationZ(ent, newElevationZ) : ent,
-                ),
-              );
-            }}
-            onLiveTranslateSelectionXY={(dx, dy, targetIds) => {
-              if (Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) return;
-              const ids = targetIds && targetIds.length > 0 ? new Set(targetIds) : selectionSet;
-              setEntities((prev) =>
-                prev.map((ent) =>
-                  ids.has(ent.id) ? translate(ent, dx, dy) : ent,
-                ),
-              );
-            }}
-            onCommitTranslateSelectionXY={(dx, dy, targetIds) => {
-              if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) return;
-              const ids = targetIds && targetIds.length > 0 ? new Set(targetIds) : selectionSet;
-              commit((list) =>
-                list.map((ent) =>
-                  ids.has(ent.id) ? translate(ent, dx, dy) : ent,
-                ),
-              );
-              if (targetIds && targetIds.length > 0) {
-                setSelection(targetIds);
-              }
-            }}
-            onOpenElevationKeypad={(currentZ) => {
-              setElevationKeypadState({ open: true, initialZ: currentZ });
-            }}
-            isLoftToolActive={tool === "loft_3d" || activeDirect3DTool === "loft_3d"}
-            loftSectionIds={loftSectionIds}
-            loftSurfaceMode={loftSurfaceMode}
-            loftBodyMode={loftBodyMode}
-            sheetThicknessMm={thickness}
-            onChangeLoftSurfaceMode={setLoftSurfaceMode}
-            onChangeLoftBodyMode={setLoftBodyMode}
-            onToggleLoftSection={(entityId) => {
-              triggerHaptic("selection");
-              setLoftSectionIds((prev) =>
-                prev.includes(entityId)
-                  ? prev.filter((id) => id !== entityId)
-                  : [...prev, entityId],
-              );
-            }}
-            onClearLoftSections={() => setLoftSectionIds([])}
-            onUpdateSectionElevationZ={(entityId, newElevationZ) => {
-              commit((list) =>
-                list.map((ent) =>
-                  ent.id === entityId ? setEntityElevationZ(ent, newElevationZ) : ent,
-                ),
-              );
-            }}
-            onAutoSpaceLoftSectionsZ={(stepMm = 60) => {
-              commit((list) =>
-                list.map((ent) => {
-                  const idx = loftSectionIds.indexOf(ent.id);
-                  if (idx < 0) return ent;
-                  return setEntityElevationZ(ent, idx * stepMm);
-                }),
-              );
-            }}
-            onRemoveLoftSection={(id) =>
-              setLoftSectionIds((prev) => prev.filter((item) => item !== id))
-            }
-            onConfirmLoft3D={handleConfirmLoft3D}
-            onCancelLoft3D={() => {
-              setLoftSectionIds([]);
-              setTool("select");
-              if (activeDirect3DTool === "loft_3d") {
-                setActiveDirect3DTool("select_3d");
-              }
-            }}
-            onActivateLoftToolFromSelection={() => {
-              triggerHaptic("selection");
-              const closedSel = selected
-                .filter((e) => isClosedLoftableProfile(e))
-                .sort((a, b) => getEntityElevationZ(a) - getEntityElevationZ(b))
-                .map((e) => e.id);
-              setLoftSectionIds(closedSel);
-              setTool("loft_3d");
-              setActiveDirect3DTool("loft_3d");
-              if (
-                drawingProjection !== "isometric" &&
-                !orbitProjection2D.isTilted
-              ) {
-                animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-              }
-            }}
-            topologyScene={topologyScene3D}
-            subSelection3D={subSelection3D}
-            onChangeSubSelection3D={setSubSelection3D}
-            activeDirect3DTool={activeDirect3DTool}
-            onChangeDirect3DTool={(next3DTool) => {
-              setActiveDirect3DTool(next3DTool);
-              if (next3DTool === "loft_3d") {
-                setTool("loft_3d");
-              } else if (tool === "loft_3d") {
-                setTool("select");
-              }
-            }}
-            onSelectEntities={setSelection}
-            onPreviewEntities={(updater, selectedIds) => {
-              setEntities((prev) => {
-                const updated = typeof updater === "function" ? updater(prev) : updater;
-                const synced = syncAssociativeGeometricMarks(updated);
-                ReferenceService.syncWithEntities(synced);
-                return synced;
-              });
-              if (Array.isArray(selectedIds)) {
-                setSelection((prevSel) =>
-                  prevSel.length === selectedIds.length &&
-                  prevSel.every((id, idx) => id === selectedIds[idx])
-                    ? prevSel
-                    : selectedIds,
-                );
-              }
-            }}
-            onCommitAtomicDrag={(preDragEntities, finalEntities, toastMessageOrIds) => {
-              past.current = [...past.current.slice(-49), preDragEntities];
-              pastReferenceSnapshotsRef.current = [
-                ...pastReferenceSnapshotsRef.current.slice(-49),
-                ReferenceService.getSnapshot(),
-              ];
-              pastPolarRefsRef.current = [
-                ...pastPolarRefsRef.current.slice(-49),
-                polarRefsRef.current,
-              ];
-              future.current = [];
-              futureReferenceSnapshotsRef.current = [];
-              futurePolarRefsRef.current = [];
-              setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
-              setEntities(() => {
-                const synced = syncAssociativeGeometricMarks(finalEntities);
-                ReferenceService.syncWithEntities(synced);
-                return synced;
-              });
-              if (Array.isArray(toastMessageOrIds)) {
-                setSelection((prevSel) =>
-                  prevSel.length === toastMessageOrIds.length &&
-                  prevSel.every((id, idx) => id === toastMessageOrIds[idx])
-                    ? prevSel
-                    : toastMessageOrIds,
-                );
-              } else if (typeof toastMessageOrIds === "string" && toastMessageOrIds) {
-                toast.success(toastMessageOrIds);
-              }
-            }}
-            onCommitEntities={(updater, toastMessageOrIds) => {
-              commit(updater);
-              if (Array.isArray(toastMessageOrIds)) {
-                setSelection((prevSel) =>
-                  prevSel.length === toastMessageOrIds.length &&
-                  prevSel.every((id, idx) => id === toastMessageOrIds[idx])
-                    ? prevSel
-                    : toastMessageOrIds,
-                );
-              } else if (typeof toastMessageOrIds === "string" && toastMessageOrIds) {
-                toast.success(toastMessageOrIds);
-              }
-            }}
-            onSwitchTo2DSketchOnFace={(face: DirectFace3D) => {
-              setTemporaryOrigin({
-                id: `face_workplane_${face.faceId}`,
-                p: {
-                  x: Number(face.centroid.x.toFixed(2)),
-                  y: Number(face.centroid.y.toFixed(2)),
-                },
-                label: `FACE Z=${face.centroid.z.toFixed(1)}mm`,
-                kind: "origin",
-                timestamp: Date.now(),
-              });
-              transitionTo2D();
-              setTool("rect");
-              toast.success(
-                `Plano 2D alinhado à ${face.label} (Z = ${face.centroid.z.toFixed(1)} mm) — desenhe furos, rasgos ou recortes sobre a face.`,
-              );
-            }}
-            onDeleteSelectedEntities={(idsToDelete) => {
-              const targetIds = idsToDelete && idsToDelete.length > 0 ? idsToDelete : selection;
-              commit((list) => list.filter((e) => !targetIds.includes(e.id)));
-              setSelection([]);
-              toast.success("Corpo 3D removido.");
-            }}
-          />
-          </Suspense>
-
-          {/* TECLADO NUMÉRICO DIRETO DE ELEVAÇÃO +Z (GIZMO 3D) */}
-          {elevationKeypadState.open && (
-            <div className="pointer-events-auto absolute left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
-              <ChamferCompactNumericEditor
-                property={{
-                  key: "elevationZ",
-                  label: "Elevação Vertical (+Z)",
-                  symbol: "↕Z",
-                  value: elevationKeypadState.initialZ,
-                  unit: "mm",
-                  defaultStep: 10,
-                  stepOptions: [1, 5, 10, 20, 60],
-                  allowNegative: true,
-                }}
-                onChange={(newZ) => {
-                  const selSet = new Set(selection);
-                  setEntities((prev) =>
-                    prev.map((ent) =>
-                      selSet.has(ent.id) ? setEntityElevationZ(ent, newZ) : ent,
-                    ),
-                  );
-                }}
-                onConfirm={(finalZ) => {
-                  const selSet = new Set(selection);
-                  commit((list) =>
-                    list.map((ent) =>
-                      selSet.has(ent.id) ? setEntityElevationZ(ent, finalZ) : ent,
-                    ),
-                  );
-                  setElevationKeypadState({ open: false, initialZ: finalZ });
-                  toast.success(`Elevação Z definida para ${finalZ.toFixed(2)} mm.`);
-                }}
-                onCancel={() =>
-                  setElevationKeypadState((prev) => ({ ...prev, open: false }))
-                }
-              />
-            </div>
-          )}
-
-          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D OU CAD 3D ESTIVER ATIVO */}
-          {(isOrbitToolActive || activeMode === "3d") && (
-            <div
-              className={cn(
-                "pointer-events-none absolute left-4 z-35 flex flex-col items-start gap-1.5 transition-all duration-300",
-                uiShellMode === "prumo"
-                  ? "bottom-24"
-                  : activeMode === "3d"
-                    ? "bottom-4"
-                    : "bottom-12",
-              )}
-            >
+          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D ESTIVER ATIVA */}
+          {isOrbitToolActive && (
+            <div className="pointer-events-none absolute bottom-12 left-4 z-35 flex flex-col items-start gap-1.5">
               <ChamferAxesGizmo3D
                 azimuthDeg={orbitAzimuthDeg}
                 elevationDeg={orbitElevationDeg}
@@ -15735,7 +7969,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* Nota (Seção 1.2): Mensagens e banners de dicas de ferramentas acima da barra inferior removidos para manter o canvas 100% limpo */}
+          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (CANVAS 2D) */}
+          <div
+            className={cn(
+              "pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors",
+              isDark
+                ? "border-slate-800/80 bg-slate-950/90 text-slate-300"
+                : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
+            )}
+          >
+            <span className={cn("font-bold uppercase tracking-wider", isOrbitToolActive ? "text-cyan-400" : isDark ? "text-red-400" : "text-red-600")}>
+              {isOrbitToolActive ? "ÓRBITA 3D" : operationFeedback.command}
+            </span>
+            <span className={isDark ? "text-slate-600" : "text-slate-300"}>|</span>
+            <span className={isDark ? "text-slate-300" : "text-slate-700"}>
+              {isOrbitToolActive
+                ? `Arraste com 1 dedo/mouse para orbitar (θ ${Math.round(orbitAzimuthDeg)}° · φ ${Math.round(orbitElevationDeg)}°)`
+                : operationFeedback.instruction}
+            </span>
+          </div>
 
           {zoomHud !== null && (
             <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
@@ -15743,503 +7995,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* MICRO-PÍLULA FLUTUANTE DO MODO FOCO IMERSIVO: [ ⛶ Sair do Foco | ↶ | ↷ ] */}
           {focus && (
-            <div
-              data-testid="chamfer-focus-mode-pill"
-              style={{
-                backgroundColor: isDark ? "rgba(11, 15, 20, 0.90)" : "rgba(255, 255, 255, 0.92)",
-                borderColor: isDark ? "#293444" : "#CBD5E1",
-                color: isDark ? "#E6EDF5" : "#0F172A",
-              }}
-              className="pointer-events-auto absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold shadow-xl backdrop-blur-xl"
-            >
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
               <button
-                type="button"
-                data-testid="chamfer-exit-focus-btn"
+                onClick={leaveEditor}
+                aria-label="Sair do CHAMFER"
+                className="metal flex items-center gap-1 rounded-xl px-2.5 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+              >
+                <ArrowLeft className="size-3.5" /> Sair
+              </button>
+              <button
                 onClick={() => setFocus(false)}
-                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[#38BDF8] hover:bg-[#38BDF8]/15 transition-colors cursor-pointer"
+                aria-label="Sair do foco"
+                className="metal grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
               >
-                <Minimize className="size-3.5" />
-                <span>⛶ Sair do Foco</span>
-              </button>
-              <span className={cn("h-3.5 w-px", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
-              <button
-                type="button"
-                disabled={!historyState.canUndo && pending.length === 0}
-                onClick={undo}
-                title="Desfazer (Ctrl+Z)"
-                aria-label="Desfazer no modo foco"
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-full transition-colors",
-                  historyState.canUndo || pending.length > 0
-                    ? "hover:bg-white/10 cursor-pointer"
-                    : "opacity-35 cursor-not-allowed",
-                )}
-              >
-                <Undo2 className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                disabled={!historyState.canRedo}
-                onClick={redo}
-                title="Refazer (Ctrl+Y)"
-                aria-label="Refazer no modo foco"
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-full transition-colors",
-                  historyState.canRedo
-                    ? "hover:bg-white/10 cursor-pointer"
-                    : "opacity-35 cursor-not-allowed",
-                )}
-              >
-                <Redo2 className="size-3.5" />
+                <X className="size-4" />
               </button>
             </div>
           )}
 
-          {/* BOTÕES FLUTUANTES DISCRETOS NA EXTREMIDADE DIREITA DO CANVAS (MODO PAISAGEM COMPACTO COM INSPETOR FECHADO) */}
-          {isLandscape &&
-            uiShellMode === "compact" &&
-            !rightSidebarOpen &&
-            !focus &&
-            !solidOpen &&
-            activeMode !== "3d" &&
-            activeArrayType === null && (
-              <div
-                data-testid="chamfer-right-edge-floating-controls"
-                className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1.5"
-              >
-                <button
-                  type="button"
-                  data-testid="chamfer-floating-zoom-fit-btn"
-                  data-cmd-id="view.center_piece"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    centerPiece(false);
-                  }}
-                  title="⌖ Enquadrar Peça na Tela (Zoom Fit)"
-                  aria-label="Enquadrar peça na tela"
-                  style={{
-                    backgroundColor: isDark ? "rgba(18, 24, 33, 0.84)" : "rgba(255, 255, 255, 0.88)",
-                    borderColor: isDark ? "#293444" : "#CBD5E1",
-                    color: isDark ? "#38BDF8" : "#0284C7",
-                  }}
-                  className="flex size-8 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                >
-                  <Crosshair className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  data-testid="chamfer-floating-inspector-btn"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setRightSidebarOpen(true);
-                  }}
-                  title="Abrir Inspetor Contextual (Propriedades, Camadas, Corte & BOM, Cotas, Eng. Reversa)"
-                  aria-label="Abrir Inspetor Contextual"
-                  style={{
-                    backgroundColor: isDark ? "rgba(18, 24, 33, 0.84)" : "rgba(255, 255, 255, 0.88)",
-                    borderColor: isDark ? "#293444" : "#CBD5E1",
-                    color: isDark ? "#E6EDF5" : "#0F172A",
-                  }}
-                  className="flex size-8 items-center justify-center rounded-full border font-mono text-xs font-bold shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                >
-                  &lt;
-                </button>
-              </div>
-            )}
-
-          {/* ALÇAS INTERATIVAS EM TEMPO REAL PARA NOTA TÉCNICA SELECIONADA (REFLOW DE LARGURA + ROTAÇÃO) */}
-          {activeMode === "2d" &&
-            !solidOpen &&
-            !richNoteSession &&
-            selected.length === 1 &&
-            selected[0]?.type === "text" && (
-              <ChamferRichNoteCanvasHandles
-                entity={selected[0]}
-                view={view}
-                isDark={isDark}
-                onLivePreviewSpec={(entityId, nextSpec, nextAnchor) => {
-                  setEntities((list) =>
-                    list.map((ent) =>
-                      ent.id === entityId && ent.type === "text"
-                        ? buildRichNoteEntity(
-                            ent.id,
-                            nextAnchor ?? { x: ent.x, y: ent.y },
-                            nextSpec,
-                            ent.layer || "anotacoes",
-                            ent.params,
-                          )
-                        : ent,
-                    ),
-                  );
-                }}
-                onCommitSpec={(entityId, nextSpec, nextAnchor) => {
-                  commit((list) =>
-                    list.map((ent) =>
-                      ent.id === entityId && ent.type === "text"
-                        ? buildRichNoteEntity(
-                            ent.id,
-                            nextAnchor ?? { x: ent.x, y: ent.y },
-                            nextSpec,
-                            ent.layer || "anotacoes",
-                            ent.params,
-                          )
-                        : ent,
-                    ),
-                  );
-                }}
-                onOpenEditor={(ent) => openRichNoteEditorForEntity(ent)}
-                onDuplicate={(ent) => {
-                  if (ent.type !== "text") return;
-                  const spec = getEntityRichNoteSpec(ent);
-                  if (!spec) return;
-                  const dup = buildRichNoteEntity(
-                    uid(),
-                    { x: ent.x + 12, y: ent.y + 12 },
-                    spec,
-                    ent.layer || "anotacoes",
-                  );
-                  commit((list) => [...list, dup]);
-                  setSelection([dup.id]);
-                  toast.success("Nota técnica duplicada.");
-                }}
-                onDelete={(ent) => {
-                  commit((list) => list.filter((x) => x.id !== ent.id));
-                  setSelection([]);
-                  toast.info("Nota técnica removida.");
-                }}
-              />
-            )}
-
-          {/* INTERFACE ESPACIAL "PRUMO" (ZERO BARRAS DE FERRAMENTAS — 5 INSTRUMENTOS SUSPENSOS + RESPIRO + COREOGRAFIA 380ms) */}
-          {(uiShellMode === "prumo" || uiShellTransitionDir === "to-compact") && !solidOpen && (
-            <PrumoErrorBoundary onFallbackToCompact={() => handleSetUiShellMode("compact")}>
-              <ChamferPrumoSpatialUI
-                isDark={isDark}
-                viewportWidth={canvasSize.w || verticalLayout.viewportWidth}
-                viewportHeight={canvasSize.h || verticalLayout.viewportHeight}
-                isLandscape={isLandscape}
-                uiShellMode={uiShellMode}
-                isExitingToCompact={uiShellTransitionDir === "to-compact"}
-                onChangeUiShellMode={handleSetUiShellMode}
-                projectName={project?.name ?? "Projeto 26"}
-                saveStatus={saveStatus}
-                onManualSave={handleManualSave}
-                onLeaveEditor={() => {
-                  if (
-                    saveStatus === "pendente" &&
-                    (chamferSettings.autoSave || chamferSettings.recoveryEnabled)
-                  ) {
-                    performSave();
-                  }
-                  leaveEditor();
-                }}
-                activeMode={activeMode}
-                onSelect2D={() => transitionTo2D()}
-                onSelect3D={() => transitionTo3D("3d")}
-                drawingProjection={drawingProjection}
-                onSetDrawingProjection={(mode) => {
-                  setDrawingProjection(mode);
-                  if (mode === "orthographic") transitionTo2D();
-                }}
-                isOrbitToolActive={isOrbitToolActive}
-                isOrbitTilted={orbitProjection2D.isTilted}
-                onToggleOrbitTool={(next) => {
-                  const target = typeof next === "boolean" ? next : !isOrbitToolActive;
-                  setIsOrbitToolActive(target);
-                  if (target && isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                    animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-                  }
-                }}
-                onSelectViewPreset={(preset) => {
-                  handleSelectOrbitPreset(preset === "iso" ? "iso_se" : preset);
-                }}
-                renderStyle3D={renderStyle3D}
-                onChangeRenderStyle3D={(style) => {
-                  userPickedArameIn3DRef.current = style === "wireframe";
-                  setRenderStyle3D(style);
-                  if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                    setIsOrbitToolActive(true);
-                    animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
-                  }
-                }}
-                onFitView={() => centerPiece(false)}
-                onFitWorkspace={() => fitFrame()}
-                tool={tool}
-                onPickTool={pickTool}
-                canUndo={historyState.canUndo || pending.length > 0}
-                canRedo={historyState.canRedo}
-                onUndo={undo}
-                onRedo={redo}
-                selectedEntities={selected}
-                onClearSelection={() => setSelection([])}
-                onDeleteSelection={() => {
-                  if (selection.length === 0) return;
-                  commit((list) => list.filter((e) => !selection.includes(e.id)));
-                  setSelection([]);
-                  toast.success("Seleção removida.");
-                }}
-                onMoveSelection={handleMoveSelection}
-                onCopySelection={handleCopySelection}
-                onRotateSelection={handleRotateSelection}
-                onMirrorSelection={handleMirrorSelection}
-                onScaleSelection={handleScaleSelection}
-                onStretchSelection={handleStretchSelection}
-                onBreakSelection={handleBreakSelection}
-                onJoinSelection={handleJoinSelection}
-                onExplodeSelection={handleExplodeSelection}
-                onDivideSelection={() => handleOpenDivide()}
-                onCenterSelection={handleOpenCenterDialog}
-                onArrayLinear={handleArrayLinear}
-                onArrayPolar={handleArrayPolar}
-                onOverkillClean={handleOverkillClean}
-                onBoolean2D={handleBoolean2D}
-                onCreateHatch={handleCreateHatch}
-                cursor={cursor}
-                basePoint={pending.length > 0 ? pending[pending.length - 1]! : null}
-                pendingCount={pending.length}
-                snapOn={snapOn}
-                onToggleSnap={() => setSnapOn((s) => !s)}
-                orthoOn={orthoOn}
-                onToggleOrtho={() => setOrthoOn((o) => !o)}
-                guideModeOn={guideModeOn}
-                onToggleGuideMode={() => setGuideModeOn((v) => !v)}
-                guideEntitiesCount={guideEntitiesCount}
-                showGrid={showGrid}
-                onToggleGrid={() => setShowGrid((g) => !g)}
-                grid={grid}
-                onChangeGrid={(mm) => {
-                  setGrid(mm);
-                  setShowGrid(() => true);
-                }}
-                thickness={thickness}
-                onChangeThickness={(mm) => {
-                  setThickness(mm);
-                  toast.success(`Espessura da chapa: ${mm.toFixed(1)} mm`);
-                }}
-                cursorOffsetMode={cursorOffsetMode}
-                onToggleCursorOffsetMode={toggleCursorOffsetMode}
-                loupeMode={loupeMode}
-                onCycleLoupeMode={handleCycleLoupeMode}
-                interactionGuideMode={interactionGuideMode}
-                onToggleAnchorReferenceMode={() => {
-                  if (interactionGuideMode === "purple_ref") {
-                    handleSetInteractionGuideMode("off");
-                  } else {
-                    handleSetInteractionGuideMode("purple_ref");
-                    setIsSettingReferencePoint(true);
-                  }
-                }}
-                temporaryOrigin={temporaryOrigin}
-                onSetDatumAtCursor={() => {
-                  setTemporaryOrigin({
-                    id: uid(),
-                    p: cursor,
-                    label: "DATUM",
-                    kind: "origin",
-                    timestamp: Date.now(),
-                  });
-                  triggerHaptic("success");
-                  toast.success(`⌖ DATUM fixado em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
-                }}
-                onClearDatum={() => {
-                  setTemporaryOrigin(null);
-                  setPinnedMeetingPoints([]);
-                  setLockedConstraints({});
-                  toast.success("⌖ DATUM limpo");
-                }}
-                onCreateDatumLineDelta={(axis) => {
-                  const originPt = temporaryOrigin?.p ?? { x: 0, y: 0 };
-                  const targetPt =
-                    axis === "dx"
-                      ? { x: cursor.x, y: originPt.y }
-                      : { x: originPt.x, y: cursor.y };
-                  if (dist(originPt, targetPt) < 0.1) return;
-                  commit((list) => [
-                    ...list,
-                    {
-                      id: uid(),
-                      type: "line",
-                      layer: activeLayer,
-                      x1: Number(originPt.x.toFixed(3)),
-                      y1: Number(originPt.y.toFixed(3)),
-                      x2: Number(targetPt.x.toFixed(3)),
-                      y2: Number(targetPt.y.toFixed(3)),
-                    },
-                  ]);
-                  toast.success(`Linha ${axis.toUpperCase()} criada a partir do DATUM.`);
-                }}
-                dimKind={dimKind}
-                onPickDimKind={(k) => {
-                  setDimKind(k);
-                  setTool("dim");
-                }}
-                onConvertToBend={handleConvertToBend}
-                onAddHole={handleAddHole}
-                onPlanificar={handlePlanificar}
-                onOpenFlanges={handleOpenFlanges}
-                onApplyRelief={handleApplyRelief}
-                onUnfold={handleUnfold}
-                onFold={handleFold}
-                onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
-                activeLayer={activeLayer}
-                activeStrokeColor={activeStrokeColor}
-                onSelectColorAndLayer={(hex, layerId) => {
-                  if (layerId) setActiveLayer(layerId as Layer);
-                  setActiveStrokeColor(hex);
-                  activeStrokeColorRef.current = hex;
-                }}
-                onOpenVision={() => setVisionOpen(true)}
-                onOpenIntent={() => {
-                  setQuickCommandOpen(true);
-                }}
-                onOpenBom={() => setIntegratedWorkshopOpen(true)}
-                onOpenExport={() => setExportOpen(true)}
-                onOpenLayers={() => {
-                  setActiveSidebarTab("camadas");
-                  if (isLandscape) {
-                    setRightSidebarOpen(true);
-                  } else {
-                    setPortraitDrawerOpen(true);
-                  }
-                }}
-                onOpenInspector={() => {
-                  setActiveSidebarTab("propriedades");
-                  if (isLandscape) {
-                    setRightSidebarOpen(true);
-                  } else {
-                    setPortraitDrawerOpen(true);
-                  }
-                }}
-                onToggleTheme={toggleTheme}
-                focus={focus}
-                onToggleFocus={() => setFocus((f) => !f)}
-                onToggleBenchCalc={handleToggleBenchCalc}
-                isBenchCalcOpen={benchCalcState.open}
-                isBenchCalcFloating={benchCalcState.dockMode === "floating"}
-                activeDirect3DTool={activeDirect3DTool}
-                onSelectDirect3DTool={(next3DTool) => {
-                  setActiveDirect3DTool(next3DTool);
-                  if (next3DTool === "loft_3d") {
-                    setTool("loft_3d");
-                  } else if (tool === "loft_3d") {
-                    setTool("select");
-                  }
-                }}
-                view={view}
-                isDrawingOrGesturing={gesturing || pending.length > 0}
-                onCommitNumericInput={({
-                  lengthMm,
-                  angleDeg,
-                  widthMm,
-                  heightMm,
-                  radiusMm,
-                  diameterMm,
-                  editSelectedEntity,
-                }) => {
-                  const effRadius =
-                    typeof radiusMm === "number" && Number.isFinite(radiusMm) && radiusMm > 0
-                      ? radiusMm
-                      : typeof diameterMm === "number" && Number.isFinite(diameterMm) && diameterMm > 0
-                        ? diameterMm / 2
-                        : undefined;
-                  const effLen =
-                    typeof lengthMm === "number" && Number.isFinite(lengthMm) && lengthMm > 0
-                      ? lengthMm
-                      : typeof widthMm === "number" && Number.isFinite(widthMm) && widthMm > 0
-                        ? widthMm
-                        : typeof heightMm === "number" && Number.isFinite(heightMm) && heightMm > 0
-                          ? heightMm
-                          : effRadius;
-
-                  if (editSelectedEntity && selected.length === 1) {
-                    const sel = selected[0]!;
-                    if ((sel.type === "circle" || sel.type === "arc") && typeof effRadius === "number" && effRadius > 0) {
-                      commit((list) =>
-                        list.map((e) =>
-                          e.id === sel.id && (e.type === "circle" || e.type === "arc")
-                            ? { ...e, r: Number(effRadius.toFixed(3)) }
-                            : e,
-                        ),
-                      );
-                      toast.success(`Raio atualizado para ${effRadius.toFixed(2)} mm`);
-                      return;
-                    }
-                    if (sel.type === "line" && typeof effLen === "number" && effLen > 0) {
-                      const ang =
-                        typeof angleDeg === "number" && Number.isFinite(angleDeg)
-                          ? (angleDeg * Math.PI) / 180
-                          : Math.atan2(sel.y2 - sel.y1, sel.x2 - sel.x1);
-                      commit((list) =>
-                        list.map((e) =>
-                          e.id === sel.id && e.type === "line"
-                            ? {
-                                ...e,
-                                x2: Number((sel.x1 + Math.cos(ang) * effLen).toFixed(3)),
-                                y2: Number((sel.y1 + Math.sin(ang) * effLen).toFixed(3)),
-                              }
-                            : e,
-                        ),
-                      );
-                      toast.success(`Comprimento atualizado para ${effLen.toFixed(2)} mm`);
-                      return;
-                    }
-                  }
-
-                  const base = pending.length > 0 ? pending[pending.length - 1]! : cursor;
-                  const curAngRad =
-                    typeof angleDeg === "number" && Number.isFinite(angleDeg)
-                      ? (angleDeg * Math.PI) / 180
-                      : Math.atan2(cursor.y - base.y, cursor.x - base.x);
-                  const stepLen =
-                    typeof effLen === "number" && Number.isFinite(effLen) && effLen > 0
-                      ? effLen
-                      : dist(base, cursor);
-                  const targetPt: Vec2 = {
-                    x: base.x + Math.cos(curAngRad) * stepLen,
-                    y: base.y + Math.sin(curAngRad) * stepLen,
-                  };
-                  if (tool === "polyline" || tool === "spline") {
-                    if (pending.length > 0) {
-                      polylineSegModesRef.current.push(polylineSegMode);
-                    }
-                    setPending((q) => [...q, targetPt]);
-                  } else if (pending.length === 1) {
-                    const lockedRad = effRadius ?? effLen;
-                    const finalDraft = buildDraft(
-                      tool,
-                      pending[0]!,
-                      targetPt,
-                      activeLayer,
-                      filletR,
-                      drawingProjection,
-                      isoPlane,
-                      {
-                        rectMode,
-                        circleMode,
-                        polygonMode,
-                        polygonSides,
-                        polygonAcrossFlatsMm,
-                        slotMode,
-                        slotWidthMm,
-                        ...(typeof lockedRad === "number" ? { lockedRadiusMm: lockedRad } : {}),
-                      },
-                    );
-                    if (finalDraft) {
-                      commit((list) => [...list, { ...finalDraft, id: uid() }]);
-                    }
-                    setDraft(null);
-                    setPending([]);
-                    setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
-                  }
-                }}
-              />
-            </PrumoErrorBoundary>
-          )}
-
-          {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (OCULTO NO MODO CAD 3D) */}
-          {mobileEditorOpen && activeArrayType === null && activeMode !== "3d" && (
+          {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (REGRAS 1 A 18) */}
+          {mobileEditorOpen && (
             <div
               className={cn(
                 "absolute z-40 transition-all",
@@ -16291,446 +8067,80 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
         </div>
 
-        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (OCULTA COMPLETAMENTE QUANDO RECOLHIDA NO MODO COMPACTO PARA ZERO COLUNA FIXA) */}
-        {!solidOpen && !focus && isLandscape && activeMode !== "3d" && (
-          activeArrayType !== null ? (
-            <ChamferArrayHUD
-              arrayType={activeArrayType}
-              onChangeArrayType={(nextType) => {
-                setActiveArrayType(nextType);
-                setIsArrayPickingCenter(false);
-              }}
-              polarParams={arrayPolarParams}
-              onChangePolarParams={setArrayPolarParams}
-              linearParams={arrayLinearParams}
-              onChangeLinearParams={setArrayLinearParams}
-              hostInfo={arrayHostInfo}
-              validation={arrayValidation}
-              resolvedLinear={arrayPreview?.resolvedLinear}
-              isPickingCenter={isArrayPickingCenter}
-              onTogglePickCenter={() => setIsArrayPickingCenter((v) => !v)}
-              onSelectCandidateCenter={(center) => {
-                setArrayPolarParams((p) => {
-                  const baseCenter = selected.length > 0 ? getGroupCenter(selected) : center;
-                  const radius = dist(center, baseCenter);
-                  return {
-                    ...p,
-                    center,
-                    radius,
-                    startAngleDeg:
-                      Math.atan2(baseCenter.y - center.y, baseCenter.x - center.x) *
-                      (180 / Math.PI),
-                  };
-                });
-              }}
-              onApply={handleCommitArray}
-              onCancel={handleCancelArray}
-              isDark={isDark}
-              enclosedAssemblyCount={arraySourceAssembly.length}
-            />
-          ) : rightSidebarOpen ? (
-            <ChamferRightSidebar
-              open={rightSidebarOpen}
-              onToggleOpen={() => setRightSidebarOpen((v) => !v)}
-              activeTab={activeSidebarTab}
-              onTabChange={setActiveSidebarTab}
-              entities={entities}
-              selection={selection}
-              setSelection={setSelection}
-              commit={commit}
-              layers={layers}
-              setLayers={setLayers}
-              activeLayer={activeLayer}
-              setActiveLayer={setActiveLayer}
-              thickness={thickness}
-              onThicknessChange={setThickness}
-              projectName={project?.name ?? "Peça Chamfer"}
-              onProjectNameChange={(name) => {
-                setProject((prev) => (prev ? { ...prev, name } : prev));
-              }}
-              material={project?.settings?.material ?? "Aço carbono (1020)"}
-              onMaterialChange={(mat) => {
-                setProject((prev) =>
-                  prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
-                );
-              }}
-              onDivideEntity={handleOpenDivide}
-              onOpenArray={() => handleStartArray(arrayHostInfo.suggestedType || "polar")}
-              dims={dims}
-              onDimsChange={setDims}
-              dimKind={dimKind}
-              onDimKindChange={setDimKind}
-              dimSel={dimSel}
-              onDimSelect={setDimSel}
-              renderCotas={() => (
-                <DimensionsPanel
-                  dims={dims}
-                  entities={entities}
-                  kind={dimKind}
-                  onKind={(k) => {
-                    setDimKind(k);
-                    setDimPicks([]);
-                    setTool("dim");
-                  }}
-                  selected={dimSel}
-                  onSelect={setDimSel}
-                  onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
-                  onDelete={(id) => {
-                    setDims((list) => list.filter((x) => x.id !== id));
-                    setDimSel(null);
-                  }}
-                />
-              )}
-              renderRevEng={() => (
-                <ChamferRevEngTab
-                  revEng={revEngData}
-                  onChangeRevEng={setRevEngData}
-                  entities={entities}
-                  selection={selection}
-                  setSelection={setSelection}
-                  commit={commit}
-                  activeLayer={activeLayer}
-                  thickness={thickness}
-                  onThicknessChange={setThickness}
-                  canvasInteractionMode={revEngCanvasMode}
-                  onSetCanvasInteractionMode={setRevEngCanvasMode}
-                  pendingPickPointsWorld={revEngPickPoints}
-                  onClearPendingPickPoints={() => setRevEngPickPoints([])}
-                  fittedPreviewCandidate={revEngFittedPreview}
-                  onSetFittedPreviewCandidate={setRevEngFittedPreview}
-                  onOpenVisionModal={() => setVisionOpen(true)}
-                  isDark={isDark}
-                />
-              )}
-              onHighlightCut={setShareHint}
-              isDark={isDark}
-            />
-          ) : null
-        )}
-
-        {/* GAVETA COMPACTA EM MODO RETRATO (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
-        {!solidOpen && !focus && !isLandscape && activeMode !== "3d" && (
-          <ChamferPortraitCompactDrawer
-            open={portraitDrawerOpen}
-            onClose={() => setPortraitDrawerOpen(false)}
-            isDark={isDark}
-            bottomOffsetPx={
-              verticalLayout.chromeHeights.stripPx + verticalLayout.chromeHeights.dockPx
-            }
+        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (PROPRIEDADES / CAMADAS / CORTE) */}
+        {!solidOpen && !focus && (
+          <ChamferRightSidebar
+            open={rightSidebarOpen}
+            onToggleOpen={() => setRightSidebarOpen((v) => !v)}
             activeTab={activeSidebarTab}
-            onSelectTab={setActiveSidebarTab}
-          >
-            <ChamferRightSidebar
-              open={true}
-              onToggleOpen={() => setPortraitDrawerOpen(false)}
-              activeTab={activeSidebarTab}
-              onTabChange={setActiveSidebarTab}
-              entities={entities}
-              selection={selection}
-              setSelection={setSelection}
-              commit={commit}
-              layers={layers}
-              setLayers={setLayers}
-              activeLayer={activeLayer}
-              setActiveLayer={setActiveLayer}
-              thickness={thickness}
-              onThicknessChange={setThickness}
-              projectName={project?.name ?? "Peça Chamfer"}
-              onProjectNameChange={(name) => {
-                setProject((prev) => (prev ? { ...prev, name } : prev));
-              }}
-              material={project?.settings?.material ?? "Aço carbono (1020)"}
-              onMaterialChange={(mat) => {
-                setProject((prev) =>
-                  prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
-                );
-              }}
-              onDivideEntity={handleOpenDivide}
-              dims={dims}
-              onDimsChange={setDims}
-              dimKind={dimKind}
-              onDimKindChange={setDimKind}
-              dimSel={dimSel}
-              onDimSelect={setDimSel}
-              renderCotas={() => (
-                <DimensionsPanel
-                  dims={dims}
-                  entities={entities}
-                  kind={dimKind}
-                  onKind={(k) => {
-                    setDimKind(k);
-                    setDimPicks([]);
-                    setTool("dim");
-                  }}
-                  selected={dimSel}
-                  onSelect={setDimSel}
-                  onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
-                  onDelete={(id) => {
-                    setDims((list) => list.filter((x) => x.id !== id));
-                    setDimSel(null);
-                  }}
-                />
-              )}
-              renderRevEng={() => (
-                <ChamferRevEngTab
-                  revEng={revEngData}
-                  onChangeRevEng={setRevEngData}
-                  entities={entities}
-                  selection={selection}
-                  setSelection={setSelection}
-                  commit={commit}
-                  activeLayer={activeLayer}
-                  thickness={thickness}
-                  onThicknessChange={setThickness}
-                  canvasInteractionMode={revEngCanvasMode}
-                  onSetCanvasInteractionMode={setRevEngCanvasMode}
-                  pendingPickPointsWorld={revEngPickPoints}
-                  onClearPendingPickPoints={() => setRevEngPickPoints([])}
-                  fittedPreviewCandidate={revEngFittedPreview}
-                  onSetFittedPreviewCandidate={setRevEngFittedPreview}
-                  onOpenVisionModal={() => setVisionOpen(true)}
-                  isDark={isDark}
-                />
-              )}
-              onHighlightCut={setShareHint}
-              isDark={isDark}
-            />
-          </ChamferPortraitCompactDrawer>
+            onTabChange={setActiveSidebarTab}
+            entities={entities}
+            selection={selection}
+            setSelection={setSelection}
+            commit={commit}
+            layers={layers}
+            setLayers={setLayers}
+            activeLayer={activeLayer}
+            setActiveLayer={setActiveLayer}
+            thickness={thickness}
+            onThicknessChange={setThickness}
+            projectName={project?.name ?? "Peça Chamfer"}
+            onProjectNameChange={(name) => {
+              setProject((prev) => (prev ? { ...prev, name } : prev));
+            }}
+            material={project?.settings?.material ?? "Aço carbono (1020)"}
+            onMaterialChange={(mat) => {
+              setProject((prev) =>
+                prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
+              );
+            }}
+            onDivideEntity={handleOpenDivide}
+            dims={dims}
+            onDimsChange={setDims}
+            dimKind={dimKind}
+            onDimKindChange={setDimKind}
+            dimSel={dimSel}
+            onDimSelect={setDimSel}
+            renderCotas={() => (
+              <DimensionsPanel
+                dims={dims}
+                entities={entities}
+                kind={dimKind}
+                onKind={(k) => {
+                  setDimKind(k);
+                  setDimPicks([]);
+                  setTool("dim");
+                }}
+                selected={dimSel}
+                onSelect={setDimSel}
+                onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+                onDelete={(id) => {
+                  setDims((list) => list.filter((x) => x.id !== id));
+                  setDimSel(null);
+                }}
+              />
+            )}
+            onHighlightCut={setShareHint}
+            isDark={isDark}
+          />
         )}
       </div>
 
-      {/* REGIÃO E — EM MODO RETRATO: BARRAS INFERIORES 2D (OCULTAS COMPLETAMENTE NO MODO PRUMO E NO MODO CAD 3D) */}
-      {!focus && uiShellMode !== "prumo" && !isLandscape && activeMode !== "3d" && (
-        <ChamferPortraitBottomBars
-          isDark={isDark}
-          stripHeightPx={verticalLayout.chromeHeights.stripPx}
-          dockHeightPx={verticalLayout.chromeHeights.dockPx}
-          tool={tool}
-          onPickTool={pickTool}
-          activeMode={activeMode}
-          onModeChange={(m) => {
-            triggerHaptic("selection");
-            if (m === "3d" || m === "flanges") {
-              transitionTo3D(m);
-            } else {
-              transitionTo2D();
-            }
-          }}
-          hasSelection={selected.length > 0}
-          selectedCount={selected.length}
-          onSelectAll={() => setSelection(drawable.map((e) => e.id))}
-          onInvertSelection={() =>
-            setSelection(drawable.filter((e) => !selection.includes(e.id)).map((e) => e.id))
-          }
-          onClearSelection={() => setSelection([])}
-          offsetDist={offsetDist}
-          setOffsetDist={setOffsetDist}
-          filletR={filletR}
-          setFilletR={setFilletR}
-          selectedCornersCount={selectedCorners.length}
-          onApplyAllSelectionCorners={handleApplyAllSelectionCorners}
-          onMoveSelection={handleMoveSelection}
-          onCopySelection={handleCopySelection}
-          onRotateSelection={handleRotateSelection}
-          onMirrorSelection={handleMirrorSelection}
-          onScaleSelection={handleScaleSelection}
-          onStretchSelection={handleStretchSelection}
-          onBreakSelection={handleBreakSelection}
-          onJoinSelection={handleJoinSelection}
-          onExplodeSelection={handleExplodeSelection}
-          onDivideSelection={() => handleOpenDivide()}
-          onCenterSelection={handleOpenCenterDialog}
-          onArrayLinear={handleArrayLinear}
-          onArrayPolar={handleArrayPolar}
-          onOverkillClean={handleOverkillClean}
-          onBoolean2D={handleBoolean2D}
-          onCreateHatch={handleCreateHatch}
-          onOpenClipboard={() => {
-            setClipboardAnchorWorld({
-              x: (canvasSize.w / 2 - view.tx) / view.k,
-              y: (canvasSize.h / 2 - view.ty) / view.k,
-            });
-            setClipboardModalOpen(true);
-          }}
-          activeArrayType={activeArrayType}
-          onChangeArrayType={(nextType) => {
-            setActiveArrayType(nextType);
-            setIsArrayPickingCenter(false);
-          }}
-          arrayPolarParams={arrayPolarParams}
-          onChangePolarParams={setArrayPolarParams}
-          arrayLinearParams={arrayLinearParams}
-          onChangeLinearParams={setArrayLinearParams}
-          isArrayPickingCenter={isArrayPickingCenter}
-          onTogglePickArrayCenter={() => setIsArrayPickingCenter((v) => !v)}
-          onCommitArray={handleCommitArray}
-          onCancelArray={handleCancelArray}
-          divideEditorOpen={divideEditorOpen}
-          divideParts={divideParts}
-          onDividePartsChange={setDivideParts}
-          onConfirmDivide={handleConfirmDivide}
-          onCancelDivide={handleCancelDivide}
-          snapOn={snapOn}
-          setSnapOn={setSnapOn}
-          snapDivision={snapDivision}
-          onSetSnapDivision={setSnapDivision}
-          showAllSnaps={showAllSnaps}
-          onToggleShowAllSnaps={() => setShowAllSnaps((v) => !v)}
-          interactionGuideMode={interactionGuideMode}
-          onSetInteractionGuideMode={handleSetInteractionGuideMode}
-          onStartSetReferencePoint={() => {
-            if (interactionGuideMode === "off") {
-              handleSetInteractionGuideMode("purple_ref");
-            }
-            setIsSettingReferencePoint(true);
-            toast.info("Toque no vértice, centro ou ponto desejado para fixar o Centro de Referência");
-          }}
-          temporaryOrigin={temporaryOrigin}
-          onClearTemporaryOrigin={() => {
-            setTemporaryOrigin(null);
-            setPinnedMeetingPoints([]);
-            setLockedConstraints({});
-            toast.success("Ponto de referência limpo");
-          }}
-          guideModeOn={guideModeOn}
-          onToggleGuideMode={() => setGuideModeOn((v) => !v)}
-          guideEntitiesCount={guideEntitiesCount}
-          orthoOn={orthoOn}
-          setOrthoOn={setOrthoOn}
-          trackingOn={trackingOn}
-          setTrackingOn={setTrackingOn}
-          dimKind={dimKind}
-          onPickDimKind={(k) => {
-            setDimKind(k);
-            setTool("dim");
-          }}
-          cursorOffsetMode={cursorOffsetMode}
-          onToggleCursorOffsetMode={toggleCursorOffsetMode}
-          loupeMode={loupeMode}
-          onCycleLoupeMode={handleCycleLoupeMode}
-          nudgeHudVisible={nudgeHudVisible}
-          onToggleNudgeHud={() => {
-            setNudgeHudVisible((prev) => {
-              const next = !prev;
-              globalCADInteractionHub.toggleModifier("nudge_dpad", next);
-              return next;
-            });
-          }}
-          thickness={thickness}
-          onThicknessChange={setThickness}
-          onConvertToBend={handleConvertToBend}
-          onAddHole={handleAddHole}
-          onPlanificar={handlePlanificar}
-          onOpenFlanges={handleOpenFlanges}
-          onApplyRelief={handleApplyRelief}
-          onUnfold={handleUnfold}
-          onFold={handleFold}
-          onOpenVisionModal={() => setVisionOpen(true)}
-          onOpenRevEngCategory={(category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => {
-            setRevEngData((prev) => ({
-              ...prev,
-              activeCategory: category,
-              activeWizardStep: wizardStep ?? prev.activeWizardStep,
-            }));
-            setActiveSidebarTab("eng_rev");
-            setPortraitDrawerOpen(true);
-          }}
-          activeLayer={activeLayer}
-          setActiveLayer={(layerId) => {
-            setActiveLayer(layerId);
-            setActiveStrokeColor(null);
-            activeStrokeColorRef.current = null;
-          }}
-          activeStrokeColor={activeStrokeColor}
-          onSelectColorAndLayer={handleSelectColorAndLayer}
-          onDeleteSelection={handleDeleteSelection}
-          onUseSelectedEdge={handleUseSelectedEdge}
-          onAddThread={handleAddThread}
-          onAddEyelet={handleAddEyelet}
-          onAddTangentBridge={handleAddTangentBridge}
-          onAddSerratedTeeth={handleAddSerratedTeeth}
-          onAddPocket2D={handleAddPocket2D}
-          onVerifyGeometry={() => {
-            const found = verify(entities);
-            setIssues(found);
-            if (found.length) {
-              toast.warning(`${found.length} problemas encontrados`);
-            } else {
-              toast.success("Geometria CNC válida");
-            }
-          }}
-          onOptimizeGeometry={() => {
-            const res = optimize(entities);
-            commit(res.entities);
-            toast.success(`${res.removed + res.tiny} entidades limpas`);
-          }}
-          showGrid={showGrid}
-          setShowGrid={setShowGrid}
-          grid={grid}
-          setGrid={setGrid}
-          frame={frame}
-          onUpdateFrame={updateFrame}
-          onFitWorkspace={() => fitFrame()}
-          onCenterPiece={(moveGeometry) => centerPiece(moveGeometry)}
-          onOpenWorkspaceKeypad={(axis, screenPos) => {
-            setWorkspaceKeypadEditor({
-              axis,
-              currentValue: axis === "w" ? frame.w : frame.h,
-              screenPos,
-            });
-          }}
-          onOpenPresets={() => setPresetsModalOpen(true)}
-          onOpenTechnicalSheet={() => setTechnicalSheetModalOpen(true)}
-          onOpenTopologyHealth={() => setTopologyHealthOpen(true)}
-          onOpenVariables={() => setVariablesModalOpen(true)}
-          onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
-          simOn={simOn}
-          onToggleSim={() => {
-            setSimOn((s) => {
-              const next = !s;
-              setSimPlaying(next);
-              setSimDist(0);
-              return next;
-            });
-          }}
-          showArrows={showArrows}
-          onToggleArrows={() => setShowArrows((s) => !s)}
-          portraitDrawerOpen={portraitDrawerOpen}
-          onSetPortraitDrawerOpen={(open) => {
-            setPortraitDrawerOpen(open);
-            if (open) {
-              const b = entities.length > 0 ? bbox(entities) : null;
-              if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
-                fitBox(b);
-              }
-            }
-          }}
-          activeSidebarTab={activeSidebarTab}
-          onSelectSidebarTab={setActiveSidebarTab}
-        />
-      )}
-
-      {/* REGIÃO E — STATUS BAR EM 2 NÍVEIS (28px EM MODO COMPACTO; OCULTA NO MODO PRUMO ZERO BARRAS) */}
-      {!focus && uiShellMode !== "prumo" && isLandscape && activeMode !== "3d" && (
+      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — ROLAGEM HORIZONTAL SUAVE EM MODO RETRATO */}
+      {!focus && (
         <footer
           aria-label="Barra de status do CHAMFER"
-          style={{
-            backgroundColor: isDark ? "rgba(27, 36, 54, 0.92)" : "#FFFFFF",
-            backdropFilter: isDark ? "blur(14px)" : undefined,
-            WebkitBackdropFilter: isDark ? "blur(14px)" : undefined,
-            borderColor: isDark ? "#2D3B55" : "#E2E8F0",
-            color: isDark ? "#E2E8F0" : "#475569",
-            boxShadow: isDark ? "0 4px 16px rgba(0, 0, 0, 0.28)" : undefined,
-          }}
           className={cn(
-            "relative flex shrink-0 items-center justify-between gap-2 border-t px-2 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
-            "h-7",
+            "relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
+            isDark
+              ? "border-slate-800/80 bg-slate-950/95 text-slate-400"
+              : "border-slate-200 bg-white/95 text-slate-600 shadow-xs",
           )}
         >
-          {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE */}
-          <div className="flex flex-1 min-w-0 items-center justify-between gap-1.5 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x whitespace-nowrap">
-            {/* LADO ESQUERDO: PLANOS DO PROJETO + CHAPA + COORDENADAS REAIS */}
-            <div className="flex shrink-0 items-center gap-1.5">
+          {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE (SEM CORTAR BOTÕES EM MODO RETRATO) */}
+          <div className="flex flex-1 min-w-0 items-center justify-between gap-2 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x whitespace-nowrap">
+            {/* LADO ESQUERDO: PLANOS DO PROJETO + COORDENADAS REAIS */}
+            <div className="flex shrink-0 items-center gap-2">
               {project?.plans.map((pl) => (
                 <button
                   key={pl.id}
@@ -16742,9 +8152,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         ? {
                             ...prev,
                             plans: prev.plans.map((x) =>
-                              x.id === planId
-                                ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
-                                : x,
+                              x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
                             ),
                           }
                         : prev,
@@ -16763,32 +8171,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setGroups(pl.groups ?? []);
                     setDims(pl.dims ?? []);
                     setCad3dTreeJson(pl.cad3dTreeJson);
-                    setRevEngData(sanitizeRevEngPlanData(pl.revEng));
-                    setRevEngCanvasMode("none");
-                    setRevEngPickPoints([]);
-                    setRevEngFittedPreview(null);
                     setSelection([]);
                     past.current = [];
                     future.current = [];
                   }}
-                  style={
-                    pl.id === planId
-                      ? isDark
-                        ? {
-                            backgroundColor: "rgba(244, 63, 94, 0.18)",
-                            borderColor: "rgba(251, 113, 133, 0.40)",
-                            color: "#FDA4AF",
-                          }
-                        : {
-                            backgroundColor: "#FFF1F2",
-                            borderColor: "#FECDD3",
-                            color: "#E11D48",
-                          }
-                      : { color: isDark ? "#CBD5E1" : "#475569" }
-                  }
                   className={cn(
                     "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
-                    pl.id === planId ? "border" : "hover:brightness-110",
+                    pl.id === planId
+                      ? isDark
+                        ? "bg-red-950/60 text-red-400 border border-red-500/30"
+                        : "bg-red-50 text-red-600 border border-red-200"
+                      : "hover:text-foreground",
                   )}
                 >
                   {pl.name}
@@ -16805,9 +8198,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       ...project,
                       plans: [
                         ...project.plans.map((x) =>
-                          x.id === planId
-                            ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
-                            : x,
+                          x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
                         ),
                         plan,
                       ],
@@ -16820,32 +8211,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setGroups([]);
                     setDims([]);
                     setCad3dTreeJson(undefined);
-                    setRevEngData(createDefaultRevEngPlanData());
-                    setRevEngCanvasMode("none");
-                    setRevEngPickPoints([]);
-                    setRevEngFittedPreview(null);
                     setSelection([]);
                     toast.success(`${plan.name} criado.`);
                   }}
-                  className={cn(
-                    "shrink-0 rounded px-1.5 py-0.5 font-bold transition-colors",
-                    isDark ? "text-[#CBD5E1] hover:text-[#F1F5F9]" : "text-[#64748B] hover:text-[#1E293B]",
-                  )}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground hover:text-accent font-bold"
                   title="Adicionar novo plano de corte ao projeto"
                 >
                   +
                 </button>
               )}
 
-              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-[#2D3B55]" : "bg-[#CBD5E1]")} />
+              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
               {/* UNIDADE DE MEDIDA CANÔNICA */}
               <span
                 className={cn(
                   "flex shrink-0 items-center px-1.5 py-0.2 rounded border font-mono font-bold text-[9px] tracking-wider",
                   isDark
-                    ? "border-[#334361] bg-[#232E45] text-[#E2E8F0]"
-                    : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B]",
+                    ? "border-slate-700/80 bg-slate-900 text-slate-200"
+                    : "border-slate-300 bg-slate-100 text-slate-700",
                 )}
                 title="Unidade de medida: Milímetros (mm)"
               >
@@ -16859,414 +8243,61 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   setMobileEditorOpenManual((prev) => !prev);
                 }}
                 title="Abrir editor contextual de chapa e projeto"
-                style={
+                className={cn(
+                  "flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer",
                   mobileEditorOpenManual
-                    ? {
-                        backgroundColor: isDark ? "rgba(14, 165, 233, 0.22)" : "var(--chamfer-accent)",
-                        borderColor: isDark ? "#38BDF8" : "var(--chamfer-accent)",
-                        color: isDark ? "#7DD3FC" : "var(--chamfer-accent-contrast)",
-                      }
-                    : {
-                        backgroundColor: isDark ? "#232E45" : "var(--chamfer-surface-elevated)",
-                        borderColor: isDark ? "#334361" : "var(--chamfer-border-strong)",
-                        color: isDark ? "#E2E8F0" : "var(--chamfer-text-primary)",
-                      }
-                }
-                className="flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer"
+                    ? "border-red-500 bg-red-600 text-white shadow-xs"
+                    : isDark
+                    ? "border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white hover:border-slate-600"
+                    : "border-slate-300 bg-slate-100 text-slate-700 hover:text-slate-900"
+                )}
               >
                 <span>CHAPA {thickness.toFixed(1)}MM</span>
               </button>
 
-              {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 EM ÂMBAR TÉCNICO & BORDAS) */}
+              {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 & BORDAS) */}
               {temporaryOrigin ? (
                 <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
-                  <span
-                    className={cn(
-                      "flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold shrink-0",
-                      isDark
-                        ? "bg-[#F59E0B]/15 border-[#F59E0B]/45 text-[#F59E0B]"
-                        : "bg-[#D97706]/10 border-[#D97706]/40 text-[#D97706]",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full animate-pulse",
-                        isDark ? "bg-[#F59E0B]" : "bg-[#D97706]",
-                      )}
-                    />
-                    ⌖ DATUM [{temporaryOrigin.p.x.toFixed(0)}, {temporaryOrigin.p.y.toFixed(0)}]:
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shrink-0">
+                    <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    REF [{temporaryOrigin.label}]:
                   </span>
-
-                  {/* Pílula Interativa ΔX na Barra Inferior */}
-                  <button
-                    type="button"
-                    onClick={(ev) => {
-                      const rect = ev.currentTarget.getBoundingClientRect();
-                      const dxVal = Number((cursor.x - temporaryOrigin.p.x).toFixed(2));
-                      setLiveDimEditor({
-                        dim: {
-                          id: "datum-dx",
-                          kind: "dx",
-                          value: dxVal,
-                          label: "ΔX do Vetor Datum (mm)",
-                          startPoint: temporaryOrigin.p,
-                          endPoint: cursor,
-                          midPoint: {
-                            x: (temporaryOrigin.p.x + cursor.x) / 2,
-                            y: temporaryOrigin.p.y,
-                          },
-                          normalDir: { x: 0, y: 1 },
-                          isEditable: true,
-                          targetKey: "dx",
-                        },
-                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
-                        currentValue: dxVal,
-                        label: "ΔX do Vetor Datum (mm)",
-                        allowInvert: false,
-                        measureKind: "dx",
-                        initialLocked: lockedConstraints.lockedDx != null,
-                      });
-                    }}
-                    title="Clique para digitar e travar ΔX (Trilho Vertical)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
-                      lockedConstraints.lockedDx != null
-                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
-                        : isDark
-                          ? "bg-[#151C27]/80 border-[#293444] hover:border-amber-500/50"
-                          : "bg-white border-slate-300 hover:border-amber-500/50",
-                    )}
-                  >
-                    <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔX:</span>
-                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
-                      {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
-                    </strong>
-                    <span className="text-[8px] opacity-80">
-                      {lockedConstraints.lockedDx != null ? "🔒" : "✎"}
-                    </span>
-                  </button>
-
-                  {/* Pílula Interativa ΔY na Barra Inferior */}
-                  <button
-                    type="button"
-                    onClick={(ev) => {
-                      const rect = ev.currentTarget.getBoundingClientRect();
-                      const dyVal = Number((cursor.y - temporaryOrigin.p.y).toFixed(2));
-                      setLiveDimEditor({
-                        dim: {
-                          id: "datum-dy",
-                          kind: "dy",
-                          value: dyVal,
-                          label: "ΔY do Vetor Datum (mm)",
-                          startPoint: temporaryOrigin.p,
-                          endPoint: cursor,
-                          midPoint: {
-                            x: cursor.x,
-                            y: (temporaryOrigin.p.y + cursor.y) / 2,
-                          },
-                          normalDir: { x: 1, y: 0 },
-                          isEditable: true,
-                          targetKey: "dy",
-                        },
-                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
-                        currentValue: dyVal,
-                        label: "ΔY do Vetor Datum (mm)",
-                        allowInvert: false,
-                        measureKind: "dy",
-                        initialLocked: lockedConstraints.lockedDy != null,
-                      });
-                    }}
-                    title="Clique para digitar e travar ΔY (Trilho Horizontal)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
-                      lockedConstraints.lockedDy != null
-                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
-                        : isDark
-                          ? "bg-[#151C27]/80 border-[#293444] hover:border-amber-500/50"
-                          : "bg-white border-slate-300 hover:border-amber-500/50",
-                    )}
-                  >
-                    <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔY:</span>
-                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
-                      {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)}
-                    </strong>
-                    <span className="text-[8px] opacity-80">
-                      {lockedConstraints.lockedDy != null ? "🔒" : "✎"}
-                    </span>
-                  </button>
-
-                  {/* Pílula Interativa L (Hipotenusa) na Barra Inferior */}
-                  <button
-                    type="button"
-                    onClick={(ev) => {
-                      const rect = ev.currentTarget.getBoundingClientRect();
-                      const lVal = Number(
-                        Math.hypot(
-                          cursor.x - temporaryOrigin.p.x,
-                          cursor.y - temporaryOrigin.p.y,
-                        ).toFixed(2),
-                      );
-                      setLiveDimEditor({
-                        dim: {
-                          id: "datum-L",
-                          kind: "length",
-                          value: lVal,
-                          label: "Distância L do Vetor Datum (mm)",
-                          startPoint: temporaryOrigin.p,
-                          endPoint: cursor,
-                          midPoint: {
-                            x: (temporaryOrigin.p.x + cursor.x) / 2,
-                            y: (temporaryOrigin.p.y + cursor.y) / 2,
-                          },
-                          normalDir: { x: 0, y: 1 },
-                          isEditable: true,
-                          targetKey: "length",
-                        },
-                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
-                        currentValue: lVal,
-                        label: "Distância L do Vetor Datum (mm)",
-                        allowInvert: false,
-                        measureKind: "L",
-                        initialLocked:
-                          lockedConstraints.lockedL != null || lockedConstraints.lockedDist != null,
-                      });
-                    }}
-                    title="Clique para digitar e travar a Distância Radial L (Órbita Circular)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
-                      lockedConstraints.lockedL != null || lockedConstraints.lockedDist != null
-                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
-                        : isDark
-                          ? "bg-[#151C27]/80 border-[#293444] hover:border-sky-500/50"
-                          : "bg-white border-slate-300 hover:border-sky-500/50",
-                    )}
-                  >
-                    <span className="font-bold text-[#38BDF8]">L:</span>
-                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
-                      {Math.hypot(
-                        cursor.x - temporaryOrigin.p.x,
-                        cursor.y - temporaryOrigin.p.y,
-                      ).toFixed(1)}
-                    </strong>
-                    <span className="text-[8px] opacity-80">
-                      {lockedConstraints.lockedL != null || lockedConstraints.lockedDist != null
-                        ? "🔒"
-                        : "✎"}
-                    </span>
-                  </button>
-
-                  {/* Pílula Interativa ∠ (Ângulo) na Barra Inferior */}
-                  <button
-                    type="button"
-                    onClick={(ev) => {
-                      const rect = ev.currentTarget.getBoundingClientRect();
-                      const rawDeg =
-                        (Math.atan2(
-                          cursor.y - temporaryOrigin.p.y,
-                          cursor.x - temporaryOrigin.p.x,
-                        ) *
-                          180) /
-                        Math.PI;
-                      const degVal = Number((((rawDeg % 360) + 360) % 360).toFixed(1));
-                      setLiveDimEditor({
-                        dim: {
-                          id: "datum-angle",
-                          kind: "angle",
-                          value: degVal,
-                          label: "Ângulo ∠ do Vetor Datum (°)",
-                          startPoint: temporaryOrigin.p,
-                          endPoint: cursor,
-                          midPoint: temporaryOrigin.p,
-                          normalDir: { x: 0, y: 1 },
-                          isEditable: true,
-                          targetKey: "angle",
-                        },
-                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
-                        currentValue: degVal,
-                        label: "Ângulo ∠ do Vetor Datum (°)",
-                        allowInvert: false,
-                        measureKind: "angle",
-                        initialLocked: lockedConstraints.lockedAngle != null,
-                      });
-                    }}
-                    title="Clique para digitar e travar o Ângulo ∠ (Raio Vetor Infinito)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
-                      lockedConstraints.lockedAngle != null
-                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
-                        : isDark
-                          ? "bg-[#151C27]/80 border-[#293444] hover:border-amber-500/50"
-                          : "bg-white border-slate-300 hover:border-amber-500/50",
-                    )}
-                  >
-                    <span className="font-bold text-[#F59E0B]">∠:</span>
-                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
-                      {(
-                        (((Math.atan2(
-                          cursor.y - temporaryOrigin.p.y,
-                          cursor.x - temporaryOrigin.p.x,
-                        ) *
-                          180) /
-                          Math.PI) %
-                          360 +
-                          360) %
-                        360
-                      ).toFixed(1)}
-                      °
-                    </strong>
-                    <span className="text-[8px] opacity-80">
-                      {lockedConstraints.lockedAngle != null ? "🔒" : "✎"}
-                    </span>
-                  </button>
+                  <span className="text-amber-400 font-bold">ΔX:</span>
+                  <strong className="text-amber-200">
+                    {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
+                  </strong>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-amber-400 font-bold">ΔY:</span>
+                  <strong className="text-amber-200">
+                    {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
+                  </strong>
 
                   {showGlobalCoordsPeek && (
-                    <span className="text-[#94A3B8] text-[8.5px] ml-0.5">
+                    <span className="text-slate-400 text-[8.5px] ml-1">
                       (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
                     </span>
                   )}
 
-                  {/* Ações Rápidas do Datum: Fixar Datum Persistente + Conversão Direta em LINE (ΔX, ΔY, L, Catetos X+Y) (Seção 3.3) */}
                   <button
                     type="button"
-                    data-testid="datum-bar-persist-btn"
-                    onClick={() => {
-                      const datumEnt = createPersistentDatumEntity(temporaryOrigin.p, cursor, activeLayer);
-                      commit((prev) => [...prev, datumEnt]);
-                      setSelection([datumEnt.id]);
-                      triggerHaptic("success");
-                      toast.success("✓ Datum Persistente gravado no canvas com projeção nos dois catetos.");
-                    }}
-                    title="Fixar Vetor Datum Persistente no canvas (participa do Undo/Redo)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
-                      isDark
-                        ? "bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/50 text-amber-300"
-                        : "bg-amber-50 hover:bg-amber-100 border-amber-400 text-amber-800",
-                    )}
+                    onClick={() => setShowGlobalCoordsPeek((v) => !v)}
+                    title="Alternar coordenadas globais"
+                    className="px-1 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-300 ml-0.5"
                   >
-                    📌 Fixar Datum
-                  </button>
-
-                  {(
-                    [
-                      { key: "dx", label: "+ Linha ΔX" },
-                      { key: "dy", label: "+ Linha ΔY" },
-                      { key: "L", label: "+ Linha L" },
-                      { key: "both_legs", label: "↱ Catetos X+Y" },
-                    ] as const
-                  ).map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      data-testid={`datum-bar-convert-${item.key}`}
-                      onClick={() => {
-                        const tempSpec: PersistentDatumSpec = {
-                          id: uid(),
-                          origin: temporaryOrigin.p,
-                          target: cursor,
-                          label: "DATUM",
-                          createdAt: Date.now(),
-                        };
-                        const lines = convertDatumToCadLines(tempSpec, item.key, activeLayer);
-                        if (lines.length === 0) {
-                          toast.info("Desloque o cursor para gerar linha com comprimento > 0.");
-                          return;
-                        }
-                        commit((prev) => [...prev, ...lines]);
-                        setSelection(lines.map((l) => l.id));
-                        triggerHaptic("success");
-                        toast.success(
-                          item.key === "both_legs"
-                            ? "✓ 2 linhas ortogonais dos catetos (ΔX + ΔY) criadas!"
-                            : `✓ Linha ${item.label.replace("+ Linha ", "")} criada no desenho!`,
-                        );
-                      }}
-                      className={cn(
-                        "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
-                        isDark
-                          ? "bg-sky-500/15 hover:bg-sky-500/25 border-sky-500/40 text-sky-300"
-                          : "bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-700",
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-
-                  {/* Botão Rápido: [ ⟳ Aqui ] (Reancorar no Ponto Atual / Encadeamento Rápido) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const targetPt =
-                        pending.length > 0
-                          ? pending[pending.length - 1]!
-                          : Math.hypot(lastCreatedVertexRef.current.x, lastCreatedVertexRef.current.y) > 1e-3
-                            ? lastCreatedVertexRef.current
-                            : cursor;
-                      setTemporaryOrigin({
-                        id: uid(),
-                        p: targetPt,
-                        label: "DATUM",
-                        kind: "origin",
-                        timestamp: Date.now(),
-                      });
-                      triggerHaptic("action");
-                      toast.success(
-                        `⌖ DATUM reancorado em (${targetPt.x.toFixed(1)}, ${targetPt.y.toFixed(1)}) mm`,
-                      );
-                    }}
-                    title="Reancorar o Vetor Datum no último vértice criado (Encadeamento incremental)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
-                      isDark
-                        ? "bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border-[#38BDF8]/40 text-[#38BDF8]"
-                        : "bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-700",
-                    )}
-                  >
-                    ⟳ Aqui
-                  </button>
-
-                  {/* Botão Rápido: [ 0,0 ] (Resetar para a origem absoluta da chapa) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTemporaryOrigin({
-                        id: uid(),
-                        p: { x: 0, y: 0 },
-                        label: "0,0",
-                        kind: "origin",
-                        timestamp: Date.now(),
-                      });
-                      triggerHaptic("action");
-                      toast.success("⌖ DATUM resetado para a origem (0, 0) mm");
-                    }}
-                    title="Resetar Vetor Datum para a origem absoluta da chapa (0, 0)"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
-                      isDark
-                        ? "bg-[#151C27] hover:bg-[#1E293B] border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "bg-white hover:bg-slate-100 border-slate-300 text-slate-600",
-                    )}
-                  >
-                    0,0
+                    {showGlobalCoordsPeek ? "Ocultar G" : "G"}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => {
                       setTemporaryOrigin(null);
-                      setLockedConstraints({});
                       triggerHaptic("tap");
-                      toast.success("Vetor Datum limpo (retornado ao 0,0 global)");
+                      toast.success("Origem temporária limpa (retornado ao 0,0 global)");
                     }}
-                    title="Limpar Vetor Datum e voltar ao documento global"
-                    className={cn(
-                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
-                      isDark
-                        ? "bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-[#E2E8F0]"
-                        : "bg-[#FFFFFF] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#334155]",
-                    )}
+                    title="Limpar REF 0,0 e voltar ao documento global"
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-300 font-bold text-[8.5px] active:scale-95"
                   >
-                    ✕ Limpar Datum
+                    ✕ Limpar REF
                   </button>
                 </div>
               ) : activeEdge ? (
@@ -17274,15 +8305,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const { u, v } = CoordinateFrameManager.worldToUV(cursor, activeEdge);
                   return (
                     <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
-                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#38BDF8]/15 border border-[#38BDF8]/40 text-[#38BDF8] font-bold shrink-0">
-                        <span className="size-1.5 rounded-full bg-[#38BDF8] animate-pulse" />
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold shrink-0">
+                        <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
                         BORDA [L = {activeEdge.length.toFixed(0)} mm]:
                       </span>
-                      <span className="text-[#94A3B8]">u:</span>
-                      <strong className={isDark ? "text-[#38BDF8]" : "text-[#0284C7]"}>{u.toFixed(1)}</strong>
-                      <span className={isDark ? "text-[#293444]" : "text-[#CBD5E1]"}>|</span>
-                      <span className="text-[#94A3B8]">v (afast.):</span>
-                      <strong className={isDark ? "text-[#34D399]" : "text-[#059669]"}>
+                      <span className="text-slate-400">u:</span>
+                      <strong className="text-cyan-200">{u.toFixed(1)}</strong>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-slate-400">v (afast.):</span>
+                      <strong className="text-emerald-300">
                         {(v >= 0 ? "+" : "") + v.toFixed(1)} mm
                       </strong>
 
@@ -17293,9 +8324,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           triggerHaptic("selection");
                         }}
                         title="Inverter Lado do Afastamento"
-                        className="px-1.5 py-0.5 rounded bg-[#151C27] hover:bg-[#293444] border border-[#38BDF8]/40 text-[#38BDF8] font-bold text-[8.5px] active:scale-95"
+                        className="px-1.5 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] active:scale-95"
                       >
                         ⇄ Lado {activeEdgeSide === 1 ? "A" : "B"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const line = GeometricConstraintResolver.createMarkingOrBendLine(
+                            activeEdge,
+                            activeEdgeOffset,
+                            activeEdgeSide,
+                            "marcacao"
+                          );
+                          commit((prev) => [...prev, line]);
+                          triggerHaptic("action");
+                          AudioManager.play("ui_select");
+                          toast.success(`✓ Linha de marcação gerada a ${activeEdgeOffset} mm da borda!`);
+                        }}
+                        title={`Criar linha de marcação paralela a ${activeEdgeOffset} mm`}
+                        className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] active:scale-95"
+                      >
+                        + MAR ({activeEdgeOffset}mm)
                       </button>
 
                       <button
@@ -17313,7 +8364,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           toast.success(`✓ Linha de dobra gerada a ${activeEdgeOffset} mm da borda!`);
                         }}
                         title={`Criar linha de dobra paralela a ${activeEdgeOffset} mm`}
-                        className="px-1.5 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-bold text-[8.5px] active:scale-95"
+                        className="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-[8.5px] active:scale-95"
                       >
                         + Dobra ({activeEdgeOffset}mm)
                       </button>
@@ -17326,7 +8377,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           triggerHaptic("tap");
                         }}
                         title="Desmarcar borda"
-                        className="px-1.5 py-0.5 rounded bg-[#151C27] hover:bg-[#293444] text-[#94A3B8] font-bold text-[8.5px]"
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-[8.5px]"
                       >
                         ✕
                       </button>
@@ -17334,36 +8385,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })()
               ) : (
-                <div className="flex shrink-0 items-center gap-1 font-mono text-[10.5px]">
-                  <button
-                    type="button"
-                    data-testid="status-coords-level2-trigger"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setStatusSecondaryLevelOpen((v) => !v);
-                    }}
-                    title="Clique para abrir o Nível Secundário de Status (Unidade MM, Dimensões da Área de Trabalho, Referência Ativa e Seleção)"
-                    className={cn(
-                      "flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors cursor-pointer",
-                      statusSecondaryLevelOpen
-                        ? isDark
-                          ? "bg-[#38BDF8]/15 text-[#38BDF8]"
-                          : "bg-[#E0F2FE] text-[#0284C7]"
-                        : "hover:bg-white/5",
-                    )}
-                  >
-                    <span className={isDark ? "text-[#CBD5E1]" : "text-[#64748B]"}>X:</span>
-                    <strong className={isDark ? "text-[#F1F5F9]" : "text-[#1E293B]"}>{cursor.x.toFixed(2)}</strong>
-                    <span className={isDark ? "text-[#CBD5E1]" : "text-[#64748B]"}>Y:</span>
-                    <strong className={isDark ? "text-[#F1F5F9]" : "text-[#1E293B]"}>{cursor.y.toFixed(2)}</strong>
-                  </button>
+                <div className="flex shrink-0 items-center gap-1 font-mono text-[9.5px]">
+                  <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
+                  <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
+                  <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
+                  <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
 
                   <button
                     type="button"
-                    data-cmd-id="ref.datum_set"
                     onClick={() => {
                       const p = smartSnap ? smartSnap.p : { x: cursor.x, y: cursor.y };
-                      const label = smartSnap ? smartSnap.label : "DATUM";
+                      const label = smartSnap ? smartSnap.label : "Ponto";
                       const kind = smartSnap ? smartSnap.kind : "origin";
                       setTemporaryOrigin({
                         id: uid(),
@@ -17374,123 +8406,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       });
                       triggerHaptic("success");
                       AudioManager.play("ui_select");
-                      toast.success(`✓ ⌖ DATUM fixado em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+                      toast.success(`✓ REF 0,0 fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
                     }}
-                    title="Definir ponto sob o cursor / snap como Vetor Datum (ΔXY / ∠)"
-                    className={cn(
-                      "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
-                      isSettingReferencePoint
-                        ? "bg-[#DC143C]/20 border-[#DC143C] text-[#DC143C]"
-                        : isDark
-                          ? "bg-[rgba(245,158,11,0.18)] hover:bg-[rgba(245,158,11,0.28)] border-[rgba(251,191,36,0.45)] text-[#FCD34D]"
-                          : "bg-[#FEF3C7] hover:bg-[#FDE68A] border-[#FCD34D] text-[#D97706]",
-                    )}
+                    title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
+                    className="ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
                   >
-                    <span>+</span>
-                    <span>DATUM</span>
+                    <span>📍</span>
+                    <span>REF 0,0</span>
                   </button>
 
-                  <button
-                    type="button"
-                    data-testid="chamfer-bottombar-polar-ref-btn"
-                    onClick={() => {
-                      setTool((prev) => (prev === "polar_ref" ? "select" : "polar_ref"));
-                      triggerHaptic("selection");
-                    }}
-                    title="Ref. Polar — Cota de referência não-vetorial (linha vermelha pontilhada + alvo magnético ⊕)"
-                    style={
-                      tool === "polar_ref"
-                        ? {
-                            backgroundColor: "var(--chamfer-accent, #E11D48)",
-                            borderColor: "var(--chamfer-accent, #E11D48)",
-                            color: "#FFFFFF",
-                          }
-                        : undefined
-                    }
-                    className={cn(
-                      "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
-                      tool === "polar_ref"
-                        ? "shadow-xs"
-                        : isDark
-                          ? "bg-[#EF4444]/15 hover:bg-[#EF4444]/25 border-[#EF4444]/40 text-[#FCA5A5]"
-                          : "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border-[#EF4444]/40 text-[#DC2626]",
-                    )}
-                  >
-                    <span>⌖</span>
-                    <span>Ref. Polar{polarRefs.length > 0 ? ` (${polarRefs.length})` : ""}</span>
-                  </button>
-
-                  {/* MODO GABARITO (REF. VERMELHO PONTILHADO NÃO-VETORIAL) */}
-                  <button
-                    type="button"
-                    data-testid="chamfer-bottombar-guide-mode-btn"
-                    onClick={() => {
-                      setGuideModeOn((prev) => {
-                        const next = !prev;
-                        if (next) {
-                          setGuidesHidden(false);
-                          toast.info("📐 Modo Gabarito ATIVO: novos desenhos serão gabaritos vermelhos (fora do 3D/DXF).");
-                        } else {
-                          toast.info("Modo Gabarito desativado: voltando a criar entidades vetoriais reais.");
-                        }
-                        return next;
-                      });
-                      triggerHaptic("selection");
-                    }}
-                    title="Modo Gabarito (Ref.) — Todas as ferramentas 2D criam gabaritos vermelhos pontilhados (fora do 3D, DXF e BOM)"
-                    style={
-                      guideModeOn
-                        ? {
-                            backgroundColor: "#EF4444",
-                            borderColor: "#EF4444",
-                            color: "#FFFFFF",
-                          }
-                        : undefined
-                    }
-                    className={cn(
-                      "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
-                      guideModeOn
-                        ? "shadow-xs"
-                        : isDark
-                          ? "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border-[#EF4444]/35 text-[#FCA5A5]"
-                          : "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border-[#EF4444]/35 text-[#DC2626]",
-                    )}
-                  >
-                    <span>📐</span>
-                    <span>Gabarito{guideEntitiesCount > 0 ? ` (${guideEntitiesCount})` : ""}</span>
-                  </button>
-
-                  {/* ATALHO CONTEXTUAL "TRAÇAR PEÇA" QUANDO GABARITO ATIVO, EXISTEM GABARITOS OU FERRAMENTA ATIVA */}
-                  {(guideModeOn || guideEntitiesCount > 0 || tool === "trace_part") && (
+                  {selection.length > 0 && (
                     <button
                       type="button"
-                      data-testid="chamfer-bottombar-trace-part-btn"
                       onClick={() => {
-                        setGuidesHidden(false);
-                        setTool((prev) => (prev === "trace_part" ? "select" : "trace_part"));
-                        triggerHaptic("selection");
+                        const selectedEntities = entities.filter((e) => selection.includes(e.id));
+                        const edges = GeometricReferenceEngine.extractEdges(selectedEntities);
+                        if (edges.length > 0) {
+                          const bestEdge =
+                            GeometricReferenceEngine.findNearestEdge(cursor, edges, 500)?.edge ?? edges[0]!;
+                          setActiveEdge(bestEdge);
+                          triggerHaptic("action");
+                          toast.success(`✓ Borda selecionada: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
+                        } else {
+                          toast.info("A seleção atual não possui bordas lineares.");
+                        }
                       }}
-                      title="Traçar Peça (Passar a Limpo) — Selecione os trechos reais sobre o gabarito"
-                      style={
-                        tool === "trace_part"
-                          ? {
-                              backgroundColor: "var(--chamfer-accent, #10B981)",
-                              borderColor: "var(--chamfer-accent, #10B981)",
-                              color: "#FFFFFF",
-                            }
-                          : undefined
-                      }
-                      className={cn(
-                        "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
-                        tool === "trace_part"
-                          ? "shadow-xs"
-                          : isDark
-                            ? "bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300"
-                            : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/40 text-emerald-700",
-                      )}
+                      title="Definir borda da seleção para afastamento e cotas vivas"
+                      className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
                     >
-                      <span>✒️</span>
-                      <span>Traçar Peça</span>
+                      <span>📐</span>
+                      <span>Usar Borda</span>
                     </button>
                   )}
                 </div>
@@ -17498,14 +8443,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA OU POLILINHA */}
               {pending.length >= 1 && (tool === "line" || tool === "polyline") && (
-                <div
-                  className={cn(
-                    "flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-[9.5px]",
-                    isDark
-                      ? "bg-[#38BDF8]/15 border-[#38BDF8]/40 text-[#38BDF8]"
-                      : "bg-[#0284C7]/10 border-[#0284C7]/40 text-[#0284C7]",
-                  )}
-                >
+                <div className="flex shrink-0 items-center gap-1.5 rounded bg-red-950/60 border border-red-500/30 px-1.5 py-0.5 text-[9.5px] text-red-300">
                   <span>
                     L: {Math.hypot(
                       cursor.x - pending[pending.length - 1]!.x,
@@ -17527,7 +8465,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     °
                   </span>
                   {tool === "polyline" && (
-                    <span className="font-mono text-[9px] text-[#94A3B8]">
+                    <span className="font-mono text-[9px] text-slate-400">
                       ({pending.length} {pending.length === 1 ? "vértice" : "vértices"})
                     </span>
                   )}
@@ -17543,10 +8481,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       triggerHaptic("action");
                       finishPolyline(false);
                     }}
-                    className={cn(
-                      "rounded text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors flex items-center gap-1",
-                      isDark ? "bg-[#34D399] hover:bg-[#10B981] text-[#0B0F14]" : "bg-[#059669] hover:bg-[#047857]",
-                    )}
+                    className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors flex items-center gap-1"
                     title="Concluir Polilinha aberta (Enter)"
                   >
                     <Check className="size-3" />
@@ -17559,10 +8494,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         triggerHaptic("action");
                         finishPolyline(true);
                       }}
-                      className={cn(
-                        "rounded font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors",
-                        isDark ? "bg-[#38BDF8] text-[#0B0F14] hover:bg-sky-300" : "bg-[#0284C7] text-white hover:bg-sky-700",
-                      )}
+                      className="rounded bg-sky-600 hover:bg-sky-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors"
                       title="Fechar Polilinha no ponto inicial (C)"
                     >
                       Fechar
@@ -17571,22 +8503,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </div>
               )}
 
-              <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+              {/* ESTADO DA OPERAÇÃO CAD */}
+              <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
+                <span className="size-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                <strong className="text-red-500 uppercase">{operationFeedback.command}:</strong>
+                <span className={cn("truncate", isDark ? "text-slate-400" : "text-slate-600")}>{operationFeedback.instruction}</span>
+              </div>
+
+              <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
               {/* INFORMAÇÕES DA SELEÇÃO */}
               <div className="hidden sm:flex shrink-0 items-center gap-1 text-[9.5px]">
-                <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>SEL:</span>
-                <strong
-                  className={cn(
-                    selected.length > 0
-                      ? isDark
-                        ? "text-[#38BDF8] font-bold"
-                        : "text-[#0284C7] font-bold"
-                      : isDark
-                        ? "text-[#94A3B8] font-normal"
-                        : "text-[#64748B] font-normal",
-                  )}
-                >
+                <span className={isDark ? "text-slate-500" : "text-slate-400"}>SEL:</span>
+                <strong className={cn(selected.length > 0 ? (isDark ? "text-cyan-400 font-bold" : "text-red-600 font-bold") : (isDark ? "text-slate-400 font-normal" : "text-slate-500 font-normal"))}>
                   {selectionText}
                 </strong>
               </div>
@@ -17594,49 +8525,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
             {/* LADO DIREITO: 3 GRUPOS LÓGICOS (1. PRIMÁRIOS VISÍVEIS | 2. PRECISÃO | 3. FLUXO/CNC) */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* CHIP INLINE DE HISTÓRICO / TIMELINE PARAMÉTRICA EMBUTIDO NA BARRA INFERIOR */}
-              <button
-                type="button"
-                data-testid="chamfer-statusbar-timeline-btn"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  dispatchChamferParametricPanel("timeline");
-                }}
-                style={
-                  parametricStatus.timelineOpen
-                    ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        borderColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
-                      }
-                    : {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
-                        borderColor: parametricStatus.rollbackActive
-                          ? "var(--chamfer-status-warning)"
-                          : "var(--chamfer-border-strong)",
-                        color: "var(--chamfer-text-primary)",
-                      }
-                }
-                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase whitespace-nowrap transition-colors hover:brightness-110 cursor-pointer"
-                title="Expandir / Recolher Linha do Tempo Paramétrica e Rollback"
-              >
-                <span>⏱</span>
-                <span>Histórico ({parametricStatus.featureCount})</span>
-              </button>
-
-              {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ÁREA */}
+              {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ZOOM */}
               <button
                 type="button"
                 onClick={() => setSnapOn((s) => !s)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
-                  snapOn
-                    ? isDark
-                      ? "text-[#7DD3FC] bg-[rgba(14,165,233,0.22)] border-[#38BDF8]"
-                      : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC]"
-                    : isDark
-                      ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:text-white"
-                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
+                  snapOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
                 )}
                 title="Alternar Snap Geométrico"
               >
@@ -17647,14 +8542,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => setOrthoOn((o) => !o)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
                   orthoOn
-                    ? isDark
-                      ? "text-[#7DD3FC] bg-[rgba(14,165,233,0.22)] border-[#38BDF8]"
-                      : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC]"
-                    : isDark
-                      ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:text-white"
-                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
+                    ? "text-emerald-400 bg-emerald-500/15"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
                 title="Modo Ortogonal (0°, 90°, 180°, 270°)"
               >
@@ -17665,70 +8556,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => setShowGrid((s) => !s)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
                   showGrid
                     ? isDark
-                      ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:border-[#38BDF8]/50"
-                      : "bg-[#FFFFFF] border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]/50"
-                    : isDark
-                      ? "border-[#2D3B55] text-[#94A3B8] hover:text-[#E2E8F0]"
-                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:text-[#1E293B]",
+                      ? "text-red-400 bg-red-950/50 border border-red-500/30"
+                      : "text-red-600 bg-red-50 border border-red-300 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
                 title="Alternar visibilidade da grade"
               >
                 GRID: {showGrid ? `${grid}MM` : "OFF"}
               </button>
 
-              {/* BOTÃO DE PERSONALIZAÇÃO DA ÁREA DE TRABALHO (NEUTRO POR PADRÃO, AZUL-CIANO QUANDO SELETOR/EDITOR ABERTO) */}
-              <button
-                type="button"
-                data-testid="status-workspace-area-button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setStatusWorkspaceMenuOpen((v) => !v);
-                  setStatusPrecisionMenuOpen(false);
-                  setStatusCncMenuOpen(false);
-                }}
-                className={cn(
-                  "rounded px-1.5 py-0.5 font-mono text-[9px] uppercase font-bold whitespace-nowrap transition-colors border cursor-pointer",
-                  statusWorkspaceMenuOpen || workspaceKeypadEditor !== null
-                    ? isDark
-                      ? "text-[#7DD3FC] bg-[rgba(14,165,233,0.22)] border-[#38BDF8] shadow-xs"
-                      : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC] shadow-xs"
-                    : frame.visible
-                      ? isDark
-                        ? "bg-[#232E45] border-[#334361] text-[#E2E8F0] hover:border-[#38BDF8]/50"
-                        : "bg-[#FFFFFF] border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]/50"
-                      : isDark
-                        ? "border-[#2D3B55] text-[#94A3B8] hover:text-[#E2E8F0]"
-                        : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:text-[#1E293B]",
-                )}
-                title="Personalizar Área de Trabalho (Chapa / Mesa CAD)"
-              >
-                {frame.visible
-                  ? `⬚ ÁREA: ${Math.round(frame.w)}×${Math.round(frame.h)}MM${frame.locked ? " 🔒" : ""}`
-                  : "⬚ ÁREA: OFF"}
-              </button>
-
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#2D3B55]" : "bg-[#CBD5E1]")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
               {/* GRUPO 2 — BOTÃO DE ABERTURA DO POPOVER PRECISÃO */}
               <button
                 type="button"
                 onClick={() => {
                   setStatusPrecisionMenuOpen((v) => !v);
-                  setStatusWorkspaceMenuOpen(false);
                   setStatusCncMenuOpen(false);
                 }}
                 className={cn(
                   "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
                   statusPrecisionMenuOpen || nudgeHudVisible || cursorOffsetMode === "offset"
                     ? isDark
-                      ? "border-[#38BDF8] bg-[rgba(14,165,233,0.22)] text-[#7DD3FC]"
-                      : "border-[#7DD3FC] bg-[#E0F2FE] text-[#0284C7]"
+                      ? "border-sky-500/40 bg-sky-950/60 text-sky-300"
+                      : "border-sky-300 bg-sky-50 text-sky-700"
                     : isDark
-                      ? "border-[#334361] bg-[#232E45] text-[#E2E8F0] hover:text-white"
-                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
+                      ? "border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white"
+                      : "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-900",
                 )}
                 title="Controles de Precisão: Mira, Lupa, Ajuste Fino e Quadro"
               >
@@ -17741,18 +8598,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => {
                   setStatusCncMenuOpen((v) => !v);
-                  setStatusWorkspaceMenuOpen(false);
                   setStatusPrecisionMenuOpen(false);
                 }}
                 className={cn(
                   "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
                   statusCncMenuOpen || showArrows || showOrder || simOn
                     ? isDark
-                      ? "border-[#FB7185]/50 bg-[#F43F5E]/20 text-[#FDA4AF]"
-                      : "border-[#FECDD3] bg-[#FFF1F2] text-[#E11D48]"
+                      ? "border-red-500/40 bg-red-950/60 text-red-300"
+                      : "border-red-300 bg-red-50 text-red-700"
                     : isDark
-                      ? "border-[#334361] bg-[#232E45] text-[#E2E8F0] hover:text-white"
-                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
+                      ? "border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white"
+                      : "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-900",
                 )}
                 title="Fabricação e Apresentação: Fluxo, Ordem de Corte e Prévia CNC"
               >
@@ -17760,18 +8616,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <span>Fluxo/CNC</span>
               </button>
 
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
               {/* ZOOM ATUAL (SEMPRE VISÍVEL) */}
               <button
                 type="button"
                 onClick={() => fitTo(entities)}
-                className={cn(
-                  "rounded border px-2 py-0.5 font-mono text-[9px] font-bold whitespace-nowrap transition-colors",
-                  isDark
-                    ? "border-[#293444] bg-[#151C27] text-[#38BDF8] hover:border-[#38BDF8]/50"
-                    : "border-[#7DD3FC] bg-[#E0F2FE] text-[#0284C7] hover:border-[#0284C7]",
-                )}
+                className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background whitespace-nowrap transition-colors"
                 title="Clique para enquadrar desenho (100%)"
               >
                 {Math.round(view.k * 100)}%
@@ -17779,343 +8630,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           </div>
 
-          {/* NÍVEL SECUNDÁRIO EXPANSÍVEL DA BARRA DE STATUS (POPOVER AO TOCAR NAS COORDENADAS X/Y) */}
-          {statusSecondaryLevelOpen && (
-            <div
-              data-testid="status-secondary-level-popover"
-              style={{
-                backgroundColor: "var(--chamfer-popover-bg)",
-                borderColor: "var(--chamfer-border-strong)",
-                color: "var(--chamfer-text-primary)",
-              }}
-              className="absolute bottom-9 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 font-mono text-[10px] shadow-2xl backdrop-blur-xl"
-            >
-              <span className="rounded border border-[#38BDF8]/40 bg-[#38BDF8]/10 px-1.5 py-0.5 font-bold text-[#38BDF8]">
-                UNIDADE: {unit.toUpperCase()}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setStatusSecondaryLevelOpen(false);
-                  setStatusWorkspaceMenuOpen(true);
-                }}
-                className="rounded border border-white/15 px-2 py-0.5 font-bold hover:border-[#38BDF8]/50 cursor-pointer"
-              >
-                ⬚ ÁREA: {Math.round(frame.w)} × {Math.round(frame.h)} mm
-              </button>
-              <span className="opacity-80">
-                REF: {temporaryOrigin ? `DATUM (${temporaryOrigin.p.x.toFixed(1)}, ${temporaryOrigin.p.y.toFixed(1)})` : "GLOBAL (0, 0)"}
-              </span>
-              <span className="opacity-80">SEL: {selectionText}</span>
-              <button
-                type="button"
-                onClick={() => setStatusSecondaryLevelOpen(false)}
-                className="ml-1 rounded px-1.5 py-0.5 opacity-70 hover:opacity-100 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
           {/* POPOVERS FLUTUANTES DA BARRA DE STATUS (RENDERIZADOS FORA DO CONTAINER OVERFLOW-X-AUTO PARA NUNCA CORTAR) */}
-          {statusWorkspaceMenuOpen && (
-            <div
-              data-testid="workspace-customization-popover"
-              style={{
-                backgroundColor: "var(--chamfer-popover-bg)",
-                borderColor: "var(--chamfer-border-strong)",
-                color: "var(--chamfer-text-primary)",
-              }}
-              className="absolute bottom-9 right-2 z-50 flex w-72 max-w-[94vw] flex-col gap-2 rounded-xl border p-2.5 shadow-2xl backdrop-blur-md"
-            >
-              {/* Cabeçalho */}
-              <div
-                className={cn(
-                  "flex items-center justify-between border-b pb-1.5 text-[9px] font-mono font-bold uppercase tracking-wider",
-                  isDark ? "border-[#293444] text-[#38BDF8]" : "border-[#CBD5E1] text-[#0284C7]",
-                )}
-              >
-                <span>⬚ Área de Trabalho (Chapa / Mesa)</span>
-                <button
-                  type="button"
-                  onClick={() => setStatusWorkspaceMenuOpen(false)}
-                  className="text-[#94A3B8] hover:text-foreground cursor-pointer"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-
-              {/* Chaves Rápidas: Exibir Área, Cotas da Área e Travar Limites */}
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    updateFrame({ visible: !frame.visible });
-                  }}
-                  className={cn(
-                    "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer border",
-                    frame.visible
-                      ? "text-[#FB7185] bg-[#E11D48]/15 border-[#E11D48]/40"
-                      : isDark
-                        ? "border-transparent hover:bg-[#0D121B] text-[#94A3B8]"
-                        : "border-transparent hover:bg-[#F1F5F9] text-[#64748B]",
-                  )}
-                >
-                  <span>Exibir Área de Trabalho</span>
-                  <span className="font-mono">{frame.visible ? "ON" : "OFF"}</span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      updateFrame({ showDims: !frame.showDims });
-                    }}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[8.5px] uppercase font-bold transition-colors cursor-pointer border",
-                      frame.showDims
-                        ? isDark
-                          ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/40"
-                          : "text-[#0284C7] bg-[#0284C7]/10 border-[#0284C7]/40"
-                        : isDark
-                          ? "border-[#293444] bg-[#0D121B] text-[#94A3B8]"
-                          : "border-[#CBD5E1] bg-[#F8FAFC] text-[#64748B]",
-                    )}
-                  >
-                    <span>Cotas Área</span>
-                    <span className="font-mono">{frame.showDims ? "ON" : "OFF"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      updateFrame({ locked: !frame.locked });
-                    }}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[8.5px] uppercase font-bold transition-colors cursor-pointer border",
-                      frame.locked
-                        ? "text-[#F59E0B] bg-[#F59E0B]/15 border-[#F59E0B]/40"
-                        : isDark
-                          ? "border-[#293444] bg-[#0D121B] text-[#94A3B8]"
-                          : "border-[#CBD5E1] bg-[#F8FAFC] text-[#64748B]",
-                    )}
-                  >
-                    <span>Travar Limites</span>
-                    <span className="font-mono">{frame.locked ? "🔒 FIXA" : "LIVRE"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Presets Industriais de Chapa/Mesa (1 Toque) */}
-              <div className="flex flex-col gap-1">
-                <span
-                  className={cn(
-                    "text-[8px] font-mono font-bold uppercase tracking-wider",
-                    isDark ? "text-[#94A3B8]" : "text-[#64748B]",
-                  )}
-                >
-                  Presets Industriais (1 Toque)
-                </span>
-                <div className="grid grid-cols-2 gap-1">
-                  {WORKSPACE_INDUSTRIAL_PRESETS.map((preset) => {
-                    const isSelected =
-                      Math.abs(frame.w - preset.w) < 0.5 && Math.abs(frame.h - preset.h) < 0.5;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          if (frame.locked) {
-                            toast.warning("Destrave os limites da Área de Trabalho para alterar o tamanho.");
-                            return;
-                          }
-                          triggerHaptic("selection");
-                          const nextFrame: WorkspaceFrame = {
-                            ...frame,
-                            w: preset.w,
-                            h: preset.h,
-                            visible: true,
-                          };
-                          updateFrame({ w: preset.w, h: preset.h, visible: true });
-                          fitBox(frameBox(nextFrame));
-                          toast.success(`Área de Trabalho: ${preset.label} (${preset.subtitle})`);
-                        }}
-                        className={cn(
-                          "flex flex-col items-start rounded-lg border px-2 py-1 text-left transition-all cursor-pointer active:scale-98",
-                          isSelected
-                            ? isDark
-                              ? "border-[#E11D48] bg-[#E11D48]/18 text-[#E6EDF5]"
-                              : "border-[#E11D48] bg-[#E11D48]/10 text-[#1E293B]"
-                            : isDark
-                              ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8]/50 text-[#E6EDF5]"
-                              : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#0284C7]/50 text-[#1E293B]",
-                        )}
-                      >
-                        <span className="font-mono text-[9.5px] font-bold leading-tight">
-                          {preset.label}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[7.5px] leading-tight truncate w-full",
-                            isDark ? "text-[#94A3B8]" : "text-[#64748B]",
-                          )}
-                        >
-                          {preset.subtitle}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Dimensões Personalizadas (Largura X × Altura Y em mm — Teclado Numérico CAD Integrado) */}
-              <div className="flex flex-col gap-1">
-                <span
-                  className={cn(
-                    "text-[8px] font-mono font-bold uppercase tracking-wider",
-                    isDark ? "text-[#94A3B8]" : "text-[#64748B]",
-                  )}
-                >
-                  Dimensões Personalizadas (Teclado CAD)
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      if (frame.locked) {
-                        toast.warning("Destrave os limites da Área de Trabalho para editar a Largura X.");
-                        return;
-                      }
-                      triggerHaptic("selection");
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setStatusWorkspaceMenuOpen(false);
-                      setWorkspaceKeypadEditor({
-                        axis: "w",
-                        currentValue: frame.w,
-                        screenPos: { x: rect.left, y: Math.max(180, rect.top - 150) },
-                      });
-                    }}
-                    className={cn(
-                      "flex flex-col items-start rounded-lg border px-2 py-1.5 transition-colors cursor-pointer",
-                      isDark
-                        ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8] text-[#E6EDF5]"
-                        : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#0284C7] text-[#1E293B]",
-                    )}
-                  >
-                    <span className={cn("text-[8px] font-mono uppercase", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
-                      Largura X (mm)
-                    </span>
-                    <span className={cn("font-mono text-xs font-bold", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")}>
-                      {Math.round(frame.w)} mm
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      if (frame.locked) {
-                        toast.warning("Destrave os limites da Área de Trabalho para editar a Altura Y.");
-                        return;
-                      }
-                      triggerHaptic("selection");
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setStatusWorkspaceMenuOpen(false);
-                      setWorkspaceKeypadEditor({
-                        axis: "h",
-                        currentValue: frame.h,
-                        screenPos: { x: rect.left, y: Math.max(180, rect.top - 150) },
-                      });
-                    }}
-                    className={cn(
-                      "flex flex-col items-start rounded-lg border px-2 py-1.5 transition-colors cursor-pointer",
-                      isDark
-                        ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8] text-[#E6EDF5]"
-                        : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#0284C7] text-[#1E293B]",
-                    )}
-                  >
-                    <span className={cn("text-[8px] font-mono uppercase", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
-                      Altura Y (mm)
-                    </span>
-                    <span className={cn("font-mono text-xs font-bold", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")}>
-                      {Math.round(frame.h)} mm
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Ações Rápidas: Inverter X/Y e Enquadrar Área na Tela */}
-              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (frame.locked) {
-                      toast.warning("Destrave os limites da Área de Trabalho para inverter X/Y.");
-                      return;
-                    }
-                    triggerHaptic("selection");
-                    const swapped: WorkspaceFrame = {
-                      ...frame,
-                      w: frame.h,
-                      h: frame.w,
-                      visible: true,
-                    };
-                    updateFrame({ w: swapped.w, h: swapped.h, visible: true });
-                    fitBox(frameBox(swapped));
-                    toast.info(`Orientação invertida: ${Math.round(swapped.w)} × ${Math.round(swapped.h)} mm`);
-                  }}
-                  className={cn(
-                    "flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 font-mono text-[8.5px] font-bold uppercase transition-colors cursor-pointer",
-                    isDark
-                      ? "border-[#293444] bg-[#0D121B] hover:bg-[#293444] text-[#E6EDF5]"
-                      : "border-[#CBD5E1] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B]",
-                  )}
-                  title="Inverter Largura X e Altura Y (Paisagem / Retrato)"
-                >
-                  <ArrowLeftRight className="size-3 shrink-0" />
-                  <span>⇄ Inverter X/Y</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    updateFrame({ visible: true });
-                    fitBox(frameBox({ ...frame, visible: true }));
-                    toast.info("Área de Trabalho enquadrada na tela");
-                  }}
-                  className={cn(
-                    "flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 font-mono text-[8.5px] font-bold uppercase transition-colors cursor-pointer",
-                    isDark
-                      ? "border-[#E11D48]/50 bg-[#E11D48]/18 hover:bg-[#E11D48]/28 text-[#FB7185]"
-                      : "border-[#E11D48]/45 bg-[#E11D48]/10 hover:bg-[#E11D48]/20 text-[#E11D48]",
-                  )}
-                  title="Centralizar e enquadrar a Área de Trabalho na tela"
-                >
-                  <Crosshair className="size-3 shrink-0" />
-                  <span>⌖ Enquadrar Área</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {statusPrecisionMenuOpen && (
             <div
-              style={{
-                backgroundColor: "var(--chamfer-popover-bg)",
-                borderColor: "var(--chamfer-border-strong)",
-                color: "var(--chamfer-text-primary)",
-              }}
-              className="absolute bottom-9 right-2 z-50 flex w-52 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md"
+              className={cn(
+                "absolute bottom-9 right-2 z-50 flex w-52 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
+                isDark
+                  ? "border-slate-800 bg-slate-950/96 text-slate-200"
+                  : "border-slate-200 bg-white/98 text-slate-800",
+              )}
             >
-              <div className={cn("flex items-center justify-between border-b pb-1 text-[8.5px] font-bold uppercase tracking-wider", isDark ? "border-[#293444] text-[#94A3B8]" : "border-[#CBD5E1] text-[#64748B]")}>
+              <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
                 <span>Módulos de Precisão</span>
                 <button
                   type="button"
                   onClick={() => setStatusPrecisionMenuOpen(false)}
-                  className="text-[#94A3B8] hover:text-foreground"
+                  className="text-slate-400 hover:text-foreground"
                 >
                   <X className="size-3" />
                 </button>
@@ -18127,12 +8657,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   cursorOffsetMode === "offset"
-                    ? isDark
-                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border border-[#38BDF8]/40"
-                      : "text-[#0284C7] bg-[#0284C7]/10 border border-[#0284C7]/40"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
+                    ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
+                    : "hover:bg-slate-800/40",
                 )}
               >
                 <span>MIRA</span>
@@ -18145,14 +8671,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   loupeMode === "pinned"
-                    ? isDark
-                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border border-[#38BDF8]/40"
-                      : "text-[#0284C7] bg-[#0284C7]/10 border border-[#0284C7]/40"
+                    ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
                     : loupeMode === "floating"
-                      ? "text-[#E11D48] bg-[#E11D48]/15"
-                      : isDark
-                        ? "hover:bg-[#0D121B]"
-                        : "hover:bg-[#F1F5F9]",
+                      ? "text-accent bg-accent/15"
+                      : "hover:bg-slate-800/40",
                 )}
               >
                 <span>LUPA</span>
@@ -18172,10 +8694,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   nudgeHudVisible
-                    ? "text-[#E11D48] bg-[#E11D48]/15 border border-[#E11D48]/40"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
+                    ? "text-accent bg-accent/15 border border-accent/40"
+                    : "hover:bg-slate-800/40",
                 )}
               >
                 <span>FINO</span>
@@ -18187,77 +8707,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => updateFrame({ visible: !frame.visible })}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  frame.visible
-                    ? "text-[#E11D48] bg-[#E11D48]/15"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
+                  frame.visible ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
                 )}
               >
                 <span>QUADRO</span>
                 <span>{frame.visible ? "ON" : "OFF"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const opts = [0, 2, 3, 4, 6, 8, 12, 16];
-                  const idx = opts.indexOf(snapDivision);
-                  const next = opts[(idx + 1) % opts.length];
-                  setSnapDivision(next);
-                  triggerHaptic("selection");
-                }}
-                className={cn(
-                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  snapDivision > 0
-                    ? "text-[#F59E0B] bg-[#F59E0B]/15 border border-[#F59E0B]/40"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
-                )}
-              >
-                <span>DIVISÃO SNAP</span>
-                <span>{snapDivision > 0 ? `${snapDivision}X` : "OFF"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAllSnaps((v) => !v);
-                  triggerHaptic("selection");
-                }}
-                className={cn(
-                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  showAllSnaps
-                    ? isDark
-                      ? "text-[#34D399] bg-[#34D399]/15 border border-[#34D399]/40"
-                      : "text-[#059669] bg-[#059669]/10 border border-[#059669]/40"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
-                )}
-              >
-                <span>TODOS OS SNAPS</span>
-                <span>{showAllSnaps ? "ON" : "OFF"}</span>
               </button>
             </div>
           )}
 
           {statusCncMenuOpen && (
             <div
-              style={{
-                backgroundColor: "var(--chamfer-popover-bg)",
-                borderColor: "var(--chamfer-border-strong)",
-                color: "var(--chamfer-text-primary)",
-              }}
-              className="absolute bottom-9 right-2 z-50 flex w-48 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md"
+              className={cn(
+                "absolute bottom-9 right-2 z-50 flex w-48 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
+                isDark
+                  ? "border-slate-800 bg-slate-950/96 text-slate-200"
+                  : "border-slate-200 bg-white/98 text-slate-800",
+              )}
             >
-              <div className={cn("flex items-center justify-between border-b pb-1 text-[8.5px] font-bold uppercase tracking-wider", isDark ? "border-[#293444] text-[#94A3B8]" : "border-[#CBD5E1] text-[#64748B]")}>
+              <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
                 <span>Fabricação & CNC</span>
                 <button
                   type="button"
                   onClick={() => setStatusCncMenuOpen(false)}
-                  className="text-[#94A3B8] hover:text-foreground"
+                  className="text-slate-400 hover:text-foreground"
                 >
                   <X className="size-3" />
                 </button>
@@ -18268,11 +8741,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => setShowArrows((s) => !s)}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  showArrows
-                    ? "text-[#E11D48] bg-[#E11D48]/15"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
+                  showArrows ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
                 )}
               >
                 <span>FLUXO</span>
@@ -18284,11 +8753,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => setShowOrder((s) => !s)}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  showOrder
-                    ? "text-[#E11D48] bg-[#E11D48]/15"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
+                  showOrder ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
                 )}
               >
                 <span>ORDEM</span>
@@ -18307,11 +8772,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  simOn
-                    ? "text-[#E11D48] bg-[#E11D48]/15"
-                    : isDark
-                      ? "hover:bg-[#0D121B]"
-                      : "hover:bg-[#F1F5F9]",
+                  simOn ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
                 )}
               >
                 <span>PRÉVIA CNC</span>
@@ -18352,23 +8813,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </Suspense>
       )}
 
-      {/* FERRAMENTA DIVIDIR: EDITOR COMPACTO EM N PARTES IGUAIS (EM RETRATO OCORRE VIA INLINE CONTEXTUAL SWAP NA BARRA NÍVEL 1) */}
-      {isLandscape && (
-        <ChamferDivideEditor
-          open={divideEditorOpen}
-          selectedEntity={divideTargetEntity}
-          parts={divideParts}
-          onPartsChange={setDivideParts}
-          options={divideOptions}
-          onOptionsChange={setDivideOptions}
-          onConfirm={handleConfirmDivide}
-          onCancel={handleCancelDivide}
-          isDark={isDark}
-        />
-      )}
+      {/* FERRAMENTA DIVIDIR: EDITOR COMPACTO EM N PARTES IGUAIS */}
+      <ChamferDivideEditor
+        open={divideEditorOpen}
+        selectedEntity={divideTargetEntity}
+        parts={divideParts}
+        onPartsChange={setDivideParts}
+        options={divideOptions}
+        onOptionsChange={setDivideOptions}
+        onConfirm={handleConfirmDivide}
+        onCancel={handleCancelDivide}
+        isDark={isDark}
+      />
 
-      {/* BARRA FLUTUANTE DE CONFIRMAÇÃO DA FERRAMENTA DIVIDIR (MODO PAISAGEM) */}
-      {isLandscape && divideEditorOpen && divideTargetEntity && (
+      {/* BARRA FLUTUANTE DE CONFIRMAÇÃO DA FERRAMENTA DIVIDIR (GARANTIA TOTAL EM MODO PAISAGEM) */}
+      {divideEditorOpen && divideTargetEntity && (
         <div
           role="region"
           aria-label="Confirmar divisão geométrica"
@@ -18449,309 +8908,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </Suspense>
       )}
 
-      {/* CONTROLE FLUTUANTE DE FILETE UNIVERSAL E CHANFRO */}
-      {activeMode === "2d" && !solidOpen && (tool === "fillet" || tool === "chamfer") && (
+      {/* CONTROLE FLUTUANTE DE FILETE E CHANFRO */}
+      {(tool === "fillet" || tool === "chamfer") && (
         <ChamferFilletChamferHUD
           tool={tool}
           value={filletR}
           onChangeValue={setFilletR}
           selectionCornersCount={selectedCorners.length}
           onApplySelectionCorners={handleApplyAllSelectionCorners}
-          solutionsCount={tool === "fillet" ? (universalFilletResult?.solutions.length ?? 0) : 0}
-          activeSolutionIndex={filletSolutionIdx}
-          activeSolutionLabel={
-            tool === "fillet" ? (universalFilletResult?.activeSolution?.variantLabel ?? null) : null
-          }
-          onCycleSolution={() => {
-            if (!universalFilletResult || universalFilletResult.solutions.length < 2) return;
-            setFilletSolutionIdx((idx) => (idx + 1) % universalFilletResult.solutions.length);
-            triggerHaptic("selection");
-          }}
-          onConfirmActiveFillet={() => {
-            const sol = universalFilletResult?.activeSolution;
-            if (!sol) return;
-            commit(sol.updatedEntities);
-            triggerHaptic("success");
-            toast.success(`Filete R${filletR} mm aplicado (arco analítico exato).`);
-            setFilletFirstPick(null);
-            setFilletSecondPick(null);
-            setUniversalFilletResult(null);
-            setFilletErrorHint(null);
-            setFilletSolutionIdx(0);
-            setSelection([]);
-          }}
-          firstPickedLabel={
-            tool === "fillet" && filletFirstPick
-              ? filletFirstPick.entity.type === "circle"
-                ? "Círculo"
-                : filletFirstPick.entity.type === "arc"
-                  ? "Arco"
-                  : filletFirstPick.entity.type === "polyline"
-                    ? "Polilinha"
-                    : "Linha"
-              : null
-          }
-          errorHint={tool === "fillet" ? filletErrorHint : null}
           onClose={() => {
             setTool("select");
             setFilletPreview(null);
-            setFilletFirstPick(null);
-            setFilletSecondPick(null);
-            setUniversalFilletResult(null);
-            setFilletErrorHint(null);
             setChamferPreview(null);
           }}
           isDark={isDark}
         />
       )}
 
-      {/* BARRA CONTEXTUAL MINIMALISTA DE SELEÇÃO 2D (FIXA NO RODAPÉ CENTRAL DO CANVAS NA COMPACTA; NO PRUMO USA O MENU CONTEXTUAL DO PRUMO) */}
-      {uiShellMode !== "prumo" && selection.length > 0 && !solidOpen && activeMode !== "3d" && tool === "select" && activeArrayType === null && (
-        <div
-          data-testid="chamfer-selection-action-bar"
-          style={{
-            position: "fixed",
-            left: "50%",
-            transform: "translateX(-50%)",
-            bottom: isLandscape ? 38 : 116,
-            zIndex: 40,
-            height: 32,
-            padding: "3px 6px",
-            borderRadius: 9999,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            maxWidth: "calc(100vw - 24px)",
-            backgroundColor: isDark ? "rgba(15, 23, 42, 0.92)" : "rgba(255, 255, 255, 0.96)",
-            borderWidth: 1,
-            borderStyle: "solid",
-            borderColor: isDark ? "#334155" : "#CBD5E1",
-            boxShadow: isDark
-              ? "0 8px 24px rgba(2, 6, 23, 0.50)"
-              : "0 6px 20px rgba(15, 23, 42, 0.08)",
-            backdropFilter: "blur(10px)",
-            WebkitBackdropFilter: "blur(10px)",
-          }}
-          className="select-none pointer-events-auto overflow-x-auto scrollbar-none animate-in fade-in slide-in-from-bottom-2 duration-150"
-        >
-          {/* 1. Selo de Contagem Compacto */}
-          {activeGroup ? (
-            <span
-              style={{
-                height: 24,
-                padding: "0 8px",
-                borderRadius: 9999,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: "10.5px",
-                fontWeight: 700,
-                backgroundColor: isDark ? "rgba(225, 29, 72, 0.16)" : "#FFF1F2",
-                borderWidth: 1,
-                borderStyle: "solid",
-                borderColor: isDark ? "rgba(244, 63, 94, 0.35)" : "#FECDD3",
-                color: isDark ? "#FB7185" : "#E11D48",
-              }}
-              className="font-mono whitespace-nowrap shrink-0"
-            >
-              <Boxes className="size-3" />
-              <span>{activeGroup.name}</span>
-            </span>
-          ) : (
-            <span
-              style={{
-                padding: "0 6px",
-                fontSize: "10.5px",
-                fontWeight: 700,
-                color: isDark ? "#94A3B8" : "#475569",
-              }}
-              className="font-mono whitespace-nowrap shrink-0"
-            >
-              {selection.length} {selection.length === 1 ? "peça" : "peças"}
-            </span>
-          )}
-
-          {/* 2. Divisor Vertical Fino (1px x 14px) */}
-          <span
-            aria-hidden="true"
-            style={{
-              width: 1,
-              height: 14,
-              backgroundColor: isDark ? "#334155" : "#E2E8F0",
-              flexShrink: 0,
-            }}
-          />
-
-          {/* 3. [ ✥ Mover ] */}
-          <button
-            type="button"
-            onClick={handleMoveSelection}
-            title="Mover peça selecionada"
-            style={{
-              height: 24,
-              padding: "0 9px",
-              borderRadius: 9999,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: "11px",
-              fontWeight: 600,
-              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
-              borderWidth: 1,
-              borderStyle: "solid",
-              borderColor: isDark ? "#334155" : "#E2E8F0",
-              color: isDark ? "#F1F5F9" : "#1E293B",
-            }}
-            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
-          >
-            <Move className="size-3" />
-            <span>Mover</span>
-          </button>
-
-          {/* 4. [ ⧉ Copiar ] */}
-          <button
-            type="button"
-            onClick={handleCopySelection}
-            title="Duplicar / copiar peça selecionada (Ctrl+D)"
-            style={{
-              height: 24,
-              padding: "0 9px",
-              borderRadius: 9999,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: "11px",
-              fontWeight: 600,
-              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
-              borderWidth: 1,
-              borderStyle: "solid",
-              borderColor: isDark ? "#334155" : "#E2E8F0",
-              color: isDark ? "#F1F5F9" : "#1E293B",
-            }}
-            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
-          >
-            <Copy className="size-3" />
-            <span>Copiar</span>
-          </button>
-
-          {/* 5. [ ↻ Girar ] */}
-          <button
-            type="button"
-            onClick={() => applySelection((e) => rotate(e, center, 90))}
-            title="Girar peça em +90°"
-            style={{
-              height: 24,
-              padding: "0 9px",
-              borderRadius: 9999,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: "11px",
-              fontWeight: 600,
-              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
-              borderWidth: 1,
-              borderStyle: "solid",
-              borderColor: isDark ? "#334155" : "#E2E8F0",
-              color: isDark ? "#F1F5F9" : "#1E293B",
-            }}
-            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
-          >
-            <RotateCw className="size-3" />
-            <span>Girar</span>
-          </button>
-
-          {/* 6. [ ⇄ Espelhar ] */}
-          <button
-            type="button"
-            onClick={handleMirrorSelection}
-            title="Espelhar peça selecionada"
-            style={{
-              height: 24,
-              padding: "0 9px",
-              borderRadius: 9999,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: "11px",
-              fontWeight: 600,
-              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
-              borderWidth: 1,
-              borderStyle: "solid",
-              borderColor: isDark ? "#334155" : "#E2E8F0",
-              color: isDark ? "#F1F5F9" : "#1E293B",
-            }}
-            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
-          >
-            <FlipHorizontal2 className="size-3" />
-            <span>Espelhar</span>
-          </button>
-
-          {/* 7. [ # Array ] */}
-          {(() => {
-            const arrayOwner = selected.find((e) => getEntityArraySpec(e) !== null);
-            return (
-              <button
-                type="button"
-                onClick={() => {
-                  if (arrayOwner) {
-                    handleEditExistingArray(arrayOwner);
-                  } else {
-                    const host = detectHostPart(entities, selected, temporaryOrigin?.p ?? { x: 0, y: 0 });
-                    handleStartArray(host.suggestedType);
-                  }
-                }}
-                title={
-                  arrayOwner
-                    ? "Editar Padrão (Array) existente em tempo real"
-                    : "Multiplicar em Padrão Circular ou Linear (Array)"
-                }
-                style={{
-                  height: 24,
-                  padding: "0 9px",
-                  borderRadius: 9999,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  backgroundColor: isDark ? "rgba(14, 165, 233, 0.14)" : "#E0F2FE",
-                  borderWidth: 1,
-                  borderStyle: "solid",
-                  borderColor: isDark ? "rgba(56, 189, 248, 0.40)" : "#7DD3FC",
-                  color: isDark ? "#38BDF8" : "#0284C7",
-                }}
-                className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
-              >
-                <Hash className="size-3" />
-                <span>{arrayOwner ? "Editar Array" : "Array"}</span>
-              </button>
-            );
-          })()}
+      {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
+      {selection.length > 0 && !solidOpen && tool === "select" && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80 font-mono text-[11px]">
+            {activeGroup ? (
+              <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/40">
+                <Boxes className="size-3.5" />
+                {activeGroup.name}
+              </span>
+            ) : (
+              <span className="text-slate-300 font-semibold">
+                {selection.length} {selection.length === 1 ? "peça" : "peças"}
+              </span>
+            )}
+          </div>
 
           {selection.length >= 2 && (
             <button
               type="button"
               onClick={handleGroupSelection}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
               title="Agrupar formas em uma única peça (Ctrl+G)"
-              style={{
-                height: 24,
-                padding: "0 9px",
-                borderRadius: 9999,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: "11px",
-                fontWeight: 600,
-                backgroundColor: isDark ? "rgba(14, 165, 233, 0.14)" : "#E0F2FE",
-                borderWidth: 1,
-                borderStyle: "solid",
-                borderColor: isDark ? "rgba(56, 189, 248, 0.40)" : "#7DD3FC",
-                color: isDark ? "#38BDF8" : "#0284C7",
-              }}
-              className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
             >
-              <Boxes className="size-3" />
-              <span>Agrupar</span>
+              <Boxes className="size-3.5" />
+              Agrupar
             </button>
           )}
 
@@ -18759,73 +8957,50 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <button
               type="button"
               onClick={handleUngroupSelection}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600/90 hover:bg-amber-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
               title="Desagrupar peça em formas independentes (Ctrl+Shift+G)"
-              style={{
-                height: 24,
-                padding: "0 9px",
-                borderRadius: 9999,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: "11px",
-                fontWeight: 600,
-                backgroundColor: isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7",
-                borderWidth: 1,
-                borderStyle: "solid",
-                borderColor: isDark ? "rgba(245, 158, 11, 0.40)" : "#FCD34D",
-                color: isDark ? "#FBBF24" : "#D97706",
-              }}
-              className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
             >
-              <Ungroup className="size-3" />
-              <span>Desagrupar</span>
+              <Ungroup className="size-3.5" />
+              Desagrupar
             </button>
           )}
 
-          {/* 8. [ 🗑️ ] (Excluir) */}
+          <button
+            type="button"
+            onClick={() => applySelection((e) => rotate(e, center, 90))}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs transition-colors"
+            title="Girar 90°"
+          >
+            <RotateCw className="size-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsoPieceBuilderOpen(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono text-xs transition-colors"
+            title="Projetar para Isométrico"
+          >
+            <BoxIcon className="size-3.5" />
+            <span className="hidden sm:inline">Iso</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
               commit((e) => e.filter((x) => !selection.includes(x.id)));
               setSelection([]);
             }}
-            title="Excluir seleção (Delete)"
-            aria-label="Excluir seleção"
-            style={{
-              height: 24,
-              padding: "0 8px",
-              borderRadius: 9999,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: isDark ? "rgba(225, 29, 72, 0.16)" : "#FFF1F2",
-              borderWidth: 1,
-              borderStyle: "solid",
-              borderColor: isDark ? "rgba(244, 63, 94, 0.35)" : "#FECDD3",
-              color: isDark ? "#FB7185" : "#E11D48",
-            }}
-            className="shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-red-300 font-mono text-xs transition-colors"
+            title="Excluir seleção"
           >
             <Trash2 className="size-3.5" />
           </button>
 
-          {/* 9. [ ✕ ] (Limpar seleção) */}
           <button
             type="button"
             onClick={() => setSelection([])}
-            title="Limpar seleção (Esc)"
-            aria-label="Limpar seleção"
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: 9999,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: "transparent",
-              color: isDark ? "#94A3B8" : "#64748B",
-            }}
-            className="shrink-0 cursor-pointer transition-colors hover:brightness-125 active:scale-95"
+            className="ml-1 p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+            title="Limpar seleção"
           >
             <X className="size-3.5" />
           </button>
@@ -19048,16 +9223,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </Suspense>
       )}
 
-      {/* ORQUESTRADOR PARAMÉTRICO UNIFICADO (PILARES 1–8 — ERRORBOUNDARIES INDEPENDENTES) */}
-      <ChamferParametricOrchestrator
-        entities={entities}
-        selection={selection}
-        thickness={thickness}
-        activeMode={activeMode}
-        onThicknessChange={(v) => setThickness(v)}
-        onNotify={(msg) => toast.info(msg)}
-      />
-
       {/* DUAL TOOL HUD */}
       {dualToolSecondary && (
         <ChamferDualToolHUD
@@ -19081,7 +9246,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           screenPos={loupeScreenPos}
           cadPos={loupeCadPos}
           activeSnap={smartSnap ?? snapHit}
-          activeSnapResult={buildUnifiedSnapResult(loupeCadPos, smartSnap, snapHit, view)}
           baseCadPoint={pending.length > 0 ? pending[pending.length - 1] : null}
           temporaryOrigin={temporaryOrigin}
           activeEdge={activeEdge}
@@ -19091,185 +9255,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           entities={entities}
           draft={draft}
           pendingPoints={pending}
-          freehandLivePoints={freehandLivePts}
           grid={grid}
           showGrid={showGrid}
           isDark={isDark}
           pinned={loupePinned}
           onTogglePinned={toggleLoupePinned}
-          rightOffset={
-            rightSidebarOpen
-              ? 300
-              : benchCalcState.open && benchCalcState.dockMode === "docked_right"
-                ? 282
-                : undefined
-          }
-        />
-      )}
-
-      {/* SUB-BARRA CONTEXTUAL E TELEMETRIA DA FERRAMENTA DESENHO LIVRE VETORIAL */}
-      {activeMode === "2d" && !solidOpen && (
-        <ChamferFreehandSubBar
-          visible={tool === "freehand"}
-          isDark={isDark}
-          topOffsetPx={focus || uiShellMode === "prumo" ? 52 : 54}
-          mode={freehandMode}
-          onChangeMode={setFreehandMode}
-          tolerancePx={freehandTolerancePx}
-          onChangeTolerancePx={setFreehandTolerancePx}
-          autoClose={freehandAutoClose}
-          onToggleAutoClose={() => setFreehandAutoClose((v) => !v)}
-          usageRole={freehandUsageRole}
-          onChangeUsageRole={setFreehandUsageRole}
-          liveMetrics={
-            freehandLivePts.length >= 2
-              ? computeFreehandLiveMetrics(freehandLivePts, 10 / Math.max(0.2, view.k))
-              : null
-          }
-          suggestion={freehandSuggestion}
-          onAcceptSuggestion={() => {
-            if (!freehandSuggestion) return;
-            const { entityId, data } = freehandSuggestion;
-            commit((list) =>
-              list.map((ent) => {
-                if (ent.id !== entityId) return ent;
-                if (data.kind === "circle") {
-                  return {
-                    id: ent.id,
-                    layer: ent.layer,
-                    type: "circle",
-                    cx: data.cx,
-                    cy: data.cy,
-                    r: data.r,
-                    cnc: { role: "CUT" },
-                  };
-                }
-                const x0 = data.x;
-                const y0 = data.y;
-                const x1 = Number((data.x + data.widthMm).toFixed(3));
-                const y1 = Number((data.y + data.heightMm).toFixed(3));
-                return {
-                  id: ent.id,
-                  layer: ent.layer,
-                  type: "polyline",
-                  closed: true,
-                  pts: [
-                    { x: x0, y: y0 },
-                    { x: x1, y: y0 },
-                    { x: x1, y: y1 },
-                    { x: x0, y: y1 },
-                  ],
-                  cnc: { role: "CUT" },
-                };
-              }),
-            );
-            setFreehandSuggestion(null);
-            toast.success(`Convertido: ${data.label}`);
-          }}
-          onDismissSuggestion={() => setFreehandSuggestion(null)}
-          onExitTool={() => setTool("select")}
-        />
-      )}
-
-      {/* EDITOR RICO DE ANOTAÇÕES TÉCNICAS E FÓRMULAS NATIVAS */}
-      <ChamferRichNoteEditorOverlay
-        session={richNoteSession}
-        angleMode={benchCalcState.angleMode}
-        ansValue={benchCalcState.ans}
-        isDark={isDark}
-        onCancel={() => {
-          setRichNoteSession(null);
-        }}
-        onCommit={(spec) => {
-          if (!richNoteSession) return;
-          if (richNoteSession.mode === "edit" && richNoteSession.entityId) {
-            const targetId = richNoteSession.entityId;
-            commit((list) =>
-              list.map((ent) =>
-                ent.id === targetId && ent.type === "text"
-                  ? buildRichNoteEntity(
-                      ent.id,
-                      richNoteSession.anchorWorld,
-                      spec,
-                      ent.layer || "anotacoes",
-                      ent.params,
-                    )
-                  : ent,
-              ),
-            );
-            setSelection([targetId]);
-            toast.success("Anotação técnica atualizada.");
-          } else {
-            const created = buildRichNoteEntity(
-              uid(),
-              richNoteSession.anchorWorld,
-              spec,
-              richNoteSession.layer || "anotacoes",
-            );
-            commit((list) => [...list, created]);
-            setSelection([created.id]);
-            setTool("select");
-            toast.success("Anotação técnica inserida na prancheta.");
-          }
-          setRichNoteSession(null);
-        }}
-      />
-
-      {/* MINI-CALCULADORA CIENTÍFICA & METALÚRGICA DE BANCADA (FIXA À DIREITA <-> FLUTUANTE) */}
-      {activeMode === "2d" && !solidOpen && (
-        <ChamferBenchCalculator
-          state={benchCalcState}
-          onChangeState={setBenchCalcState}
-          selectedEntities={selected}
-          isDark={isDark}
-          topOffsetPx={focus || uiShellMode === "prumo" ? 50 : 50}
-          viewportWidth={verticalLayout.viewportWidth}
-          viewportHeight={verticalLayout.viewportHeight}
-          onSendToTechnicalNote={({ memoryLine }) => {
-            if (richNoteSession) {
-              setRichNoteSession((prev) => {
-                if (!prev) return null;
-                const existingRuns = prev.initialSpec.runs;
-                const hasText = existingRuns.some((r) => r.text.trim().length > 0);
-                return {
-                  ...prev,
-                  initialSpec: {
-                    ...prev.initialSpec,
-                    isFormula: true,
-                    categoryLayer: "Fórmula",
-                    runs: hasText
-                      ? [...existingRuns, { text: `\n${memoryLine}`, bold: true }]
-                      : [{ text: memoryLine, bold: true }],
-                  },
-                };
-              });
-              toast.success("Memória de cálculo adicionada à nota aberta.");
-              return;
-            }
-
-            // Insere diretamente um cartão de Nota de Fórmula no centro visível da prancheta!
-            const centerScreenX = (canvasSize.w || 800) * 0.5;
-            const centerScreenY = (canvasSize.h || 600) * 0.5;
-            const worldCenter = {
-              x: Number(((centerScreenX - view.tx) / Math.max(0.05, view.k) - 45).toFixed(2)),
-              y: Number(((centerScreenY - view.ty) / Math.max(0.05, view.k) - 12).toFixed(2)),
-            };
-            const noteSpec: RichNoteSpec = {
-              widthMm: 105,
-              fontSizeMm: 6,
-              rotationDeg: 0,
-              textAlign: "left",
-              lineHeight: 1.35,
-              categoryLayer: "Fórmula",
-              boxStyle: "card",
-              isFormula: true,
-              runs: [{ text: memoryLine, bold: true }],
-            };
-            const created = buildRichNoteEntity(uid(), worldCenter, noteSpec, "anotacoes");
-            commit((list) => [...list, created]);
-            setSelection([created.id]);
-            toast.success("Memória de cálculo enviada para Nota Técnica no CAD!");
-          }}
+          rightOffset={rightSidebarOpen ? 300 : undefined}
         />
       )}
 
@@ -19281,10 +9272,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         onNudge={handleNudge}
         onConfirmPoint={handleConfirmNudgePoint}
         onSetExactCoord={(pt) => {
-          cursorRef.current = pt;
           setCursor(pt);
           setLoupeCadPos(pt);
-          setTouchWorldPos(null);
           toast.success(`Mira posicionada em X: ${pt.x.toFixed(1)}, Y: ${pt.y.toFixed(1)} mm`);
         }}
         canConfirmPoint={
@@ -19333,9 +9322,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }}
           isoOrtho={isoOrtho}
           onToggleIsoOrtho={() => {
-            const next = !isoOrtho;
-            setIsoOrtho(next);
-            toast.info(next ? "Orto Isométrico: Ativado" : "Orto Isométrico: Desativado");
+            setIsoOrtho((v) => {
+              const next = !v;
+              toast.info(next ? "Orto Isométrico: Ativado" : "Orto Isométrico: Desativado");
+              return next;
+            });
           }}
           onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
           isDark={isDark}
@@ -19376,248 +9367,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {directDimEditor && (
         <ChamferDirectDimensionEditor
           open={directDimEditor.open}
-          onClose={() => {
-            applyDirectDimValue(directDimEditor.value, false);
-            setDirectDimEditor(null);
-          }}
+          onClose={() => setDirectDimEditor(null)}
           screenPos={directDimEditor.pos}
           currentValue={directDimEditor.value}
           label={directDimEditor.label}
-          onPreviewChange={(previewVal) => applyDirectDimValue(previewVal, false)}
           onConfirm={handleDirectDimUpdate}
         />
       )}
 
-      {/* TECLADO NUMÉRICO CAD INTEGRADO PARA PERSONALIZAÇÃO DE LARGURA X / ALTURA Y DA ÁREA DE TRABALHO */}
-      {workspaceKeypadEditor && (
-        <ChamferDirectDimensionEditor
-          open={true}
-          onClose={() => setWorkspaceKeypadEditor(null)}
-          screenPos={workspaceKeypadEditor.screenPos}
-          currentValue={workspaceKeypadEditor.currentValue}
-          label={
-            workspaceKeypadEditor.axis === "w"
-              ? "Largura X da Área (mm)"
-              : "Altura Y da Área (mm)"
-          }
-          allowLock={true}
-          initialLocked={Boolean(frame.locked)}
-          allowNegative={false}
-          unit="mm"
-          presets={[
-            { label: "1000", value: 1000 },
-            { label: "1200", value: 1200 },
-            { label: "1500", value: 1500 },
-            { label: "2000", value: 2000 },
-            { label: "3000", value: 3000 },
-            { label: "6000", value: 6000 },
-          ]}
-          onConfirm={(newVal, lockMeasure) => {
-            const clamped = clampSide(newVal, workspaceKeypadEditor.currentValue);
-            const patch: Partial<WorkspaceFrame> =
-              workspaceKeypadEditor.axis === "w"
-                ? { w: clamped, visible: true, locked: Boolean(lockMeasure) }
-                : { h: clamped, visible: true, locked: Boolean(lockMeasure) };
-            const nextFrame: WorkspaceFrame = { ...frame, ...patch };
-            updateFrame(patch);
-            setWorkspaceKeypadEditor(null);
-            fitBox(frameBox(nextFrame));
-            toast.success(
-              `Área de Trabalho ajustada para ${Math.round(nextFrame.w)} × ${Math.round(nextFrame.h)} mm`,
-            );
-          }}
-        />
-      )}
-
-      {/* EDIÇÃO DIRETA DE COTAS VIVAS NO CANVAS (TECLADO NUMÉRICO CAD INTEGRADO + RESTRIÇÕES DIMENSIONAIS) */}
+      {/* EDIÇÃO DIRETA DE COTAS VIVAS NO CANVAS (SMART DIMENSIONS & OFFSET) */}
       {liveDimEditor && (
         <ChamferDirectDimensionEditor
           open={true}
-          onClose={() => {
-            if (preEditKeypadSnapshotRef.current) {
-              setCursor(preEditKeypadSnapshotRef.current.cursor);
-              setDraft(preEditKeypadSnapshotRef.current.draft);
-              preEditKeypadSnapshotRef.current = null;
-            }
-            setLiveDimEditor(null);
-          }}
+          onClose={() => setLiveDimEditor(null)}
           screenPos={liveDimEditor.screenPos}
           currentValue={liveDimEditor.currentValue}
           label={liveDimEditor.label}
           allowInvert={liveDimEditor.allowInvert}
-          allowLock={Boolean(liveDimEditor.measureKind)}
-          initialLocked={Boolean(liveDimEditor.initialLocked)}
-          unit={liveDimEditor.measureKind === "angle" ? "°" : "mm"}
-          allowNegative={
-            liveDimEditor.measureKind === "dx" ||
-            liveDimEditor.measureKind === "dy" ||
-            liveDimEditor.measureKind === "angle"
-          }
           onInvertSide={() => {
             setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
             triggerHaptic("selection");
           }}
-          onPreviewChange={(previewVal) => {
-            if (!liveDimEditor.measureKind) return;
-            const tempConstraints: DimensionalConstraints = { ...lockedConstraints };
-            if (liveDimEditor.measureKind === "L") tempConstraints.lockedL = previewVal;
-            if (liveDimEditor.measureKind === "angle") {
-              tempConstraints.lockedAngle = ((previewVal % 360) + 360) % 360;
-            }
-            if (liveDimEditor.measureKind === "dx") {
-              tempConstraints.lockedDx = Math.abs(previewVal);
-              tempConstraints.signDx = previewVal >= 0 ? 1 : -1;
-            }
-            if (liveDimEditor.measureKind === "dy") {
-              tempConstraints.lockedDy = Math.abs(previewVal);
-              tempConstraints.signDy = previewVal >= 0 ? 1 : -1;
-            }
-            if (liveDimEditor.measureKind === "d") tempConstraints.lockedDist = previewVal;
-
-            const anchorPt = liveDimEditor.dim.startPoint;
-            const nextPt = applyDimensionalConstraintsToPoint(
-              anchorPt,
-              liveDimEditor.dim.endPoint,
-              tempConstraints,
-            );
-            setCursor(nextPt);
-            if (pending.length === 1) {
-              setDraft(
-                buildDraft(
-                  tool,
-                  pending[0]!,
-                  nextPt,
-                  activeLayer,
-                  filletR,
-                  drawingProjection,
-                  isoPlane,
-                ),
-              );
-            }
-          }}
-          onConfirm={(newVal, lockMeasure) => {
-            const mKind = liveDimEditor.measureKind;
-            if (mKind) {
-              const anchorPt = liveDimEditor.dim.startPoint;
-              const currentDelta = {
-                dx: liveDimEditor.dim.endPoint.x - anchorPt.x,
-                dy: liveDimEditor.dim.endPoint.y - anchorPt.y,
-              };
-              const validation = validateDimensionalConstraint(
-                lockedConstraints,
-                mKind,
-                newVal,
-                Boolean(lockMeasure),
-                currentDelta,
-              );
-              if (!validation.valid) {
-                toast.error(validation.conflictMessage ?? "Restrição dimensional incompatível.");
-                return;
-              }
-              setLockedConstraints(validation.updatedConstraints);
-
-              // Aplica o valor recém-confirmado sobre o ponto alvo (mesmo que não fique travado permanentemente)
-              const oneShotValidation = validateDimensionalConstraint(
-                lockedConstraints,
-                mKind,
-                newVal,
-                true,
-                currentDelta,
-              );
-              const constrainedPt = applyDimensionalConstraintsToPoint(
-                anchorPt,
-                liveDimEditor.dim.endPoint,
-                oneShotValidation.valid ? oneShotValidation.updatedConstraints : validation.updatedConstraints,
-              );
-
-              setCursor(constrainedPt);
-              setLoupeCadPos(constrainedPt);
-
-              // Se há uma linha única ou um Datum Persistente selecionado, atualiza atomicamente a entidade
-              if (liveDimEditor.dim.entityId) {
-                const targetId = liveDimEditor.dim.entityId;
-                commit((prev) =>
-                  prev.map((ent) => {
-                    if (ent.id !== targetId) return ent;
-                    if (isPersistentDatumEntity(ent)) {
-                      const prevSpec = getPersistentDatumSpec(ent);
-                      if (!prevSpec) return ent;
-                      const nextSpec: PersistentDatumSpec = {
-                        ...prevSpec,
-                        target: { x: constrainedPt.x, y: constrainedPt.y },
-                      };
-                      return {
-                        ...ent,
-                        x: constrainedPt.x,
-                        y: constrainedPt.y,
-                        params: {
-                          ...ent.params,
-                          persistentDatumSpec: nextSpec,
-                        },
-                      };
-                    }
-                    if (ent.type !== "line") return ent;
-                    const prevLocked =
-                      (ent.params?.lockedConstraints as DimensionalConstraints | undefined) ?? {};
-                    const nextEntLocked: DimensionalConstraints = { ...prevLocked };
-                    if (lockMeasure) {
-                      if (mKind === "L") nextEntLocked.lockedL = newVal;
-                      if (mKind === "angle") nextEntLocked.lockedAngle = ((newVal % 360) + 360) % 360;
-                      if (mKind === "dx") nextEntLocked.lockedDx = newVal;
-                      if (mKind === "dy") nextEntLocked.lockedDy = newVal;
-                      if (mKind === "d") nextEntLocked.lockedDist = newVal;
-                    } else {
-                      if (mKind === "L") delete nextEntLocked.lockedL;
-                      if (mKind === "angle") delete nextEntLocked.lockedAngle;
-                      if (mKind === "dx") delete nextEntLocked.lockedDx;
-                      if (mKind === "dy") delete nextEntLocked.lockedDy;
-                      if (mKind === "d") delete nextEntLocked.lockedDist;
-                    }
-                    return {
-                      ...ent,
-                      x2: constrainedPt.x,
-                      y2: constrainedPt.y,
-                      params: {
-                        ...ent.params,
-                        lockedConstraints: nextEntLocked,
-                      },
-                    };
-                  }),
-                );
-              } else if (pending.length === 1) {
-                setDraft(
-                  buildDraft(
-                    tool,
-                    pending[0]!,
-                    constrainedPt,
-                    activeLayer,
-                    filletR,
-                    drawingProjection,
-                    isoPlane,
-                  ),
-                );
-              }
-
-              preEditKeypadSnapshotRef.current = null;
-              triggerHaptic("success");
-              const unitSuffix = mKind === "angle" ? "°" : " mm";
-              const kindDisplay =
-                mKind === "dx"
-                  ? "ΔX"
-                  : mKind === "dy"
-                    ? "ΔY"
-                    : mKind === "angle"
-                      ? "∠"
-                      : mKind;
-              toast.success(
-                lockMeasure
-                  ? `🔒 ${kindDisplay} fixado em ${newVal.toFixed(1)}${unitSuffix}`
-                  : `✓ ${kindDisplay} ajustado para ${newVal.toFixed(1)}${unitSuffix}`,
-              );
-              setLiveDimEditor(null);
-              return;
-            }
-
+          onConfirm={(newVal) => {
             const result = DimensionInteractionEngine.applyDimension({
               dim: liveDimEditor.dim,
               newValue: newVal,
@@ -19654,7 +9425,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             if (liveDimEditor.dim.kind === "offset") {
               setActiveEdgeOffset(newVal);
             }
-            preEditKeypadSnapshotRef.current = null;
             triggerHaptic("success");
             toast.success(`✓ ${result.message}`);
             setLiveDimEditor(null);
@@ -19696,19 +9466,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
         </Suspense>
       )}
-
-      {/* DIÁLOGO DE APARÊNCIA E PREFERÊNCIAS DO PROJETO CHAMFER */}
-      <ChamferProjectSettingsDialog
-        open={projectSettingsOpen}
-        onOpenChange={setProjectSettingsOpen}
-        projectId={project?.id ?? projectId}
-        projectName={project?.name}
-        onSettingsChange={(next) => {
-          setChamferSettings(next);
-          setShowGrid(next.showGridOnLoad);
-          setSnapOn(next.snapOnLoad);
-        }}
-      />
     </div>
   );
 }
@@ -19926,56 +9683,24 @@ const IconBtn = React.memo(function IconBtn({
   flat,
   active,
   title,
-  isDark = true,
-  buttonRef,
 }: {
   label: string;
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onClick: () => void;
   icon: typeof Minus;
   flat?: boolean;
   active?: boolean;
   title?: string;
-  isDark?: boolean;
-  buttonRef?: React.Ref<HTMLButtonElement>;
 }) {
   return (
     <button
-      ref={buttonRef}
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick(e);
-      }}
+      onClick={onClick}
       title={title ?? label}
       aria-label={label}
-      style={{
-        backgroundColor: active
-          ? isDark
-            ? "rgba(14, 165, 233, 0.22)"
-            : "#DBEAFE"
-          : flat
-            ? "transparent"
-            : isDark
-              ? "#232E45"
-              : "#FFFFFF",
-        borderColor: active
-          ? isDark
-            ? "#38BDF8"
-            : "#93C5FD"
-          : flat
-            ? "transparent"
-            : isDark
-              ? "#334361"
-              : "#CBD5E1",
-        color: active
-          ? isDark
-            ? "#7DD3FC"
-            : "#1D4ED8"
-          : isDark
-            ? "#E2E8F0"
-            : "#334155",
-      }}
-      className="grid size-8 shrink-0 place-items-center rounded-lg border touch-pan-x cursor-pointer active:scale-95 hover:brightness-110 transition-all"
+      className={cn(
+        "grid size-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:text-accent",
+        !flat && "bg-background/40",
+        active && "bg-accent/15 text-accent",
+      )}
     >
       <Icon className="size-[15px]" />
     </button>
@@ -20036,16 +9761,13 @@ const MenuItem = React.memo(function MenuItem({
   label: string;
   icon: typeof Minus;
   onClick: () => void;
-  isDark?: boolean;
 }) {
   return (
     <button
-      type="button"
       onClick={onClick}
-      style={{ color: "var(--chamfer-text-primary)" }}
-      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left font-mono text-[11px] font-semibold transition-colors cursor-pointer hover:bg-white/[0.06]"
+      className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
     >
-      <Icon className="size-3.5 shrink-0" style={{ color: "var(--chamfer-accent)" }} /> {label}
+      <Icon className="size-3.5 shrink-0" /> {label}
     </button>
   );
 });
@@ -20059,7 +9781,6 @@ function buildDraft(
   drawingProjection: DrawingProjectionMode = "orthographic",
   isoPlane: IsoPlane = "top",
   opts?: {
-    lineMode?: LineCreationMode;
     rectMode?: RectCreationMode;
     circleMode?: CircleCreationMode;
     polygonMode?: PolygonCreationMode;
@@ -20080,18 +9801,6 @@ function buildDraft(
   }
   switch (tool) {
     case "line":
-      if (opts?.lineMode === "center_radius") {
-        const geom = computeCenterRadiusLineGeometry(a, b);
-        return {
-          id: uid(),
-          layer,
-          type: "line",
-          x1: geom.start.x,
-          y1: geom.start.y,
-          x2: geom.end.x,
-          y2: geom.end.y,
-        };
-      }
       return { id: uid(), layer, type: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y };
     case "construction_line":
       return buildConstructionAxisLine(a, b, "REF");
@@ -20196,71 +9905,43 @@ export const EntityShape = React.memo(function EntityShape({
 }) {
   const isDark =
     typeof document !== "undefined"
-      ? document.documentElement.classList.contains("dark") ||
-        document.documentElement.classList.contains("amoled")
+      ? document.documentElement.classList.contains("dark")
       : true;
   const style = techStyle(e.layer);
   const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
-  const lightSafeLayerColor =
-    e.layer === "construcao" || e.layer === "referencia"
-      ? "#475569"
-      : e.layer === "recorte"
-        ? "#B45309"
-        : e.layer === "cota" || e.layer === "anotacoes"
-          ? "#0284C7"
-          : e.layer === "dobra"
-            ? "#BE185D"
-            : e.layer === "marcacao"
-              ? "#1D4ED8"
-              : e.layer === "auxiliar"
-                ? "#7E22CE"
-                : style.color;
   const stroke = preview
-    ? isDark
-      ? PREVIEW_COLOR
-      : "#0F141A"
-    : isCutOrWhite
-      ? isDark
-        ? "#ECEFF4"
-        : "#0F141A"
-      : isDark
-        ? style.color
-        : lightSafeLayerColor;
+    ? PREVIEW_COLOR
+    : !isDark && isCutOrWhite
+      ? "#0F172A"
+      : style.color;
   const isIsoSolid = !!e.params?.isIsoSolidFace;
   const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "rgba(18, 40, 74, 0.25)") : "none";
-  const customStroke =
-    typeof e.params?.strokeColor === "string" && e.params.strokeColor.trim().length > 0
-      ? e.params.strokeColor.trim()
-      : isIsoSolid
-        ? "#E8F4FF"
-        : stroke;
+  const customStroke = isIsoSolid ? ((e.params?.strokeColor as string) || "#E8F4FF") : stroke;
   const customWidth = isIsoSolid
-    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 2.0) / k
-    : (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) / k;
+    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 1.4) / k
+    : (1.4 * style.weight) / k;
   const noStroke = isIsoSolid && !!e.params?.noStroke;
   const customDashArr = Array.isArray(e.params?.dash) ? (e.params.dash as number[]) : null;
 
-  const isGuideRef = e.isReferenceGuide === true;
   const props = {
     fill: fillColor,
-    stroke: noStroke ? "none" : isGuideRef ? "#EF4444" : customStroke,
-    strokeOpacity: isGuideRef ? 0.92 : 1,
-    strokeWidth: isGuideRef ? 1.35 / k : customWidth,
+    stroke: noStroke ? "none" : customStroke,
+    strokeWidth: customWidth,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
-    strokeDasharray: isGuideRef
-      ? `${4 / k} ${4 / k}`
-      : preview && !isIsoSolid
+    strokeDasharray:
+      preview && !isIsoSolid
         ? `${5 / k} ${4 / k}`
         : customDashArr && customDashArr.length > 0
           ? customDashArr.map((d) => d / k).join(" ")
           : style.dash(1 / k),
+    vectorEffect: "non-scaling-stroke" as const,
   };
   const halo = selected
     ? {
         fill: "none",
-        stroke: !isDark ? "#E11D48" : SELECTION_COLOR,
-        strokeOpacity: !isDark ? 0.8 : 0.72,
+        stroke: !isDark ? "#DC2626" : SELECTION_COLOR,
+        strokeOpacity: !isDark ? 0.75 : 0.65,
         strokeWidth: 4.5 / k,
         strokeLinecap: "round" as const,
         strokeLinejoin: "round" as const,
@@ -20333,7 +10014,6 @@ export const EntityShape = React.memo(function EntityShape({
     }
     if (e.type === "point") {
       if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) return null;
-      if (e.params?.isGeometricMark || e.params?.isPersistentDatum) return null;
       return (
         <g key={key}>
           <circle
@@ -20397,374 +10077,158 @@ export const EntityShape = React.memo(function EntityShape({
 const Rulers = React.memo(function Rulers({
   view,
   isDark,
-  themeColors,
   majorStep,
   unit = "mm",
   width,
   height,
-  cursor,
-  frame,
-  compactPortrait = false,
-  slimMode = false,
-  prumoMode = false,
-  rulersVisible = true,
-  onToggleRulersVisible,
-  onCenterWorkspace,
 }: {
   view: { tx: number; ty: number; k: number };
   isDark: boolean;
-  themeColors?: ChamferThemeColors;
   majorStep: number;
   unit?: string;
   width: number;
   height: number;
-  cursor?: Vec2;
-  frame?: WorkspaceFrame;
-  compactPortrait?: boolean;
-  slimMode?: boolean;
-  prumoMode?: boolean;
-  rulersVisible?: boolean;
-  onToggleRulersVisible?: () => void;
-  onCenterWorkspace?: () => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const vw = Math.max(1, width || (typeof window !== "undefined" ? window.innerWidth : 1920));
-  const vh = Math.max(1, height || (typeof window !== "undefined" ? window.innerHeight : 1080));
+  const vw = width || (typeof window !== "undefined" ? window.innerWidth : 1920);
+  const vh = height || (typeof window !== "undefined" ? window.innerHeight : 1080);
 
-  useLayoutEffect(() => {
-    const cvs = canvasRef.current;
-    if (!cvs) return;
-    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2.5) : 1;
-    const targetW = Math.round(vw * dpr);
-    const targetH = Math.round(vh * dpr);
-    if (cvs.width !== targetW || cvs.height !== targetH) {
-      cvs.width = targetW;
-      cvs.height = targetH;
+  // Passo dos rótulos numéricos principais (ex: 50, 100, 200, 500...)
+  // Mantém rótulos espaçados por no mínimo 65 pixels para evitar aglomeração de texto
+  let labelStep = Math.max(1, majorStep);
+  while (labelStep * view.k < 65) {
+    labelStep *= 2;
+  }
+
+  // Subdivisão intermediária de entalhes (notches de 3px)
+  const tickStep = labelStep / 5;
+
+  // Limites em coordenadas mundiais (CAD mm) visíveis na tela
+  const minWorldX = -view.tx / view.k;
+  const maxWorldX = (vw - view.tx) / view.k;
+  const minWorldY = -view.ty / view.k;
+  const maxWorldY = (vh - view.ty) / view.k;
+
+  const startTickX = Math.floor(minWorldX / tickStep) * tickStep;
+  const endTickX = Math.ceil(maxWorldX / tickStep) * tickStep;
+
+  const startTickY = Math.floor(minWorldY / tickStep) * tickStep;
+  const endTickY = Math.ceil(maxWorldY / tickStep) * tickStep;
+
+  const ticksX: { val: number; isMajor: boolean; screenX: number }[] = [];
+  for (let x = startTickX; x <= endTickX; x += tickStep) {
+    const screenX = view.tx + x * view.k;
+    if (screenX >= 20 && screenX <= vw) {
+      const isMajor = Math.abs(Math.round(x / labelStep) * labelStep - x) < 0.001;
+      ticksX.push({ val: Math.round(x), isMajor, screenX });
     }
+  }
 
-    const ctx = cvs.getContext("2d");
-    if (!ctx) return;
-
-    ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, vw, vh);
-
-    if (!rulersVisible) {
-      ctx.restore();
-      return;
+  const ticksY: { val: number; isMajor: boolean; screenY: number }[] = [];
+  for (let y = startTickY; y <= endTickY; y += tickStep) {
+    const screenY = view.ty + y * view.k;
+    if (screenY >= 20 && screenY <= vh) {
+      const isMajor = Math.abs(Math.round(y / labelStep) * labelStep - y) < 0.001;
+      ticksY.push({ val: Math.round(y), isMajor, screenY });
     }
-
-    const isSlim = prumoMode || slimMode || compactPortrait;
-    const V_RULER_W = prumoMode ? 16 : slimMode ? 18 : compactPortrait ? 20 : 30;
-    const H_RULER_H = prumoMode ? 16 : slimMode ? 18 : compactPortrait ? 20 : 26;
-    const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-
-    // Seleção de passo principal técnico (1, 2, 5 × 10^n) garantindo espaçamento >= 76px
-    const NICE_STEPS = [
-      1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 50000,
-    ];
-    let labelStep = Math.max(1, majorStep || 10);
-    for (const s of NICE_STEPS) {
-      if (s * safeK >= 76) {
-        labelStep = s;
-        break;
-      }
-    }
-    while (labelStep * safeK < 76) {
-      labelStep *= 2;
-    }
-
-    const midStep = labelStep / 2;
-    const minorDivisions = labelStep * safeK >= 140 ? 10 : 5;
-    const minorStep = labelStep / minorDivisions;
-
-    const bgColor = isDark ? "#182132" : "#F1F5F9";
-    const borderColor = isDark ? "#2A3952" : "#CBD5E1";
-    const majorTickColor = isDark ? "#475569" : "#1E293B";
-    const midTickColor = isDark ? "#334361" : "#475569";
-    const minorTickColor = isDark ? "#2A3952" : "#94A3B8";
-    const textColor = isDark ? "#CBD5E1" : "#1E293B";
-    const zeroColor = isDark ? "#FB7185" : "#E11D48";
-    const workspaceBandFill = isDark
-      ? "rgba(56, 189, 248, 0.20)"
-      : "rgba(14, 165, 233, 0.14)";
-    const workspaceBandEdge = isDark ? "#38BDF8" : "#0284C7";
-
-    /* =====================================================================
-     * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 18px em modo slim / 26px em clássico)
-     * ===================================================================== */
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(V_RULER_W, 0, Math.max(0, vw - V_RULER_W), H_RULER_H);
-    ctx.clip();
-
-    // Fundo da régua horizontal
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(V_RULER_W, 0, vw - V_RULER_W, H_RULER_H);
-
-    // Faixa iluminada do intervalo da Área de Trabalho [0, frame.w]
-    if (frame?.visible && Number.isFinite(frame.w) && frame.w > 0) {
-      const x0 = Math.max(V_RULER_W, view.tx);
-      const x1 = Math.min(vw, view.tx + frame.w * safeK);
-      if (x1 > x0) {
-        ctx.fillStyle = workspaceBandFill;
-        ctx.fillRect(x0, 0, x1 - x0, H_RULER_H);
-        ctx.fillStyle = workspaceBandEdge;
-        ctx.fillRect(x0, H_RULER_H - 1.5, x1 - x0, 1.5);
-      }
-    }
-
-    // Borda inferior da régua horizontal
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(V_RULER_W, H_RULER_H - 0.5);
-    ctx.lineTo(vw, H_RULER_H - 0.5);
-    ctx.stroke();
-
-    // Ticks de 3 níveis + Números posicionados à direita do traço principal
-    const minWorldX = (V_RULER_W - view.tx) / safeK;
-    const maxWorldX = (vw - view.tx) / safeK;
-    const startIdxX = Math.floor(minWorldX / minorStep) - 1;
-    const endIdxX = Math.ceil(maxWorldX / minorStep) + 1;
-
-    ctx.font = isSlim
-      ? '700 9.5px "JetBrains Mono", "Inter", ui-monospace, monospace'
-      : '700 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-
-    for (let i = startIdxX; i <= endIdxX; i++) {
-      const worldX = i * minorStep;
-      const screenX = Math.round(view.tx + worldX * safeK) + 0.5;
-      if (screenX < V_RULER_W - 2 || screenX > vw + 2) continue;
-
-      const isMajor = Math.abs(worldX / labelStep - Math.round(worldX / labelStep)) < 1e-4;
-      const isMid = !isMajor && Math.abs(worldX / midStep - Math.round(worldX / midStep)) < 1e-4;
-      const val = Math.round(worldX);
-
-      const tickLen = isMajor ? (isSlim ? 8 : 12) : isMid ? (isSlim ? 5 : 7) : 3;
-      ctx.strokeStyle =
-        isMajor && val === 0
-          ? zeroColor
-          : isMajor
-            ? majorTickColor
-            : isMid
-              ? midTickColor
-              : minorTickColor;
-      ctx.lineWidth = isMajor ? 1.2 : 1;
-      ctx.beginPath();
-      ctx.moveTo(screenX, H_RULER_H - tickLen);
-      ctx.lineTo(screenX, H_RULER_H);
-      ctx.stroke();
-
-      if (isMajor) {
-        ctx.fillStyle = val === 0 ? zeroColor : textColor;
-        ctx.fillText(String(val), screenX + (isSlim ? 3.5 : 5), isSlim ? 2 : 4);
-      }
-    }
-
-    // Hairline Tracker do Cursor na Régua Horizontal (#DC143C)
-    if (cursor && Number.isFinite(cursor.x)) {
-      const cx = view.tx + cursor.x * safeK;
-      if (cx >= V_RULER_W && cx <= vw) {
-        ctx.strokeStyle = "#DC143C";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(cx, 0);
-        ctx.lineTo(cx, H_RULER_H);
-        ctx.stroke();
-
-        ctx.fillStyle = "#DC143C";
-        ctx.beginPath();
-        ctx.moveTo(cx - 3.5, 0);
-        ctx.lineTo(cx + 3.5, 0);
-        ctx.lineTo(cx, 5);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-
-    ctx.restore();
-
-    /* =====================================================================
-     * 2. RÉGUA VERTICAL ESQUERDA (Largura = 18px em modo slim / 30px em clássico)
-     * ===================================================================== */
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, H_RULER_H, V_RULER_W, Math.max(0, vh - H_RULER_H));
-    ctx.clip();
-
-    // Fundo da régua vertical
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, H_RULER_H, V_RULER_W, vh - H_RULER_H);
-
-    // Faixa iluminada do intervalo da Área de Trabalho [0, frame.h]
-    if (frame?.visible && Number.isFinite(frame.h) && frame.h > 0) {
-      const y0 = Math.max(H_RULER_H, view.ty);
-      const y1 = Math.min(vh, view.ty + frame.h * safeK);
-      if (y1 > y0) {
-        ctx.fillStyle = workspaceBandFill;
-        ctx.fillRect(0, y0, V_RULER_W, y1 - y0);
-        ctx.fillStyle = workspaceBandEdge;
-        ctx.fillRect(V_RULER_W - 1.5, y0, 1.5, y1 - y0);
-      }
-    }
-
-    // Borda direita da régua vertical
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(V_RULER_W - 0.5, H_RULER_H);
-    ctx.lineTo(V_RULER_W - 0.5, vh);
-    ctx.stroke();
-
-    // Ticks de 3 níveis + Números rotacionados a -90° (-Math.PI / 2) 100% legíveis sem corte
-    const minWorldY = (H_RULER_H - view.ty) / safeK;
-    const maxWorldY = (vh - view.ty) / safeK;
-    const startIdxY = Math.floor(minWorldY / minorStep) - 1;
-    const endIdxY = Math.ceil(maxWorldY / minorStep) + 1;
-
-    ctx.font = isSlim
-      ? '700 9.5px "JetBrains Mono", "Inter", ui-monospace, monospace'
-      : '700 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
-
-    for (let i = startIdxY; i <= endIdxY; i++) {
-      const worldY = i * minorStep;
-      const screenY = Math.round(view.ty + worldY * safeK) + 0.5;
-      if (screenY < H_RULER_H - 2 || screenY > vh + 2) continue;
-
-      const isMajor = Math.abs(worldY / labelStep - Math.round(worldY / labelStep)) < 1e-4;
-      const isMid = !isMajor && Math.abs(worldY / midStep - Math.round(worldY / midStep)) < 1e-4;
-      const val = Math.round(worldY);
-
-      const tickLen = isMajor ? (isSlim ? 8 : 12) : isMid ? (isSlim ? 5 : 7) : 3;
-      ctx.strokeStyle =
-        isMajor && val === 0
-          ? zeroColor
-          : isMajor
-            ? majorTickColor
-            : isMid
-              ? midTickColor
-              : minorTickColor;
-      ctx.lineWidth = isMajor ? 1.2 : 1;
-      ctx.beginPath();
-      ctx.moveTo(V_RULER_W - tickLen, screenY);
-      ctx.lineTo(V_RULER_W, screenY);
-      ctx.stroke();
-
-      if (isMajor) {
-        ctx.save();
-        ctx.translate(isSlim ? 6.5 : 10, screenY - (isSlim ? 3.5 : 5));
-        ctx.rotate(-Math.PI / 2);
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = val === 0 ? zeroColor : textColor;
-        ctx.fillText(String(val), 0, 0);
-        ctx.restore();
-      }
-    }
-
-    // Hairline Tracker do Cursor na Régua Vertical (#E11D48)
-    if (cursor && Number.isFinite(cursor.y)) {
-      const cy = view.ty + cursor.y * safeK;
-      if (cy >= H_RULER_H && cy <= vh) {
-        ctx.strokeStyle = "#E11D48";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(0, cy);
-        ctx.lineTo(V_RULER_W, cy);
-        ctx.stroke();
-
-        ctx.fillStyle = "#E11D48";
-        ctx.beginPath();
-        ctx.moveTo(0, cy - 3.5);
-        ctx.lineTo(0, cy + 3.5);
-        ctx.lineTo(5, cy);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-
-    ctx.restore();
-    ctx.restore();
-  }, [
-    view.tx,
-    view.ty,
-    view.k,
-    isDark,
-    themeColors,
-    majorStep,
-    vw,
-    vh,
-    cursor?.x,
-    cursor?.y,
-    frame?.visible,
-    frame?.w,
-    frame?.h,
-    compactPortrait,
-    slimMode,
-    prumoMode,
-    rulersVisible,
-  ]);
+  }
 
   return (
-    <div
-      aria-hidden
-      data-rulers-visible={rulersVisible ? "true" : "false"}
-      data-ruler-thickness={rulersVisible ? (prumoMode ? 16 : slimMode ? 18 : compactPortrait ? 20 : 26) : 0}
-      className="pointer-events-none absolute inset-0 overflow-hidden z-10"
-    >
-      {/* Canvas de Alta Precisão para as Réguas Horizontal (16px PRUMO / 18px Compacta) e Vertical */}
-      <canvas
-        ref={canvasRef}
-        style={{ width: `${vw}px`, height: `${vh}px` }}
-        className="pointer-events-none absolute inset-0"
-      />
-
-      {/* Bloco de Canto Interativo [ MM ]: alterna entre Réguas Visíveis (16px/18px) e Réguas Ocultas (0px) */}
-      <button
-        type="button"
-        data-testid="chamfer-ruler-mm-toggle"
-        onClick={(e) => {
-          e.stopPropagation();
-          if (onToggleRulersVisible) {
-            onToggleRulersVisible();
-          } else {
-            onCenterWorkspace?.();
-          }
-        }}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          onCenterWorkspace?.();
-        }}
-        title={
-          rulersVisible
-            ? "Toque para ocultar as réguas técnicas (0px) • Duplo-clique para enquadrar a Área de Trabalho"
-            : "Toque para exibir as réguas técnicas"
-        }
-        style={{
-          backgroundColor: isDark ? "#182132" : "#F1F5F9",
-          borderColor: isDark ? "#2A3952" : "#CBD5E1",
-          color: rulersVisible
-            ? isDark
-              ? "#94A3B8"
-              : "#64748B"
-            : "#38BDF8",
-        }}
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* Canto superior esquerdo: badge técnico de unidade */}
+      <div
         className={cn(
-          "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95 hover:brightness-110",
-          prumoMode
-            ? "w-[16px] h-[16px] text-[7px]"
-            : slimMode
-              ? "w-[18px] h-[18px] text-[7.5px]"
-              : compactPortrait
-                ? "w-[20px] h-[20px] text-[7.5px]"
-                : "w-[30px] h-[26px] text-[8.5px]",
+          "absolute left-0 top-0 z-10 flex size-5 items-center justify-center border-b border-r font-mono text-[8px] font-bold uppercase",
+          isDark
+            ? "border-slate-800 bg-slate-950/80 text-slate-400"
+            : "border-slate-300 bg-slate-100/90 text-slate-600"
         )}
       >
         {unit}
-      </button>
+      </div>
+
+      {/* Régua Horizontal Superior */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-5 border-b backdrop-blur-sm",
+          isDark
+            ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
+            : "border-slate-300/80 bg-slate-100/75 text-slate-600"
+        )}
+      >
+        {ticksX.map((t, idx) => (
+          <div
+            key={`rx-${idx}-${t.val}`}
+            style={{ left: t.screenX }}
+            className="absolute bottom-0 flex flex-col items-center"
+          >
+            {/* Notch / Entalhe */}
+            <div
+              className={cn(
+                "w-px",
+                t.isMajor
+                  ? isDark ? "h-2.5 bg-slate-400" : "h-2.5 bg-slate-600"
+                  : isDark ? "h-1 bg-slate-700" : "h-1 bg-slate-300"
+              )}
+            />
+            {/* Rótulo Numérico nas Divisões Principais */}
+            {t.isMajor && (
+              <span
+                style={{ transform: "translateX(-50%)" }}
+                className={cn(
+                  "absolute top-0.5 font-mono text-[7.5px] tracking-tight",
+                  t.val === 0
+                    ? isDark ? "text-red-400 font-bold" : "text-red-600 font-bold"
+                    : isDark ? "text-slate-400" : "text-slate-600"
+                )}
+              >
+                {t.val}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Régua Vertical Esquerda */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-y-0 left-0 w-5 border-r backdrop-blur-sm",
+          isDark
+            ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
+            : "border-slate-300/80 bg-slate-100/75 text-slate-600"
+        )}
+      >
+        {ticksY.map((t, idx) => (
+          <div
+            key={`ry-${idx}-${t.val}`}
+            style={{ top: t.screenY }}
+            className="absolute right-0 flex items-center"
+          >
+            {/* Rótulo Numérico */}
+            {t.isMajor && (
+              <span
+                style={{ transform: "translateY(-50%)" }}
+                className={cn(
+                  "absolute right-3 font-mono text-[7.5px] tracking-tight",
+                  t.val === 0
+                    ? isDark ? "text-green-400 font-bold" : "text-green-600 font-bold"
+                    : isDark ? "text-slate-400" : "text-slate-600"
+                )}
+              >
+                {t.val}
+              </span>
+            )}
+            {/* Notch / Entalhe */}
+            <div
+              className={cn(
+                "h-px",
+                t.isMajor
+                  ? isDark ? "w-2.5 bg-slate-400" : "w-2.5 bg-slate-600"
+                  : isDark ? "w-1 bg-slate-700" : "w-1 bg-slate-300"
+              )}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 });

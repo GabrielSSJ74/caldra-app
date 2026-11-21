@@ -37,7 +37,7 @@ export const DUAL_TOOL_PRESETS: DualToolPreset[] = [
     id: "offset_trim",
     name: "Offset + Aparar",
     primary: "offset",
-    secondary: "trim",
+    secondary: "smart_trim",
     description: "Gera contorno paralelo e apara automaticamente nos limites de corte.",
   },
   {

@@ -6,45 +6,12 @@
  */
 
 import type { Contour, PxPoint } from "./visionEngine";
-import type { ConfidenceLevel } from "./visionThresholdConfig";
-import { fitCircleTaubinGaussNewton } from "./visionMetricsAndHarness";
 
 /** Confiança da primitiva: detectada direto, ajustada ou aproximada. */
 export type PrimStatus = "detectada" | "convertida" | "aproximada";
 
-/** Metadados de qualidade, proveniência e confiança (Seções 8, 9 e 10). */
-export type PrimMeta = {
-  status?: PrimStatus;
-  /** Desvio máximo medido em relação aos pontos sub-pixel originais (px). */
-  dev?: number;
-  /** Desvio RMS medido (px). */
-  rmsDev?: number;
-  /** Tolerância adaptativa τ usada no ajuste (px). */
-  tauPx?: number;
-  /** Nível de confiança da reconstrução (ALTA / MEDIA / BAIXA). */
-  confidence?: ConfidenceLevel;
-  /** Número de pontos de suporte no contorno original. */
-  supportPoints?: number;
-  /** Cobertura angular em graus (para círculos e arcos). */
-  spanDeg?: number;
-  /** Padrão geométrico reconhecido. */
-  patternKind?:
-    | "circle"
-    | "ellipse"
-    | "regular_polygon"
-    | "rounded_rect"
-    | "oblong_slot"
-    | "mixed_closed"
-    | "open_chain";
-  /** Parâmetros analíticos de elipse quando o contorno fechado é uma elipse (modo CAD vs Laser). */
-  ellipseParams?: {
-    cx: number;
-    cy: number;
-    rx: number;
-    ry: number;
-    rotation: number;
-  };
-};
+/** Metadados de qualidade — `dev` é o desvio máximo medido, em PIXELS. */
+export type PrimMeta = { status?: PrimStatus; dev?: number };
 
 export type Prim = (
   | { kind: "circle"; cx: number; cy: number; r: number; hole: boolean; quality: number }
@@ -59,15 +26,7 @@ export type Prim = (
       quality: number;
     }
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; hole: boolean; quality: number }
-  | {
-      kind: "polyline";
-      pts: PxPoint[];
-      /** Bulge opcional por vértice: tan(Δθ/4) para o segmento i -> i+1 (grupo 42 da LWPOLYLINE). */
-      bulges?: number[];
-      closed: boolean;
-      hole: boolean;
-      quality: number;
-    }
+  | { kind: "polyline"; pts: PxPoint[]; closed: boolean; hole: boolean; quality: number }
 ) &
   PrimMeta;
 
@@ -147,11 +106,46 @@ export function simplifyIndices(pts: PxPoint[], tol: number): number[] {
   return out;
 }
 
-/** Ajuste de círculo sem viés para arcos parciais (Taubin + refino ortogonal de Gauss–Newton). */
+/** Ajuste de círculo por mínimos quadrados (Kåsa). */
 export function fitCircle(pts: PxPoint[]) {
-  const fit = fitCircleTaubinGaussNewton(pts);
-  if (!fit) return null;
-  return { cx: fit.cx, cy: fit.cy, r: fit.r, rms: fit.rmsDev, maxDev: fit.maxDev };
+  const n = pts.length;
+  if (n < 5) return null;
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    syy = 0,
+    sxy = 0,
+    sxxx = 0,
+    syyy = 0,
+    sxyy = 0,
+    sxxy = 0;
+  for (const p of pts) {
+    const { x, y } = p;
+    sx += x;
+    sy += y;
+    sxx += x * x;
+    syy += y * y;
+    sxy += x * y;
+    sxxx += x * x * x;
+    syyy += y * y * y;
+    sxyy += x * y * y;
+    sxxy += x * x * y;
+  }
+  const C = n * sxx - sx * sx;
+  const D = n * sxy - sx * sy;
+  const E = n * sxxx + n * sxyy - (sxx + syy) * sx;
+  const G = n * syy - sy * sy;
+  const H = n * sxxy + n * syyy - (sxx + syy) * sy;
+  const den = 2 * (C * G - D * D);
+  if (Math.abs(den) < 1e-9) return null;
+  const cx = (E * G - D * H) / den;
+  const cy = (C * H - D * E) / den;
+  let r = 0;
+  for (const p of pts) r += Math.hypot(p.x - cx, p.y - cy);
+  r /= n;
+  let err = 0;
+  for (const p of pts) err += Math.abs(Math.hypot(p.x - cx, p.y - cy) - r);
+  return { cx, cy, r, rms: err / n };
 }
 
 /** Cobertura angular dos pontos em torno de um centro (rad). */
@@ -231,15 +225,91 @@ function sagitta(pts: PxPoint[]) {
   return m;
 }
 
-import { constructShapeFromContour } from "./shapeConstructorEngine";
+/** Converte um contorno em uma ou mais primitivas geométricas. */
+export function recognizeContour(c: Contour, opt: RecognizeOptions): Prim[] {
+  const tolPx = Math.max(0.8, TOLERANCE_FACTOR[opt.tolerance] * opt.diagonalPx);
+  const src = c.pts;
 
-/** Converte um contorno em uma ou mais primitivas geométricas nativas (CIRCLE, ARC, LINE). */
-export function recognizeContour(c: Contour, _opt?: RecognizeOptions): Prim[] {
-  if (!c.pts || c.pts.length < 2) return [];
-  const fitted = constructShapeFromContour(c);
-  if (fitted.length > 0) return fitted;
-  const a = c.pts[0]!;
-  const b = c.pts[c.pts.length - 1]!;
-  return [{ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.5 }];
+  // 1) círculo completo tem prioridade absoluta (furos, flanges, tubos)
+  if (opt.preferCircles !== false && src.length >= 20) {
+    const fit = fitCircle(src);
+    if (fit) {
+      const { span } = angularSpan(src, fit.cx, fit.cy);
+      const roundness = fit.rms / Math.max(fit.r, 1);
+      if (span > 5.9 && roundness < 0.06 && fit.rms < tolPx * 2)
+        return [
+          {
+            kind: "circle",
+            cx: fit.cx,
+            cy: fit.cy,
+            r: fit.r,
+            hole: c.hole,
+            quality: Math.max(0, 1 - roundness / 0.06),
+          },
+        ];
+    }
+  }
+
+  // 2) simplificação com rastreio dos índices originais
+  const idx = simplifyIndices(src, tolPx);
+  if (idx.length < 3) {
+    const a = src[0]!;
+    const b = src[src.length - 1]!;
+    return [{ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.5 }];
+  }
+
+  const prims: Prim[] = [];
+  let allLines = true;
+  let i = 0;
+  while (i < idx.length - 1) {
+    // tenta o maior arco possível a partir de i (mínimo de 3 segmentos)
+    let best: { j: number; fit: NonNullable<ReturnType<typeof fitCircle>> } | null = null;
+    for (let j = Math.min(i + 3, idx.length - 1); j < idx.length; j++) {
+      const run = src.slice(idx[i]!, idx[j]! + 1);
+      if (run.length < 8) continue;
+      const fit = fitCircle(run);
+      if (!fit || fit.rms > tolPx * 0.9 || fit.r < tolPx * 3 || fit.r > opt.diagonalPx * 20) break;
+      if (sagitta(run) < tolPx * 1.5) break; // praticamente reto → não é arco
+      best = { j, fit };
+    }
+
+    if (best) {
+      const run = src.slice(idx[i]!, idx[best.j]! + 1);
+      const { span, a0, a1 } = angularSpan(run, best.fit.cx, best.fit.cy);
+      if (span > 0.15) {
+        prims.push({
+          kind: "arc",
+          cx: best.fit.cx,
+          cy: best.fit.cy,
+          r: best.fit.r,
+          a0,
+          a1,
+          hole: c.hole,
+          quality: Math.max(0, 1 - best.fit.rms / (tolPx * 0.9)),
+        });
+        allLines = false;
+        i = best.j;
+        continue;
+      }
+    }
+
+    const a = src[idx[i]!]!;
+    const b = src[idx[i + 1]!]!;
+    prims.push({ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.95 });
+    i++;
+  }
+
+  // 3) contorno totalmente poligonal vira UMA polilinha fechada editável
+  if (c.closed && allLines && prims.length > 2) {
+    return [
+      {
+        kind: "polyline",
+        pts: idx.map((k) => src[k]!),
+        closed: true,
+        hole: c.hole,
+        quality: 0.9,
+      },
+    ];
+  }
+  return prims;
 }
-

@@ -15,59 +15,13 @@ import { ISO_TECH_SHADING, type IsoPlane } from "./isometricEngine";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
 import {
   buildClassifiedWireframeScene3D,
+  renderBaseOrbitalGridToCanvas,
   renderClassifiedWireframeSceneToCanvas,
   resolveBaseToTopExtrusionVector,
   type ChamferWireframe3DStyleConfig,
 } from "./chamferWireframe3D";
-import {
-  computeStructuralProfile2DInnerWallLines,
-  getEntityStructuralProfile,
-} from "./structuralProfile";
-import {
-  buildLoft3DMesh,
-  computeEntityTrueCentroid2D,
-  getEntityElevationZ,
-  getEntityLoft3DSpec,
-  isLoft3DEntity,
-  renderLoft3DMeshToCanvas2D,
-  resolveUnitZWorkplaneOffset,
-  type Loft3DMesh,
-} from "./cadLoft3DEngine";
-import {
-  buildSolidMesh,
-  resolveEntitySolidFeatureType,
-  solidMeshToCanvasRenderableMesh,
-} from "./chamferSolidKernel";
-import { drawRichNoteOnCanvas2D, isRichNoteEntity } from "./chamferRichNoteEngine";
 
 export type SceneView = { tx: number; ty: number; k: number };
-
-/**
- * Interpola linearmente (lerp) duas cores hexadecimais (#RRGGBB) para a transição
- * suave de 2000ms do fundo do canvas 2D entre o Tema Claro (#FAFBFD) e o Tema Escuro (#0D1526).
- */
-export function lerpHexColor(fromHex: string, toHex: string, t: number): string {
-  const clamped = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 1));
-  const parseHex = (hex: string): [number, number, number] => {
-    const clean = hex.replace(/^#/, "").trim();
-    if (clean.length === 3) {
-      return [
-        parseInt(clean[0]! + clean[0]!, 16) || 0,
-        parseInt(clean[1]! + clean[1]!, 16) || 0,
-        parseInt(clean[2]! + clean[2]!, 16) || 0,
-      ];
-    }
-    const n = parseInt(clean.slice(0, 6), 16);
-    if (!Number.isFinite(n)) return [13, 21, 38];
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  };
-  const [r1, g1, b1] = parseHex(fromHex);
-  const [r2, g2, b2] = parseHex(toHex);
-  const r = Math.round(r1 + (r2 - r1) * clamped);
-  const g = Math.round(g1 + (g2 - g1) * clamped);
-  const b = Math.round(b1 + (b2 - b1) * clamped);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-}
 
 export type SceneOptions = {
   index: SpatialIndex;
@@ -80,10 +34,6 @@ export type SceneOptions = {
   lod: boolean;
   /** Tema claro ativo para contraste da seleção */
   isLight?: boolean;
-  /** Cor interpolada do fundo do canvas (transição suave de 2000ms: #FAFBFD <-> #0D1526) */
-  canvasBgColor?: string;
-  /** Fator de interpolação do tema (0 = Claro #FAFBFD, 1 = Escuro #0D1526) ao longo de 2000ms */
-  themeLerpT?: number;
   /** Movimento destravado via Long-Press (destaque ciano/laranja brilhante de arraste ativo) */
   isDraggingUnlocked?: boolean;
   /** Modo Isométrico (ISO 2D) ativo para renderização Isometric Wireframe Solid (X-Ray) */
@@ -100,223 +50,7 @@ export type SceneOptions = {
   showGrid?: boolean;
   /** Passo principal da grade (mm) */
   gridStep?: number;
-  /** Estilo de fundo ativo no CHAMFER CAD ("padrao" | "suave" | "fluido") */
-  bgStyle?: "padrao" | "suave" | "fluido";
-  /** Malha de prévia translúcida em tempo real durante a ferramenta LOFT 3D */
-  activeLoftPreviewMesh?: Loft3DMesh | null;
-  /** Traço vetorial em tempo real da ferramenta Desenho Livre (renderizado leve sem recriar índice espacial) */
-  freehandLiveStroke?: {
-    pts: readonly Vec2[];
-    usageRole: "geometry" | "markup";
-    canClose: boolean;
-  } | null;
 };
-
-/**
- * Curva Senoidal de 10 Paradas (Ease-Out Scrim) para gradientes radiais em Canvas 2D High-DPI.
- * Garante acabamento de seda líquida contínua (12-bit look) sem anéis de interpolação linear.
- */
-const SINUSOIDAL_10_STOPS: readonly [number, number][] = [
-  [0.0, 1.0],
-  [0.15, 0.92],
-  [0.3, 0.78],
-  [0.45, 0.58],
-  [0.6, 0.38],
-  [0.75, 0.2],
-  [0.88, 0.07],
-  [0.95, 0.02],
-  [1.0, 0.0],
-];
-
-/**
- * Curva Gaussiana de 5 Paradas (5-Stop Exponential Falloff) para o FLUID AURORA:
- *  - 0%   (0.00): 100% da opacidade de núcleo calibrada
- *  - 22%  (0.22): 75% da opacidade inicial (núcleo macio)
- *  - 48%  (0.48): 42% da opacidade inicial (transição média)
- *  - 74%  (0.74): 14% da opacidade inicial (cauda longa de difusão atmosférica)
- *  - 100% (1.00): 0% de opacidade (transparent)
- */
-const GAUSSIAN_5_STOPS: readonly [number, number][] = [
-  [0.0, 1.0],
-  [0.22, 0.75],
-  [0.48, 0.42],
-  [0.74, 0.14],
-  [1.0, 0.0],
-];
-
-function drawSinusoidalRadialField(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  radius: number,
-  rgb: string,
-  baseAlpha: number,
-  scaleX = 1.0,
-  scaleY = 1.0,
-  rotationRad = 0,
-  useGaussian5Stop = false,
-) {
-  if (radius <= 1 || baseAlpha <= 0) return;
-  ctx.save();
-  ctx.translate(cx, cy);
-  if (rotationRad !== 0) ctx.rotate(rotationRad);
-  if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY);
-
-  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-  const stops = useGaussian5Stop ? GAUSSIAN_5_STOPS : SINUSOIDAL_10_STOPS;
-  for (const [stop, factor] of stops) {
-    const alpha = Math.max(0, Math.min(1, baseAlpha * factor));
-    grad.addColorStop(stop, `rgba(${rgb}, ${alpha.toFixed(5)})`);
-  }
-
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(0, 0, radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-interface SilkBackgroundCacheState {
-  key: string;
-  canvas: HTMLCanvasElement | null;
-  hits: number;
-  misses: number;
-}
-
-const silkBackgroundCache: SilkBackgroundCacheState = {
-  key: "",
-  canvas: null,
-  hits: 0,
-  misses: 0,
-};
-
-export function getSilkBackgroundCacheStats(): {
-  hits: number;
-  misses: number;
-  hitRatePercent: number;
-  cachedKey: string;
-} {
-  const total = silkBackgroundCache.hits + silkBackgroundCache.misses;
-  return {
-    hits: silkBackgroundCache.hits,
-    misses: silkBackgroundCache.misses,
-    hitRatePercent: total > 0 ? Math.round((silkBackgroundCache.hits / total) * 100) : 100,
-    cachedKey: silkBackgroundCache.key,
-  };
-}
-
-function paintSilkFieldsDirectly(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  isLight: boolean,
-  bgStyle: "suave" | "fluido",
-) {
-  const maxDim = Math.max(width, height, 320);
-
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-
-  if (bgStyle === "fluido") {
-    // Estilo "Fluid" (Liquid Silk Mesh): 3 campos amplos com decaimento senoidal de 10 paradas
-    const rField = maxDim * 0.95;
-    if (!isLight) {
-      // Tema Escuro: Azul-Titânio (#1E3A5F), Índigo Profundo (#1E2648), Ciano-Ardósia Sutil (#163E52)
-      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "30, 58, 95", 0.34, 1.15, 0.95, -0.18, false);
-      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "30, 38, 72", 0.32, 1.1, 0.92, 0.22, false);
-      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "22, 62, 82", 0.30, 1.18, 0.9, -0.12, false);
-    } else {
-      // Tema Claro: Azul-Gelo (#DCE8F9), Lavanda Técnico Suave (#E8E6FA), Branco-Seda (#FFFFFF)
-      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "220, 232, 249", 0.55, 1.15, 0.95, -0.18, false);
-      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "232, 230, 250", 0.50, 1.1, 0.92, 0.22, false);
-      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "255, 255, 255", 0.62, 1.18, 0.9, -0.12, false);
-    }
-  } else if (bgStyle === "suave") {
-    // Estilo "Fluid Aurora": Curva Gaussiana de 5 Paradas + Fusão Óptica `screen` + Hierarquia em 3 Planos
-    ctx.globalCompositeOperation = !isLight ? "screen" : "source-over";
-    const rPlane1 = maxDim * 0.82;
-    const rPlane2 = maxDim * 0.68;
-    const rPlane3 = maxDim * 0.88;
-
-    if (!isLight) {
-      // Plano 3 (Base): Ancoragem Profunda
-      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rPlane3, "99, 102, 241", 0.14, 1.38, 0.78, 0.2, true);
-      // Plano 2 (Centro/Diagonal): Ritmo e Transição
-      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rPlane2, "14, 165, 233", 0.16, 1.32, 0.84, -0.28, true);
-      // Plano 1 (Topo): Protagonista Âmbar-Dourado e Complementar Coral/Carmesim
-      drawSinusoidalRadialField(ctx, width * 0.22, height * 0.18, rPlane1, "245, 158, 11", 0.17, 1.35, 0.82, -0.22, true);
-      drawSinusoidalRadialField(ctx, width * 0.64, height * 0.2, rPlane1 * 0.88, "225, 29, 72", 0.13, 1.28, 0.8, 0.18, true);
-    } else {
-      // Plano 3 (Base): Ancoragem Profunda
-      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rPlane3, "167, 139, 250", 0.15, 1.38, 0.78, 0.2, true);
-      // Plano 2 (Centro/Diagonal): Ritmo e Transição
-      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rPlane2, "56, 189, 248", 0.18, 1.32, 0.84, -0.28, true);
-      // Plano 1 (Topo): Protagonista Pêssego-Âmbar e Complementar Rosa-Quartzo
-      drawSinusoidalRadialField(ctx, width * 0.22, height * 0.18, rPlane1, "251, 191, 36", 0.19, 1.35, 0.82, -0.22, true);
-      drawSinusoidalRadialField(ctx, width * 0.64, height * 0.2, rPlane1 * 0.88, "244, 114, 182", 0.14, 1.28, 0.8, 0.18, true);
-    }
-  }
-
-  ctx.restore();
-}
-
-/**
- * Renderiza o acabamento de Seda Líquida ("Fluid" / "fluido") ou Refinamento Óptico em 3 Planos ("Fluid Aurora" / "suave")
- * diretamente no contexto Canvas 2D High-DPI com coordenadas em ponto flutuante escaladas por devicePixelRatio.
- * Utiliza cache Offscreen High-DPI O(1) para evitar re-rasterizar 4 gradientes elípticos a cada quadro de pan/zoom.
- */
-export function renderCanvasSilkBackground(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  isLight: boolean,
-  bgStyle?: "padrao" | "suave" | "fluido",
-  dpr = 1,
-) {
-  if (bgStyle !== "fluido" && bgStyle !== "suave") return;
-  const safeDpr = Number.isFinite(dpr) && dpr > 0 ? Math.min(dpr, 3) : 1;
-  const physW = Math.max(1, Math.round(width * safeDpr));
-  const physH = Math.max(1, Math.round(height * safeDpr));
-  const cacheKey = `${physW}x${physH}:${safeDpr.toFixed(2)}:${isLight ? "light" : "dark"}:${bgStyle}`;
-
-  if (typeof document !== "undefined" && typeof ctx.drawImage === "function") {
-    if (silkBackgroundCache.key === cacheKey && silkBackgroundCache.canvas) {
-      silkBackgroundCache.hits += 1;
-      ctx.save();
-      ctx.globalCompositeOperation = !isLight && bgStyle === "suave" ? "screen" : "source-over";
-      ctx.drawImage(silkBackgroundCache.canvas, 0, 0, width, height);
-      ctx.restore();
-      return;
-    }
-
-    let offCanvas = silkBackgroundCache.canvas;
-    if (!offCanvas) {
-      offCanvas = document.createElement("canvas");
-      silkBackgroundCache.canvas = offCanvas;
-    }
-    if (offCanvas.width !== physW || offCanvas.height !== physH) {
-      offCanvas.width = physW;
-      offCanvas.height = physH;
-    }
-    const offCtx = offCanvas.getContext("2d");
-    if (offCtx) {
-      silkBackgroundCache.misses += 1;
-      silkBackgroundCache.key = cacheKey;
-      offCtx.setTransform(safeDpr, 0, 0, safeDpr, 0, 0);
-      offCtx.clearRect(0, 0, width, height);
-      paintSilkFieldsDirectly(offCtx, width, height, isLight, bgStyle);
-      ctx.save();
-      ctx.globalCompositeOperation = !isLight && bgStyle === "suave" ? "screen" : "source-over";
-      ctx.drawImage(offCanvas, 0, 0, width, height);
-      ctx.restore();
-      return;
-    }
-  }
-
-  silkBackgroundCache.misses += 1;
-  paintSilkFieldsDirectly(ctx, width, height, isLight, bgStyle);
-}
 
 /** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
 function paintOrder(list: Entity[]) {
@@ -461,15 +195,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   const safeDpr = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
 
   ctx.setTransform(safeDpr, 0, 0, safeDpr, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
   ctx.clearRect(0, 0, safeW, safeH);
-
-  // Renderiza os gradientes de fundo de 10 paradas senoidais quando Fluid ou Fluid Aurora estão ativos
-  if (opts.bgStyle === "fluido" || opts.bgStyle === "suave") {
-    renderCanvasSilkBackground(ctx, safeW, safeH, !!opts.isLight, opts.bgStyle, safeDpr);
-  }
-
   ctx.setTransform(safeDpr * safeK, 0, 0, safeDpr * safeK, safeDpr * safeTx, safeDpr * safeTy);
   const orbitProj = opts.orbitProjection;
   const isOrbitTilted = !!orbitProj?.isTilted;
@@ -499,42 +225,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
 
   // Coleta entidades planas elegíveis para o motor de Hierarquia de Arestas e Profundidade Óptica 3D
   const planarFor3D: Entity[] = [];
-  const loftSolidEntities: Entity[] = [];
-  const kernelSolidEntities: Entity[] = [];
-  const unitZOffset = is3DWireframeActive
-    ? resolveUnitZWorkplaneOffset(Boolean(opts.isIsometric), opts.isoPlane ?? "top", orbitProj)
-    : { x: 0, y: 0 };
-
-  // Camada 4 — Peças e Entidades do CAD (100% de Nitidez e Contraste Máximo)
-  ctx.save();
-  ctx.globalAlpha = 1.0;
-  ctx.globalCompositeOperation = "source-over";
 
   // agrupa por estilo para minimizar trocas de estado do contexto
   let currentLayer = "";
   for (const e of list) {
     if (e.type === "text") continue;
     if (lod && screenSize(index.boxOfId(e.id), view.k) < 1.2) continue;
-
-    // 0. SÓLIDOS DE TRANSIÇÃO MULTISSEÇÃO (LOFT 3D)
-    if (isLoft3DEntity(e)) {
-      loftSolidEntities.push(e);
-      continue;
-    }
-
-    // 0.5. SÓLIDOS PARAMÉTRICOS DO `ChamferSolidKernel` (Revolve, Sweep, Structural Frame, Sheet Metal)
-    if (is3DWireframeActive) {
-      const kType = resolveEntitySolidFeatureType(e);
-      if (
-        kType === "revolve" ||
-        kType === "sweep" ||
-        kType === "structural_frame" ||
-        kType === "sheet_metal"
-      ) {
-        kernelSolidEntities.push(e);
-        continue;
-      }
-    }
 
     // 1. RENDERIZAÇÃO VOLUMÉTRICA ISOMÉTRICA EXPLÍCITA (ISOMETRIC SOLID FACES / HLR)
     if (e.params?.isIsoSolidFace) {
@@ -565,13 +261,11 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
           fillCol = "rgba(241, 245, 249, 0.65)";
         }
       }
-      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 2.0) * inv;
+      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 1.7) * inv;
       const noStroke = !!e.params.noStroke;
       const customDash = Array.isArray(e.params.dash) ? (e.params.dash as number[]) : null;
 
       ctx.save();
-      ctx.globalAlpha = 1.0;
-      ctx.globalCompositeOperation = "source-over";
       if (!lod && customDash && customDash.length > 0) {
         ctx.setLineDash(customDash.map((d) => d * inv));
       } else {
@@ -598,99 +292,57 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       continue;
     }
 
-    // 1.5. MODO GABARITO (REF.): renderiza sempre em vermelho técnico pontilhado (#EF4444, [4, 4], 1.25px)
-    // e NUNCA entra no motor 3D Wireframe
-    if (e.isReferenceGuide) {
-      if (is3DWireframeActive) continue;
-      ctx.save();
-      ctx.globalAlpha = 0.92;
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = "#EF4444";
-      ctx.lineWidth = 1.35 * inv;
-      ctx.setLineDash(!lod ? [4 * inv, 4 * inv] : []);
-      ctx.beginPath();
-      traceEntity(ctx, e, lod);
-      ctx.stroke();
-      ctx.restore();
-      currentLayer = "";
-      continue;
-    }
-
-    // 2. COLETA ENTIDADES PLANAS PARA O MOTOR 3D WIREFRAME TÉCNICO COM PROFUNDIDADE ÓPTICA
+    // 2. COleta ENTIDADES PLANAS PARA O MOTOR 3D WIREFRAME TÉCNICO COM PROFUNDIDADE ÓPTICA
     if (is3DWireframeActive && e.type !== "point") {
       planarFor3D.push(e);
       continue;
     }
 
     const style = techStyle(e.layer);
-    const customStrokeColor =
-      typeof e.params?.strokeColor === "string" && e.params.strokeColor.trim().length > 0
-        ? e.params.strokeColor.trim()
-        : null;
-    const styleKey = `${e.layer}::${customStrokeColor ?? ""}`;
-    if (styleKey !== currentLayer) {
-      currentLayer = styleKey;
-      ctx.globalAlpha = 1.0;
-      ctx.globalCompositeOperation = "source-over";
+    if (e.layer !== currentLayer) {
+      currentLayer = e.layer;
       const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
-      const lightLayerStroke =
-        e.layer === "construcao" || e.layer === "referencia"
-          ? "#475569"
-          : e.layer === "recorte"
-            ? "#B45309"
-            : e.layer === "cota" || e.layer === "anotacoes"
-              ? "#0284C7"
-              : e.layer === "dobra"
-                ? "#BE185D"
-                : e.layer === "marcacao"
-                  ? "#1D4ED8"
-                  : e.layer === "auxiliar"
-                    ? "#7E22CE"
-                    : style.color;
-      ctx.strokeStyle =
-        customStrokeColor ??
-        (isCutOrWhite
-          ? typeof opts.themeLerpT === "number"
-            ? lerpHexColor("#0F141A", "#ECEFF4", opts.themeLerpT)
-            : opts.isLight
-              ? "#0F141A"
-              : "#ECEFF4"
-          : opts.isLight
-            ? lightLayerStroke
-            : style.color);
-      ctx.lineWidth = (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) * inv;
+      ctx.strokeStyle = opts.isLight && isCutOrWhite ? "#0F172A" : style.color;
+      ctx.lineWidth = 1.4 * style.weight * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
     }
     ctx.beginPath();
     traceEntity(ctx, e, lod);
     ctx.stroke();
-
-    // Se a entidade for um Perfil Estrutural / Metalão Oco no modo 2D SKETCH,
-    // desenha as duas linhas tracejadas paralelas internas com offset = espessura da parede (e)
-    if (!lod) {
-      const structOverlay = computeStructuralProfile2DInnerWallLines(e);
-      if (structOverlay && structOverlay.lines.length > 0) {
-        ctx.save();
-        ctx.setLineDash([5 * inv, 3.5 * inv]);
-        ctx.lineWidth = Math.max(1.1, 1.15 * style.weight) * inv;
-        ctx.strokeStyle = opts.isLight ? "rgba(8, 145, 178, 0.78)" : "rgba(56, 189, 248, 0.72)";
-        ctx.beginPath();
-        for (const seg of structOverlay.lines) {
-          ctx.moveTo(seg.x1, seg.y1);
-          ctx.lineTo(seg.x2, seg.y2);
-        }
-        ctx.stroke();
-        ctx.restore();
-        // Força reconfiguração de estilo na próxima entidade caso necessário
-        currentLayer = "";
-      }
-    }
   }
-  ctx.restore();
 
   // Renderiza em lote ordenado (Painter's Algorithm + 5 Categorias + Recorte Even-Odd dos Furos)
   if (planarFor3D.length > 0) {
+    if (opts.showGrid && !lod) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const ent of planarFor3D) {
+        const b = index.boxOfId(ent.id);
+        if (!b) continue;
+        if (b.minX < minX) minX = b.minX;
+        if (b.maxX > maxX) maxX = b.maxX;
+        if (b.minY < minY) minY = b.minY;
+        if (b.maxY > maxY) maxY = b.maxY;
+      }
+      const hasBounds = Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minY) && Number.isFinite(maxY);
+      const gridPivot: Vec2 = hasBounds
+        ? { x: 0.5 * (minX + maxX), y: 0.5 * (minY + maxY) }
+        : { x: 0, y: 0 };
+      const pieceRadiusHint = hasBounds
+        ? Math.max(40, 0.5 * Math.hypot(maxX - minX, maxY - minY))
+        : 120;
+      renderBaseOrbitalGridToCanvas(ctx, {
+        pivot: gridPivot,
+        gridStep: opts.gridStep ?? 25,
+        invScale: inv,
+        isLight: opts.isLight,
+        pieceRadiusHint,
+      });
+    }
+
     const classifiedScene = buildClassifiedWireframeScene3D(planarFor3D, {
       isOrbitTilted,
       orbitProjection: orbitProj,
@@ -705,91 +357,6 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       isLight: opts.isLight,
       styleConfig: opts.wireframe3DStyle,
     });
-
-    // Linhas-guia tracejadas verticais de altitude (+Z) para perfis flutuantes com elevationZ != 0
-    if (!lod) {
-      for (const e of planarFor3D) {
-        const elevZ = getEntityElevationZ(e);
-        if (Math.abs(elevZ) > 0.05) {
-          const c = computeEntityTrueCentroid2D(e);
-          const topX = c.x + unitZOffset.x * elevZ;
-          const topY = c.y + unitZOffset.y * elevZ;
-          ctx.save();
-          ctx.setLineDash([4 * inv, 3.5 * inv]);
-          ctx.strokeStyle = selection.has(e.id)
-            ? "rgba(245, 158, 11, 0.75)"
-            : "rgba(56, 189, 248, 0.45)";
-          ctx.lineWidth = 1.2 * inv;
-          ctx.beginPath();
-          ctx.moveTo(c.x, c.y);
-          ctx.lineTo(topX, topY);
-          ctx.stroke();
-          // Ponto de projeção no plano base Z=0 e centro elevado Z=elevZ
-          ctx.setLineDash([]);
-          ctx.fillStyle = selection.has(e.id) ? "#F59E0B" : "#38BDF8";
-          ctx.beginPath();
-          ctx.arc(c.x, c.y, 2.2 * inv, 0, Math.PI * 2);
-          ctx.arc(topX, topY, 2.6 * inv, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-      }
-    }
-  }
-
-  // Renderiza Sólidos Loft 3D (Iluminação Metálica Phong / Blinn-Phong + Isocurvas)
-  if (loftSolidEntities.length > 0) {
-    for (const loftEnt of loftSolidEntities) {
-      const spec = getEntityLoft3DSpec(loftEnt);
-      if (!spec) continue;
-      const mesh = buildLoft3DMesh(spec.sectionEntities, {
-        surfaceMode: spec.surfaceMode,
-        bodyMode: spec.bodyMode,
-        wallThicknessMm: spec.wallThicknessMm,
-      });
-      if (mesh) {
-        renderLoft3DMeshToCanvas2D(ctx, mesh, {
-          isPreview: false,
-          isSelected: selection.has(loftEnt.id),
-          isIsometric: Boolean(opts.isIsometric),
-          isoPlane: opts.isoPlane ?? "top",
-          orbitProjection: orbitProj ?? null,
-          viewK: safeK,
-          isLight: opts.isLight,
-        });
-      }
-    }
-  }
-
-  // Renderiza Sólidos do `ChamferSolidKernel` (Revolve, Sweep, Frame Generator, Edge Flange Chapa)
-  if (kernelSolidEntities.length > 0) {
-    for (const kEnt of kernelSolidEntities) {
-      const sMesh = buildSolidMesh(kEnt, entities, isoSheetThickness);
-      if (sMesh && sMesh.quads.length > 0) {
-        renderLoft3DMeshToCanvas2D(ctx, solidMeshToCanvasRenderableMesh(sMesh), {
-          isPreview: false,
-          isSelected: selection.has(kEnt.id),
-          isIsometric: Boolean(opts.isIsometric),
-          isoPlane: opts.isoPlane ?? "top",
-          orbitProjection: orbitProj ?? null,
-          viewK: safeK,
-          isLight: opts.isLight,
-        });
-      }
-    }
-  }
-
-  // Renderiza a Prévia Translúcida em Tempo Real da Ferramenta LOFT 3D (Azul-Celeste alpha=0.42 + Isocurvas Brancas)
-  if (opts.activeLoftPreviewMesh) {
-    renderLoft3DMeshToCanvas2D(ctx, opts.activeLoftPreviewMesh, {
-      isPreview: true,
-      isSelected: true,
-      isIsometric: Boolean(opts.isIsometric),
-      isoPlane: opts.isoPlane ?? "top",
-      orbitProjection: orbitProj ?? null,
-      viewK: safeK,
-      isLight: opts.isLight,
-    });
   }
 
   // halo de seleção — destaque temporário, nunca substitui a cor técnica
@@ -797,13 +364,13 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (opts.isDraggingUnlocked) {
       // Destaque visual ao destravar movimento: contorno laranja brilhante com dash técnico
       ctx.setLineDash([8 * inv, 4 * inv]);
-      ctx.strokeStyle = "#F59E0B";
+      ctx.strokeStyle = "#FF8800";
       ctx.globalAlpha = 0.95;
       ctx.lineWidth = 6 * inv;
     } else {
       ctx.setLineDash([]);
-      ctx.strokeStyle = opts.isLight ? "#E11D48" : SELECTION_COLOR;
-      ctx.globalAlpha = opts.isLight ? 0.8 : 0.72;
+      ctx.strokeStyle = opts.isLight ? "#DC2626" : SELECTION_COLOR;
+      ctx.globalAlpha = opts.isLight ? 0.75 : 0.65;
       ctx.lineWidth = 4.5 * inv;
     }
     const selTopOffset = is3DWireframeActive
@@ -817,96 +384,25 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       : { x: 0, y: 0 };
 
     for (const e of list) {
-      if (!selection.has(e.id) || e.type === "text" || isLoft3DEntity(e)) continue;
+      if (!selection.has(e.id) || e.type === "text") continue;
       ctx.save();
       if (is3DWireframeActive && !e.params?.isIsoSolidFace) {
-        const sp = getEntityStructuralProfile(e);
-        const elevZ = getEntityElevationZ(e);
-        const entTopOffset = sp
-          ? resolveBaseToTopExtrusionVector({
-              isOrbitTilted,
-              orbitProjection: orbitProj,
-              isIsometric: opts.isIsometric,
-              isoPlane: opts.isoPlane,
-              sheetThickness: sp.heightH || sp.widthB || isoSheetThickness,
-            }).topOffset
-          : Math.abs(elevZ) > 0.01
-            ? { x: unitZOffset.x * elevZ, y: unitZOffset.y * elevZ }
-            : selTopOffset;
-        ctx.translate(entTopOffset.x, entTopOffset.y);
+        ctx.translate(selTopOffset.x, selTopOffset.y);
       }
       ctx.beginPath();
       traceEntity(ctx, e, lod);
       ctx.stroke();
       ctx.restore();
-
-      // Etiqueta técnica discreta no centro da peça (apenas quando selecionada no modo 2D SKETCH): ⬜ {B}×{B}×{e}
-      if (!is3DWireframeActive && !lod) {
-        const structOverlay = computeStructuralProfile2DInnerWallLines(e);
-        if (structOverlay) {
-          ctx.save();
-          const fontSize = Math.max(9.5 * inv, 11 * inv);
-          ctx.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          const textMetrics = ctx.measureText(structOverlay.badgeText);
-          const padX = 5 * inv;
-          const padY = 2.5 * inv;
-          const boxW = textMetrics.width + padX * 2;
-          const boxH = fontSize + padY * 2;
-          const cx = structOverlay.center.x;
-          const cy = structOverlay.center.y;
-
-          ctx.fillStyle = opts.isLight
-            ? "rgba(15, 23, 42, 0.88)"
-            : "rgba(9, 13, 22, 0.90)";
-          ctx.strokeStyle = "rgba(34, 211, 238, 0.65)";
-          ctx.lineWidth = 1.1 * inv;
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          if (typeof ctx.roundRect === "function") {
-            ctx.roundRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH, 4 * inv);
-          } else {
-            ctx.rect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
-          }
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.fillStyle = "#67E8F9";
-          ctx.fillText(structOverlay.badgeText, cx, cy);
-          ctx.restore();
-        }
-      }
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
 
-  // textos e anotações técnicas ricas por último (custo alto por item, quantidade sempre baixa)
+  // textos por último (custo alto por item, quantidade sempre baixa)
   ctx.setLineDash([]);
   for (const e of list) {
     if (e.type !== "text") continue;
-    if (isRichNoteEntity(e)) {
-      drawRichNoteOnCanvas2D(ctx, e, {
-        invScale: inv,
-        isLight: opts.isLight,
-        isSelected: selection.has(e.id),
-      });
-      continue;
-    }
-    const rawTextColor = techStyle(e.layer).color;
-    const isWhiteOrCut = rawTextColor === "#FFFFFF" || e.layer === "corte";
-    ctx.fillStyle = isWhiteOrCut
-      ? opts.isLight
-        ? "#0F141A"
-        : "#ECEFF4"
-      : opts.isLight && (e.layer === "construcao" || e.layer === "referencia")
-        ? "#334155"
-        : opts.isLight && e.layer === "recorte"
-          ? "#92400E"
-          : opts.isLight && (e.layer === "cota" || e.layer === "anotacoes")
-            ? "#0369A1"
-            : rawTextColor;
+    ctx.fillStyle = techStyle(e.layer).color;
     ctx.font = `${e.italic ? "italic " : ""}${e.bold ? "700 " : "400 "}${e.size}px var(--font-display-family), ui-sans-serif, system-ui`;
     ctx.save();
     ctx.translate(e.x, e.y);
@@ -914,43 +410,6 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     const natural = Math.max(ctx.measureText(e.text).width, 0.01);
     if (e.width && e.width > 0) ctx.scale(e.width / natural, 1);
     ctx.fillText(e.text, 0, 0);
-    ctx.restore();
-  }
-
-  // Camada leve de prévia ao vivo da ferramenta Desenho Livre (60 FPS, zero rebuild de SpatialIndex)
-  const fhPts = opts.freehandLiveStroke?.pts;
-  if (opts.freehandLiveStroke && Array.isArray(fhPts) && fhPts.length >= 2) {
-    const isMarkup = opts.freehandLiveStroke.usageRole === "markup";
-    ctx.save();
-    ctx.strokeStyle = isMarkup ? "#F59E0B" : "#38BDF8";
-    ctx.lineWidth = 2.2 * inv;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.setLineDash(isMarkup ? [6 * inv, 4 * inv] : []);
-    ctx.beginPath();
-    ctx.moveTo(fhPts[0]!.x, fhPts[0]!.y);
-    for (let i = 1; i < fhPts.length; i++) {
-      ctx.lineTo(fhPts[i]!.x, fhPts[i]!.y);
-    }
-    ctx.stroke();
-
-    // Marcador de ponto inicial + anel magnético quando apto a fechar contorno
-    ctx.setLineDash([]);
-    ctx.fillStyle = isMarkup ? "#F59E0B" : "#10B981";
-    ctx.beginPath();
-    ctx.arc(fhPts[0]!.x, fhPts[0]!.y, 3.2 * inv, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (opts.freehandLiveStroke.canClose) {
-      const endPt = fhPts[fhPts.length - 1]!;
-      if (Math.hypot(endPt.x - fhPts[0]!.x, endPt.y - fhPts[0]!.y) <= 14 * inv) {
-        ctx.strokeStyle = "#10B981";
-        ctx.lineWidth = 1.8 * inv;
-        ctx.beginPath();
-        ctx.arc(fhPts[0]!.x, fhPts[0]!.y, 7.5 * inv, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
     ctx.restore();
   }
 }

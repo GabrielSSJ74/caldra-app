@@ -55,35 +55,24 @@ export const ROLE_LABEL: Record<ManufacturingRole, string> = {
 /** Camada semântica do desenho → papel de fabricação. Nunca por cor. */
 export const ROLE_BY_LAYER: Record<string, ManufacturingRole> = {
   corte: "CUT",
-  corte_externo: "CUT",
-  corte_interno_furos: "CUT",
   recorte: "RECORTE",
-  cavidade_rebaixo: "RECORTE",
   marcacao: "MARK",
   dobra: "BEND",
   referencia: "REFERENCE",
   construcao: "REFERENCE",
-  linhas_centro: "REFERENCE",
-  ref_imagem: "REFERENCE",
-  ref_pontos_medidos: "REFERENCE",
-  ref_cotas_campo: "DIMENSION",
-  ref_hipoteses: "REFERENCE",
   cota: "DIMENSION",
-  anotacoes: "DIMENSION",
 };
 
 const metaOf = (e: Entity): CncMeta => (e as { cnc?: CncMeta }).cnc ?? {};
 
 /** Papel de fabricação da entidade, ou null quando não classificada. */
 export function roleOf(e: Entity): ManufacturingRole | null {
-  if (e.type === "text") return "DIMENSION";
-  const fh = e.params?.freehand as { usageRole?: string } | undefined;
-  if (fh?.usageRole === "markup") return "REFERENCE";
   const explicit = metaOf(e).role;
   if (explicit) return explicit;
   const byLayer = ROLE_BY_LAYER[e.layer as LayerId];
   if (byLayer) return byLayer;
-  return null;
+  // texto técnico nunca é corte: na ausência de classificação é cota
+  return e.type === "text" ? "DIMENSION" : null;
 }
 
 /** Entidades sem papel explícito nem camada semântica conhecida. */

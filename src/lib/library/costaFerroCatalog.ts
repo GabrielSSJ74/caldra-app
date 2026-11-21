@@ -250,17 +250,9 @@ export const COSTA_FERRO_MATERIALS: CostaFerroMaterialItem[] = [
   // 60x60 mm
   makeSquareTube(60, 1.5, 2.85),
   makeSquareTube(60, 2.0, 3.77),
-  makeSquareTube(60, 2.65, 4.95),
   makeSquareTube(60, 3.0, 5.58),
   makeSquareTube(60, 4.75, 8.62, "Preto", '3/16"'),
   makeSquareTube(60, 6.35, 11.27, "Preto", '1/4"'),
-
-  // 70x70 mm
-  makeSquareTube(70, 1.5, 3.33),
-  makeSquareTube(70, 2.0, 4.41),
-  makeSquareTube(70, 2.65, 5.8),
-  makeSquareTube(70, 3.0, 6.55),
-  makeSquareTube(70, 4.75, 10.15, "Preto", '3/16"'),
 
   // 80x80 mm
   makeSquareTube(80, 1.5, 3.81),
@@ -1177,12 +1169,7 @@ export function addCustomCostaFerroMaterial(
   return created;
 }
 
-export function getAllCostaFerroMaterials(options?: {
-  includeLocalStorage?: boolean;
-}): CostaFerroMaterialItem[] {
-  if (options?.includeLocalStorage === false) {
-    return COSTA_FERRO_MATERIALS;
-  }
+export function getAllCostaFerroMaterials(): CostaFerroMaterialItem[] {
   const overrides = loadPriceOverrides();
   const custom = loadCustomMaterials();
   const all = [...custom, ...COSTA_FERRO_MATERIALS];
@@ -1199,12 +1186,7 @@ export function getAllCostaFerroMaterials(options?: {
   });
 }
 
-export function getAllCostaFerroHardware(options?: {
-  includeLocalStorage?: boolean;
-}): CostaFerroHardwareItem[] {
-  if (options?.includeLocalStorage === false) {
-    return COSTA_FERRO_HARDWARE;
-  }
+export function getAllCostaFerroHardware(): CostaFerroHardwareItem[] {
   const overrides = loadPriceOverrides();
   return COSTA_FERRO_HARDWARE.map((item) => {
     const override = overrides[item.id];

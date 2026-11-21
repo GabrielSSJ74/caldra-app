@@ -11,7 +11,6 @@ import type { Vec2 } from "@/lib/geometry/types";
 import { bbox, dist, entityPoints, type Entity, type Layer } from "./core";
 import { pathToSvg } from "./bezier";
 import { DIMENSION_COLOR, techColor, techStyle } from "./technical";
-import { isRichNoteEntity, renderRichNoteToSvgMarkup } from "./chamferRichNoteEngine";
 
 export type RenderOptions = {
   dimensions: boolean;
@@ -162,9 +161,6 @@ export function renderSvg(entities: Entity[], layers: Layer[], opts: RenderOptio
       const style = techStyle(e.layer);
       const stroke = colorFor(layer, e.layer, dark);
       if (e.type === "text") {
-        if (isRichNoteEntity(e)) {
-          return renderRichNoteToSvgMarkup(e, stroke);
-        }
         const width = e.width ? ` textLength="${f(e.width)}" lengthAdjust="spacingAndGlyphs"` : "";
         const rotate = e.rotation
           ? ` transform="rotate(${f(e.rotation)} ${f(e.x)} ${f(e.y)})"`

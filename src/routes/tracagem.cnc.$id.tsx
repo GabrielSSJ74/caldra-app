@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ChevronLeft, Heart, PenTool, Save } from "lucide-react";
 import { findPart } from "@/lib/library/registry";
@@ -9,6 +9,7 @@ import { SmartNumberInput } from "@/components/chameleon/SmartNumberInput";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { sendToLab2D } from "@/lib/lab2d/handoff";
 import {
+  getCustom,
   markRecent,
   saveCustom,
   toggleFavorite,
@@ -16,7 +17,7 @@ import {
   useLibraryState,
 } from "@/lib/library/store";
 import { cn } from "@/lib/utils";
-import { savePartParameters, useProjects } from "@/lib/projects/store";
+import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
   validateSearch: (
@@ -54,33 +55,16 @@ function CncPartPage() {
   const { part } = Route.useLoaderData();
   const { projeto, peca, modelo } = Route.useSearch();
   const navigate = useNavigate();
-  const projects = useProjects();
-  const { favorites, custom: customModels } = useLibraryState();
+  const { favorites } = useLibraryState();
   const gen = getGenerator(part.generator!)!;
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const project = mounted && projeto ? (projects.find((p) => p.id === projeto) ?? null) : null;
-  const instance = project && peca ? (project.parts.find((pt) => pt.instanceId === peca) ?? null) : null;
-  const custom = mounted && modelo ? customModels.find((c) => c.id === modelo) : undefined;
-
-  const [values, setValues] = useState<Record<string, number>>(() => defaultValues(gen));
-  const hydratedKeyRef = useRef<string>("");
-
-  useEffect(() => {
-    if (!mounted) return;
-    const targetKey = `${part.id}:${instance?.instanceId ?? ""}:${custom?.id ?? ""}`;
-    if (hydratedKeyRef.current === targetKey) return;
-    hydratedKeyRef.current = targetKey;
-    setValues({
-      ...defaultValues(gen),
-      ...(instance?.parameters ?? {}),
-      ...(custom?.values ?? {}),
-    });
-  }, [mounted, part.id, gen, instance, custom]);
+  const instance = projeto && peca ? getPart(projeto, peca) : null;
+  const project = projeto ? getProject(projeto) : null;
+  const custom = modelo ? getCustom(modelo) : undefined;
+  const [values, setValues] = useState<Record<string, number>>(() => ({
+    ...defaultValues(gen),
+    ...(instance?.parameters ?? {}),
+    ...(custom?.values ?? {}),
+  }));
 
   useEffect(() => {
     markRecent(part.id);
@@ -88,10 +72,10 @@ function CncPartPage() {
 
   /* Autosave da peça do projeto (instância independente do modelo). */
   useEffect(() => {
-    if (!mounted || !projeto || !peca || !instance) return;
+    if (!projeto || !peca) return;
     const id = window.setTimeout(() => savePartParameters(projeto, peca, values), 700);
     return () => window.clearTimeout(id);
-  }, [mounted, projeto, peca, instance, values]);
+  }, [projeto, peca, values]);
 
   const fields = visibleFields(gen, values);
   const entities = useMemo(() => {

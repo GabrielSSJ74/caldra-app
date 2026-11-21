@@ -14,25 +14,15 @@
 
 import type { Contour, PxPoint } from "./visionEngine";
 import { fitCircle, simplify, type Prim, type PrimStatus } from "./geometryRecognizer";
-import { fitContourPhaseD } from "./primitiveFitterAndTopology";
-import type { OutputDxfMode, VisionPreset } from "./visionThresholdConfig";
 
 export type FitOptions = {
-  /** Desvio máximo permitido legado, em px (mantido por compatibilidade; o ajuste Phase D usa τ adaptativo por feição). */
+  /** Desvio máximo permitido, em px. */
   maxDevPx: number;
   diagonalPx: number;
   /** Procurar círculo completo antes de partir o contorno. */
   preferCircles?: boolean;
   /** Ortogonalizar/fechar dentro da tolerância. */
   regularize?: boolean;
-  /** Preset calibrado de precisão (Seção 8). */
-  preset?: VisionPreset;
-  /** Espessura típica do traço estimada por EDT (w₀, em px). */
-  typicalStrokeWidthPx?: number;
-  /** Modo de saída DXF (laser_cypcut vs cad). */
-  outputMode?: OutputDxfMode;
-  /** Emitir contorno composto fechado como LWPOLYLINE unificada com bulges. */
-  emitUnifiedLwPolyline?: boolean;
 };
 
 const TAU = Math.PI * 2;
@@ -303,10 +293,8 @@ function fitRun(run: PxPoint[], hole: boolean, o: FitOptions): Prim[] {
   ];
 }
 
-/**
- * Ajustador legado (mantido para auditoria comparativa).
- */
-export function fitContourHQLegacy(c: Contour, o: FitOptions): Prim[] {
+/** Contorno de pixels → primitivas reais, com cantos e métricas de desvio. */
+export function fitContourHQ(c: Contour, o: FitOptions): Prim[] {
   const src = c.pts;
   const maxDev = o.maxDevPx;
   if (src.length < 4) return [];
@@ -361,25 +349,4 @@ export function fitContourHQLegacy(c: Contour, o: FitOptions): Prim[] {
   if (o.regularize !== false) prims = prims.map((p) => orthogonalize(p, maxDev));
   prims = mergeCollinear(prims, maxDev);
   return prims;
-}
-
-/**
- * Contorno sub-pixel → primitivas reais calibradas (Estágios S6–S9 da Fase D:
- * seleção de modelo com τ adaptativo por feição, Taubin + Gauss-Newton, tangência G1 e solda topológica).
- */
-export function fitContourHQ(c: Contour, o: FitOptions): Prim[] {
-  const ratio = o.maxDevPx / Math.max(1, o.diagonalPx);
-  const inferredPreset: VisionPreset =
-    o.preset ?? (ratio <= 0.003 ? "preciso" : ratio >= 0.01 ? "simplificado" : "equilibrado");
-
-  const result = fitContourPhaseD(c, {
-    preset: inferredPreset,
-    typicalStrokeWidthPx: o.typicalStrokeWidthPx ?? 1,
-    outputMode: o.outputMode ?? "laser_cypcut",
-    preferCircles: o.preferCircles !== false,
-    regularize: o.regularize !== false,
-    emitUnifiedLwPolyline: o.emitUnifiedLwPolyline ?? false,
-  });
-
-  return result.prims;
 }

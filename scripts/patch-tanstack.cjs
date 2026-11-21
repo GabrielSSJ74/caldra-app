@@ -3,32 +3,23 @@ const path = require("path");
 
 function patchFile(filePath, transforms) {
   if (!fs.existsSync(filePath)) return false;
-  const originalContent = fs.readFileSync(filePath, "utf8");
-  let content = originalContent;
-
-  // Clean up any historical duplicate guard prefixes before applying idempotent transforms
-  content = content.replace(/(?:if \(match\?\._nonReactive\)\s+){2,}/g, "if (match?._nonReactive) ");
-  content = content.replace(/(?:if \(prev\?\._nonReactive\)\s+){2,}/g, "if (prev?._nonReactive) ");
+  let content = fs.readFileSync(filePath, "utf8");
+  let modified = false;
 
   for (const { from, to } of transforms) {
     if (typeof from === "string") {
-      if (to.includes(from)) {
-        // Idempotent normalization when `to` is a superset of `from`
-        while (content.includes(to)) {
-          content = content.replaceAll(to, from);
-        }
-      }
       if (content.includes(from)) {
         content = content.replaceAll(from, to);
+        modified = true;
       }
     } else if (from instanceof RegExp) {
       if (from.test(content)) {
         content = content.replace(from, to);
+        modified = true;
       }
     }
   }
 
-  const modified = content !== originalContent;
   if (modified) {
     fs.writeFileSync(filePath, content, "utf8");
     console.log(`Successfully patched: ${filePath}`);
@@ -191,10 +182,6 @@ for (const f of lovableConfigFiles) {
       from: '\t\t\tresolve: {\n\t\t\t\talias: { "@": `${process.cwd()}/src` },',
       to: '\t\t\tresolve: {\n\t\t\t\ttsconfigPaths: true,\n\t\t\t\talias: { "@": `${process.cwd()}/src` },',
     },
-    {
-      from: "injectSource: { enabled: true }",
-      to: "injectSource: { enabled: false }",
-    },
   ]);
 }
 
@@ -224,3 +211,4 @@ if (fs.existsSync(occtWasmSrc)) {
     console.warn("Could not copy occt-wasm.wasm:", err.message);
   }
 }
+

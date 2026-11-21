@@ -83,16 +83,14 @@ function PartThumbnail3D({ slug, className }: { slug: string; className?: string
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_55%_50%,rgba(251,191,36,0.20)_0%,rgba(245,158,11,0.07)_48%,transparent_74%)] dark:bg-[radial-gradient(circle_at_55%_50%,rgba(245,158,11,0.16)_0%,rgba(245,158,11,0.04)_50%,transparent_74%)]"
       />
-      <div className="relative z-10 size-full" style={{ transform: "translateZ(0)" }}>
-        <Wire3D
-          model={model}
-          interactive={false}
-          autoSpin={false}
-          edgeMode="shaded"
-          showRefLines={false}
-          className="relative z-10 size-full scale-[1.14] transition-transform duration-300 group-hover:scale-[1.22]"
-        />
-      </div>
+      <Wire3D
+        model={model}
+        interactive={false}
+        autoSpin={false}
+        edgeMode="shaded"
+        showRefLines={false}
+        className="relative z-10 size-full scale-[1.14] drop-shadow-[0_6px_12px_rgba(15,23,42,0.14)] dark:drop-shadow-[0_8px_14px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:scale-[1.22]"
+      />
     </div>
   );
 }
@@ -451,6 +449,7 @@ export function ProjetarPage() {
             rgba(var(--accent-rgb, 0, 102, 255), 0.08) 45%,
             transparent 72%
           );
+          filter: blur(16px);
         }
         .dark .caldra-hero-backlight {
           background: radial-gradient(
@@ -459,6 +458,7 @@ export function ProjetarPage() {
             rgba(var(--accent-rgb, 59, 130, 246), 0.08) 50%,
             transparent 75%
           );
+          filter: blur(20px);
         }
       `}</style>
 
@@ -468,15 +468,15 @@ export function ProjetarPage() {
             - Identificador: "PROJETO TÉCNICO & CAD"
             ========================================================================= */}
         <NavigationAreaHeader
-          badgeText="Projeto Técnico e Modelagens CAD"
+          badgeText="PROJETO TÉCNICO & CAD"
           badgeColor="text-sky-500"
           indicatorColor="bg-sky-500"
           secondaryBadge={
-            <span className="inline-flex items-center rounded-md bg-sky-500/10 px-2 py-0.5 font-mono text-[9.5px] font-bold tracking-wider uppercase text-sky-500 border border-sky-500/30 whitespace-nowrap shrink-0">
+            <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30">
               CALDRA LAB
             </span>
           }
-          title="Estúdio CAD e Traçagem"
+          title="Projetar"
         />
 
         {/* =========================================================================
@@ -502,8 +502,8 @@ export function ProjetarPage() {
                 <Compass className="size-4" strokeWidth={2} />
               </div>
               <h2
-                style={{ transform: "translateZ(0)" }}
-                className="font-display text-[15px] sm:text-base font-bold text-foreground dark:text-zinc-100 truncate"
+                key={`title-${activeModel.id}-${virtualIndex}`}
+                className="caldra-hero-title-anim font-display text-[15px] sm:text-base font-bold text-foreground dark:text-zinc-100 truncate"
               >
                 {activeModel.title}
               </h2>
@@ -513,7 +513,7 @@ export function ProjetarPage() {
             <div
               role="tablist"
               aria-label="Modelos 3D em destaque"
-              className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/75 dark:border-slate-700/75 bg-white/85 dark:bg-[rgba(30,41,59,0.85)] px-3 py-1.5 shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/75 dark:border-slate-700/75 bg-white/85 dark:bg-[rgba(30,41,59,0.85)] px-3 py-1.5 shadow-[0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-md"
             >
               {FEATURED_MODELS.map((model, idx) => {
                 const isActive = idx === activeModelIndex;
@@ -638,19 +638,20 @@ export function ProjetarPage() {
                   >
                     <div
                       style={{
-                        transform: `scale(${itemScale}) translateZ(0)`,
+                        transform: `scale(${itemScale})`,
                         opacity: itemOpacity,
                         transition: isDragging
                           ? "none"
                           : "transform 550ms cubic-bezier(0.22, 1, 0.36, 1), opacity 550ms ease",
+                        willChange: "transform, opacity",
                       }}
                       className="flex size-full items-center justify-center"
                     >
                       <Wire3D
                         model={slotWire}
-                        className="size-full max-h-[172px] sm:max-h-[188px]"
+                        className="size-full max-h-[172px] sm:max-h-[188px] drop-shadow-[0_10px_18px_rgba(15,23,42,0.12)] dark:drop-shadow-[0_12px_22px_rgba(0,0,0,0.45)]"
                         interactive={false}
-                        autoSpin={isCenter}
+                        autoSpin={true}
                         edgeMode="shaded"
                         showRefLines={false}
                       />
@@ -731,6 +732,7 @@ export function ProjetarPage() {
                 userSelect: "none",
                 WebkitUserSelect: "none",
                 WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card group flex min-h-[118px] sm:min-h-[126px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
             >

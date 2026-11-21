@@ -1,7 +1,6 @@
 export type { Vec2 } from "@/lib/geometry/types";
 import type { CncMeta } from "@/lib/lab2d/cncTypes";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
-import type { EntityStructuralProfile } from "@/lib/lab2d/structuralProfile";
 
 import {
   flattenPath,
@@ -25,11 +24,6 @@ import {
   type TechLayerId,
 } from "@/lib/lab2d/technical";
 import { roleOf, ROLE_BY_LAYER } from "@/lib/lab2d/roles";
-import {
-  computeRichNoteWorldBox,
-  getEntityRichNoteSpec,
-  isRichNoteEntity,
-} from "@/lib/lab2d/chamferRichNoteEngine";
 
 export type LayerId = string;
 
@@ -67,20 +61,8 @@ type Base = {
   cnc?: CncMeta;
   /** Estado de construção (geometria auxiliar/projeção) */
   isConstruction?: boolean;
-  /** Entidade do Modo Gabarito (Ref.) — visível em vermelho pontilhado, 100% editável e com SNAP/TRIM/Traçar Peça, mas estritamente excluída do 3D, DXF e BOM */
-  isReferenceGuide?: boolean;
-  /** Elevação vertical no eixo +Z (mm) para criação de perfis em planos paralelos e Loft 3D */
-  elevationZ?: number;
-  /** Altura de extrusão individual no eixo +Z (mm) */
-  extrudeHeight?: number;
-  /** Espessura da parede interna para corpos ocos/tubos metalon (Shell / Casca em mm) */
-  shellWallThickness?: number;
-  /** Espessura padrão de chapa metálica associada à peça (mm) */
-  sheetThickness?: number;
   /** Parâmetros paramétricos associados */
   params?: Record<string, unknown>;
-  /** Perfil estrutural tubular/barra associado (Catálogo BOM Costa Ferro) */
-  structuralProfile?: EntityStructuralProfile;
   /** IDs de entidades dependentes */
   dependencies?: string[];
   /** Feature correspondente no grafo CAD */
@@ -89,7 +71,7 @@ type Base = {
 
 export type Entity =
   | (Base & { type: "line"; x1: number; y1: number; x2: number; y2: number })
-  | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean; bulges?: number[] })
+  | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean })
   | (Base & { type: "circle"; cx: number; cy: number; r: number })
   | (Base & { type: "arc"; cx: number; cy: number; r: number; a0: number; a1: number })
   | (Base & {
@@ -181,68 +163,17 @@ export function entityPoints(e: Entity): Vec2[] {
       return e.boundaryPts;
     case "path":
       return pathAnchors(e.start, e.segs);
-    case "text": {
-      if (isRichNoteEntity(e)) {
-        const rb = computeRichNoteWorldBox(e);
-        if (rb) {
-          return [
-            { x: rb.minX, y: rb.minY },
-            { x: rb.maxX, y: rb.minY },
-            { x: rb.maxX, y: rb.maxY },
-            { x: rb.minX, y: rb.maxY },
-          ];
-        }
-      }
+    case "text":
       return [
         { x: e.x, y: e.y - e.size },
         { x: e.x + (e.width ?? Math.max(e.size, e.text.length * e.size * 0.6)), y: e.y },
       ];
-    }
   }
-}
-
-/** Amostra um segmento de polilinha com bulge (arco circular tangente) para bounding box / hit-test. */
-export function sampleBulgeSegment(p0: Vec2, p1: Vec2, bulge: number, steps = 8): Vec2[] {
-  if (!bulge || Math.abs(bulge) < 1e-6) return [p0, p1];
-  const dx = p1.x - p0.x;
-  const dy = p1.y - p0.y;
-  const chord = Math.hypot(dx, dy);
-  if (chord < 1e-9) return [p0];
-  const theta = 4 * Math.atan(bulge);
-  const r = Math.abs(chord / (2 * Math.sin(theta / 2)));
-  const mx = (p0.x + p1.x) / 2;
-  const my = (p0.y + p1.y) / 2;
-  const nx = -dy / chord;
-  const ny = dx / chord;
-  const d = (chord / 2) / Math.tan(theta / 2);
-  const cx = mx + nx * d;
-  const cy = my + ny * d;
-  const a0 = Math.atan2(p0.y - cy, p0.x - cx);
-  const out: Vec2[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const a = a0 + (i / steps) * theta;
-    out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
-  }
-  return out;
 }
 
 /** Pontos usados para enquadramento e hit-test (curvas entram amostradas). */
 export function outlinePoints(e: Entity): Vec2[] {
   if (e.type === "path") return samplePath(e.start, e.segs, e.closed, 24);
-  if (e.type === "polyline" && e.bulges && e.bulges.some((b) => Math.abs(b) > 1e-6)) {
-    const pts: Vec2[] = [];
-    const n = e.pts.length;
-    const segCount = e.closed ? n : Math.max(0, n - 1);
-    for (let i = 0; i < segCount; i++) {
-      const p0 = e.pts[i]!;
-      const p1 = e.pts[(i + 1) % n]!;
-      const b = e.bulges[i] ?? 0;
-      const sampled = sampleBulgeSegment(p0, p1, b, 10);
-      if (i > 0) sampled.shift();
-      pts.push(...sampled);
-    }
-    return pts.length > 0 ? pts : e.pts;
-  }
   if (e.type === "ellipse") {
     const rot = e.rotation ?? 0;
     const cosR = Math.cos(rot);
@@ -274,13 +205,6 @@ export function segmentsOf(e: Entity): [Vec2, Vec2][] {
       ],
     ];
   if (e.type === "polyline") {
-    if (e.bulges && e.bulges.some((b) => Math.abs(b) > 1e-6)) {
-      const pts = outlinePoints(e);
-      const out: [Vec2, Vec2][] = [];
-      for (let i = 0; i < pts.length - 1; i++) out.push([pts[i]!, pts[i + 1]!]);
-      if (e.closed && pts.length > 2) out.push([pts[pts.length - 1]!, pts[0]!]);
-      return out;
-    }
     const out: [Vec2, Vec2][] = [];
     for (let i = 0; i < e.pts.length - 1; i++) out.push([e.pts[i]!, e.pts[i + 1]!]);
     if (e.closed && e.pts.length > 2) out.push([e.pts[e.pts.length - 1]!, e.pts[0]!]);
@@ -316,10 +240,8 @@ export function lineIntersection(a: [Vec2, Vec2], b: [Vec2, Vec2], bounded = tru
   return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
 }
 
-export function closestOnSegment(p: Vec2, s: [Vec2, Vec2] | { a: Vec2; b: Vec2 }): Vec2 {
-  const a = Array.isArray(s) ? s[0] : s.a;
-  const b = Array.isArray(s) ? s[1] : s.b;
-  if (!a || !b) return p;
+export function closestOnSegment(p: Vec2, s: [Vec2, Vec2]): Vec2 {
+  const [a, b] = s;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
@@ -364,20 +286,6 @@ export function findSnap(
           { p: { x: e.cx, y: e.cy + e.ry }, kind: "quadrant" },
           { p: { x: e.cx, y: e.cy - e.ry }, kind: "quadrant" },
         );
-      }
-      if (e.type === "polyline" && e.pts.length >= 3) {
-        let pts = e.pts;
-        if (
-          pts.length > 2 &&
-          Math.hypot(pts[0]!.x - pts[pts.length - 1]!.x, pts[0]!.y - pts[pts.length - 1]!.y) < 1e-3
-        ) {
-          pts = pts.slice(0, -1);
-        }
-        if (pts.length >= 3) {
-          const sx = pts.reduce((acc, p) => acc + p.x, 0);
-          const sy = pts.reduce((acc, p) => acc + p.y, 0);
-          cands.push({ p: { x: sx / pts.length, y: sy / pts.length }, kind: "center" });
-        }
       }
       for (const p of entityPoints(e)) {
         if (e.type !== "circle" && e.type !== "ellipse") cands.push({ p, kind: "end" });
@@ -432,65 +340,40 @@ export function findSnap(
 /* ------------------------------------------------------- transformações */
 
 export function mapEntity(e: Entity, f: (p: Vec2) => Vec2, scale = 1): Entity {
-  const mapLoftParams = (ent: Entity): Entity => {
-    const loft = ent.params?.loft3d as
-      | { sectionEntities?: Entity[]; [k: string]: unknown }
-      | undefined;
-    if (loft && Array.isArray(loft.sectionEntities)) {
-      return {
-        ...ent,
-        params: {
-          ...(ent.params ?? {}),
-          loft3d: {
-            ...loft,
-            sectionEntities: loft.sectionEntities.map((sec) => mapEntity(sec, f, scale)),
-          },
-        },
-      };
-    }
-    return ent;
-  };
-
   switch (e.type) {
     case "line": {
       const a = f({ x: e.x1, y: e.y1 });
       const b = f({ x: e.x2, y: e.y2 });
-      return mapLoftParams({ ...e, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+      return { ...e, x1: a.x, y1: a.y, x2: b.x, y2: b.y };
     }
     case "polyline":
-      return mapLoftParams({ ...e, pts: e.pts.map(f) });
+      return { ...e, pts: e.pts.map(f) };
     case "circle": {
       const c = f({ x: e.cx, y: e.cy });
-      return mapLoftParams({ ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) });
+      return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
     }
     case "arc": {
       const c = f({ x: e.cx, y: e.cy });
-      return mapLoftParams({ ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) });
+      return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
     }
     case "ellipse": {
       const c = f({ x: e.cx, y: e.cy });
-      return mapLoftParams({
-        ...e,
-        cx: c.x,
-        cy: c.y,
-        rx: e.rx * Math.abs(scale),
-        ry: e.ry * Math.abs(scale),
-      });
+      return { ...e, cx: c.x, cy: c.y, rx: e.rx * Math.abs(scale), ry: e.ry * Math.abs(scale) };
     }
     case "point": {
       const c = f({ x: e.x, y: e.y });
-      return mapLoftParams({ ...e, x: c.x, y: c.y });
+      return { ...e, x: c.x, y: c.y };
     }
     case "hatch": {
-      return mapLoftParams({ ...e, boundaryPts: e.boundaryPts.map(f) });
+      return { ...e, boundaryPts: e.boundaryPts.map(f) };
     }
     case "path": {
       const m = mapPath(e.start, e.segs, f);
-      return mapLoftParams({ ...e, start: m.start, segs: m.segs });
+      return { ...e, start: m.start, segs: m.segs };
     }
     case "text": {
       const c = f({ x: e.x, y: e.y });
-      return mapLoftParams({ ...e, x: c.x, y: c.y });
+      return { ...e, x: c.x, y: c.y };
     }
   }
 }
@@ -516,56 +399,13 @@ export const rotate = (e: Entity, o: Vec2, deg: number) => {
   }
   if (e.type === "text") {
     const cp = rot({ x: e.x, y: e.y });
-    const nextRot = (e.rotation ?? 0) + deg;
-    if (isRichNoteEntity(e)) {
-      const spec = getEntityRichNoteSpec(e);
-      if (spec) {
-        return {
-          ...e,
-          x: cp.x,
-          y: cp.y,
-          rotation: nextRot,
-          params: {
-            ...(e.params ?? {}),
-            richNote: { ...spec, rotationDeg: nextRot },
-          },
-        };
-      }
-    }
-    return { ...e, x: cp.x, y: cp.y, rotation: nextRot };
+    return { ...e, x: cp.x, y: cp.y, rotation: (e.rotation ?? 0) + deg };
   }
   return mapEntity(e, rot);
 };
 
-export const scaleEntity = (e: Entity, o: Vec2, k: number) => {
-  const mapped = mapEntity(e, (p) => ({ x: o.x + (p.x - o.x) * k, y: o.y + (p.y - o.y) * k }), k);
-  if (mapped.type === "text") {
-    const absK = Math.max(0.05, Math.abs(k));
-    if (isRichNoteEntity(mapped)) {
-      const spec = getEntityRichNoteSpec(mapped);
-      if (spec) {
-        return {
-          ...mapped,
-          size: mapped.size * absK,
-          params: {
-            ...(mapped.params ?? {}),
-            richNote: {
-              ...spec,
-              fontSizeMm: spec.fontSizeMm * absK,
-              widthMm: spec.widthMm * absK,
-            },
-          },
-        };
-      }
-    }
-    return {
-      ...mapped,
-      size: mapped.size * absK,
-      ...(mapped.width ? { width: mapped.width * absK } : {}),
-    };
-  }
-  return mapped;
-};
+export const scaleEntity = (e: Entity, o: Vec2, k: number) =>
+  mapEntity(e, (p) => ({ x: o.x + (p.x - o.x) * k, y: o.y + (p.y - o.y) * k }), k);
 
 export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") => {
   const ref = (p: Vec2) => (axis === "x" ? { x: 2 * o.x - p.x, y: p.y } : { x: p.x, y: 2 * o.y - p.y });
@@ -585,9 +425,6 @@ export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") => {
     const cp = ref({ x: e.cx, y: e.cy });
     const rot = e.rotation ?? 0;
     return { ...e, cx: cp.x, cy: cp.y, rotation: axis === "x" ? Math.PI - rot : -rot };
-  }
-  if (e.type === "polyline" && e.bulges) {
-    return { ...mapEntity(e, ref), bulges: e.bulges.map((b) => -b) };
   }
   return mapEntity(e, ref);
 };
@@ -667,23 +504,22 @@ export const rectPolyline = (a: Vec2, b: Vec2, layer: LayerId, radius = 0): Enti
       ],
     };
   const r = Math.min(radius, (x1 - x0) / 2, (y1 - y0) / 2);
-  const k = Math.tan(Math.PI / 8); // bulge exato para arco de 90°
+  const arc = (cx: number, cy: number, s: number) =>
+    Array.from({ length: 7 }, (_, i) => {
+      const t = s + (i / 6) * (Math.PI / 2);
+      return { x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) };
+    });
   return {
     id: uid(),
     layer,
     type: "polyline",
     closed: true,
     pts: [
-      { x: x0, y: y0 + r },
-      { x: x0 + r, y: y0 },
-      { x: x1 - r, y: y0 },
-      { x: x1, y: y0 + r },
-      { x: x1, y: y1 - r },
-      { x: x1 - r, y: y1 },
-      { x: x0 + r, y: y1 },
-      { x: x0, y: y1 - r },
+      ...arc(x0 + r, y0 + r, Math.PI),
+      ...arc(x1 - r, y0 + r, -Math.PI / 2),
+      ...arc(x1 - r, y1 - r, 0),
+      ...arc(x0 + r, y1 - r, Math.PI / 2),
     ],
-    bulges: [k, 0, k, 0, k, 0, k, 0],
   };
 };
 
@@ -694,23 +530,6 @@ export const polygonEntity = (c: Vec2, r: number, sides: number, layer: LayerId)
   closed: true,
   pts: Array.from({ length: sides }, (_, i) => {
     const a = (i / sides) * Math.PI * 2 - Math.PI / 2;
-    return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
-  }),
-});
-
-export const regularPolygon = (
-  c: Vec2,
-  r: number,
-  sides: number,
-  rotationRad = 0,
-  layer: LayerId = "corte",
-): Entity => ({
-  id: uid(),
-  layer,
-  type: "polyline",
-  closed: true,
-  pts: Array.from({ length: Math.max(3, sides) }, (_, i) => {
-    const a = (i / Math.max(3, sides)) * Math.PI * 2 - Math.PI / 2 + rotationRad;
     return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
   }),
 });
@@ -1110,32 +929,14 @@ export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
       });
     if (e.type === "CIRCLE")
       out.push({ id: uid(), layer, type: "circle", cx: e.center.x, cy: -e.center.y, r: e.radius });
-    if (e.type === "LWPOLYLINE") {
-      const hasBulge = e.points.some((p) => p.bulge !== undefined && Math.abs(p.bulge) > 1e-7);
+    if (e.type === "LWPOLYLINE")
       out.push({
         id: uid(),
         layer,
         type: "polyline",
         closed: !!e.closed,
         pts: e.points.map((p) => ({ x: p.x, y: -p.y })),
-        bulges: hasBulge ? e.points.map((p) => -(p.bulge ?? 0)) : undefined,
       });
-    }
-    if (e.type === "ELLIPSE") {
-      const rx = Math.hypot(e.majorEnd.x, e.majorEnd.y);
-      const ry = rx * e.axisRatio;
-      const rotation = Math.atan2(-e.majorEnd.y, e.majorEnd.x);
-      out.push({
-        id: uid(),
-        layer,
-        type: "ellipse",
-        cx: e.center.x,
-        cy: -e.center.y,
-        rx,
-        ry,
-        rotation,
-      });
-    }
     if (e.type === "ARC") {
       const rad = (d: number) => (-d * Math.PI) / 180;
       out.push({
