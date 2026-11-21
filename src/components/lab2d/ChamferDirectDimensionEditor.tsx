@@ -10,7 +10,7 @@
  *  - Rodapé unificado com botão compacto "🔒 Fixar", "✕ Cancelar" e "✓ Confirmar".
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Check, X, Minus, Plus, Delete, RotateCcw, ArrowLeftRight } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -94,6 +94,8 @@ export function ChamferDirectDimensionEditor({
   };
 
   const [displayStr, setDisplayStr] = useState<string>(() => formatInitial(currentValue));
+  const displayStrRef = useRef<string>(displayStr);
+  displayStrRef.current = displayStr;
   const [freshEntry, setFreshEntry] = useState<boolean>(true);
   const [stepMm, setStepMm] = useState<StepOption>(1);
   const [isLocked, setIsLocked] = useState<boolean>(initialLocked);
@@ -101,7 +103,9 @@ export function ChamferDirectDimensionEditor({
 
   useEffect(() => {
     if (open) {
-      setDisplayStr(formatInitial(currentValue));
+      const next = formatInitial(currentValue);
+      displayStrRef.current = next;
+      setDisplayStr(next);
       setFreshEntry(true);
       setIsLocked(initialLocked);
       setErrorMsg(null);
@@ -226,19 +230,18 @@ export function ChamferDirectDimensionEditor({
   const handleStep = useCallback(
     (direction: 1 | -1, multiplier = 1) => {
       triggerHaptic("selection");
-      setDisplayStr((prevStr) => {
-        const currentParsed = parseNormalized(prevStr) ?? currentValue;
-        const candidate = Number((currentParsed + direction * stepMm * multiplier).toFixed(4));
-        if (!isValuePermitted(candidate)) {
-          setErrorMsg(allowZero ? "Valor mínimo: 0." : "A medida deve ser > 0.");
-          return prevStr;
-        }
-        setErrorMsg(null);
-        setFreshEntry(false);
-        const formatted = String(candidate).replace(".", ",");
-        onPreviewChange?.(candidate);
-        return formatted;
-      });
+      const currentParsed = parseNormalized(displayStrRef.current) ?? currentValue;
+      const candidate = Number((currentParsed + direction * stepMm * multiplier).toFixed(4));
+      if (!isValuePermitted(candidate)) {
+        setErrorMsg(allowZero ? "Valor mínimo: 0." : "A medida deve ser > 0.");
+        return;
+      }
+      const formatted = String(candidate).replace(".", ",");
+      displayStrRef.current = formatted;
+      setDisplayStr(formatted);
+      setErrorMsg(null);
+      setFreshEntry(false);
+      onPreviewChange?.(candidate);
     },
     [currentValue, stepMm, allowZero, isValuePermitted, parseNormalized, onPreviewChange],
   );
