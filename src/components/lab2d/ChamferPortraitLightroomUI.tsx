@@ -3052,6 +3052,9 @@ export interface ChamferPortraitBottomBarsProps {
   temporaryOrigin: { p: Vec2; label: string } | null;
   onClearTemporaryOrigin: () => void;
   onUseSelectedEdge?: () => void;
+  guideModeOn?: boolean;
+  onToggleGuideMode?: () => void;
+  guideEntitiesCount?: number;
   orthoOn: boolean;
   setOrthoOn: (fn: (v: boolean) => boolean) => void;
   trackingOn: boolean;
@@ -3146,6 +3149,7 @@ const TOOL_LABELS_PT: Record<string, string> = {
   dim: "Cotar",
   measure: "Medir",
   polar_ref: "Ref. Polar",
+  trace_part: "Traçar Peça",
   loft_3d: "Loft 3D",
 };
 
@@ -3213,6 +3217,9 @@ export function ChamferPortraitBottomBars({
   temporaryOrigin,
   onClearTemporaryOrigin,
   onUseSelectedEdge,
+  guideModeOn = false,
+  onToggleGuideMode,
+  guideEntitiesCount = 0,
   orthoOn,
   setOrthoOn,
   trackingOn,
@@ -4624,6 +4631,15 @@ export function ChamferPortraitBottomBars({
                 onClick={() => onPickTool("text")}
                 isDark={isDark}
               />
+              <CarouselToolItem
+                cmdId="tool.trace_part"
+                icon={PenLine}
+                label="Traçar Peça"
+                active={tool === "trace_part"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("trace_part")}
+                isDark={isDark}
+              />
 
               <CarouselDivider isDark={isDark} />
 
@@ -5103,6 +5119,28 @@ export function ChamferPortraitBottomBars({
                   active={tool === "polar_ref"}
                   heightPx={itemHeightPx}
                   onClick={onUseSelectedEdge}
+                  isDark={isDark}
+                />
+              )}
+              {onToggleGuideMode && (
+                <CarouselToolItem
+                  cmdId="pre.guide_mode"
+                  icon={Compass}
+                  label={guideModeOn ? "Gabarito: ON" : "Gabarito"}
+                  active={guideModeOn}
+                  heightPx={itemHeightPx}
+                  onClick={onToggleGuideMode}
+                  isDark={isDark}
+                />
+              )}
+              {(guideModeOn || guideEntitiesCount > 0 || tool === "trace_part") && (
+                <CarouselToolItem
+                  cmdId="pre.trace_part"
+                  icon={PenLine}
+                  label="Traçar Peça"
+                  active={tool === "trace_part"}
+                  heightPx={itemHeightPx}
+                  onClick={() => onPickTool("trace_part")}
                   isDark={isDark}
                 />
               )}

@@ -251,6 +251,9 @@ export interface ChamferPrumoSpatialUIProps {
   onSetDatumAtCursor: () => void;
   onClearDatum: () => void;
   onCreateDatumLineDelta: (axis: "dx" | "dy") => void;
+  guideModeOn?: boolean;
+  onToggleGuideMode?: () => void;
+  guideEntitiesCount?: number;
 
   // Medição, Chapa, Estruturas, Detalhes e Cor/Camada
   dimKind: DimKind;
@@ -329,6 +332,7 @@ const TOOL_SHORT_CODES: Record<string, string> = {
   measure: "MED",
   dim: "COT",
   polar_ref: "POL",
+  trace_part: "TRÇ",
   loft_3d: "LFT",
 };
 
@@ -404,6 +408,9 @@ export function ChamferPrumoSpatialUI({
   onSetDatumAtCursor,
   onClearDatum,
   onCreateDatumLineDelta,
+  guideModeOn = false,
+  onToggleGuideMode,
+  guideEntitiesCount = 0,
   dimKind,
   onPickDimKind,
   onConvertToBend,
@@ -885,6 +892,15 @@ export function ChamferPrumoSpatialUI({
         isActive: tool === "text",
         action: () => activate2DTool("text", "text"),
       },
+      {
+        id: "trace_part",
+        code3: "TRÇ",
+        label: "Traçar Peça (Passar a Limpo)",
+        groupId: "criar",
+        icon: PenLine,
+        isActive: tool === "trace_part",
+        action: () => activate2DTool("trace_part", "trace_part"),
+      },
 
       // GRUPO 3: MODIFICAR (MOD)
       {
@@ -1074,6 +1090,19 @@ export function ChamferPrumoSpatialUI({
         isActive: tool === "polar_ref",
         action: () => activate2DTool("polar_ref", "polar_ref"),
       },
+      ...(onToggleGuideMode
+        ? [
+            {
+              id: "guide_mode",
+              code3: "GAB",
+              label: `Modo Gabarito (${guideModeOn ? "ON" : "OFF"})`,
+              groupId: "precisao" as const,
+              icon: Compass,
+              isActive: guideModeOn,
+              action: () => runAction("guide_mode", onToggleGuideMode),
+            },
+          ]
+        : []),
       {
         id: "anchor_ref",
         code3: "ÂNC",
@@ -1403,6 +1432,8 @@ export function ChamferPrumoSpatialUI({
     activeLayer,
     activeStrokeColor,
     isDark,
+    guideModeOn,
+    onToggleGuideMode,
   ]);
 
   // Grupos Canônicos do Arco Interno (★ Recentes/Favoritos + SEL · CRI · MOD · PRE · MED · CHP · EST · DET · COR)
@@ -3014,6 +3045,57 @@ export function ChamferPrumoSpatialUI({
             <Crosshair className="size-3.5" />
             <span>⌖ Ref. Polar</span>
           </button>
+
+          {onToggleGuideMode && (
+            <button
+              type="button"
+              data-testid="prumo-prec-guide-mode-btn"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_select");
+                onToggleGuideMode();
+              }}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 rounded-xl border py-2 cursor-pointer",
+                guideModeOn
+                  ? "border-red-500 bg-red-500/20 text-red-400"
+                  : "border-slate-500/25",
+              )}
+            >
+              <Compass className="size-3.5" />
+              <span>📐 Gabarito{guideEntitiesCount > 0 ? ` (${guideEntitiesCount})` : ""}</span>
+            </button>
+          )}
+
+          {(guideModeOn || guideEntitiesCount > 0 || tool === "trace_part") && (
+            <button
+              type="button"
+              data-testid="prumo-prec-trace-part-btn"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_select");
+                onPickTool("trace_part");
+                recordToolUsage("trace_part", "trace_part");
+                setPrecisionGridOpen(false);
+              }}
+              style={
+                tool === "trace_part"
+                  ? {
+                      backgroundColor: "var(--chamfer-accent-soft)",
+                      borderColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent)",
+                    }
+                  : undefined
+              }
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 rounded-xl border py-2 cursor-pointer",
+                tool === "trace_part" ? "" : "border-slate-500/25",
+              )}
+            >
+              <PenLine className="size-3.5" />
+              <span>✒️ Traçar Peça</span>
+            </button>
+          )}
 
           <button
             type="button"

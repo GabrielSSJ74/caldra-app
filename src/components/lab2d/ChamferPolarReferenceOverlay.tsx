@@ -18,6 +18,7 @@ import type {
   PolarRefOriginAnchor,
   PolarReferenceItem,
 } from "@/chamfer/tools/polarReferenceEngine";
+import { ChamferDirectDimensionEditor } from "@/components/lab2d/ChamferDirectDimensionEditor";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { cn } from "@/lib/utils";
 
@@ -235,6 +236,7 @@ export interface ChamferPolarReferenceControlBarProps {
   onClearAllPolarRefs: () => void;
   onExit: () => void;
   uiShellMode?: "compact" | "prumo";
+  isDark?: boolean;
 }
 
 export const ChamferPolarReferenceControlBar: React.FC<ChamferPolarReferenceControlBarProps> = ({
@@ -251,41 +253,33 @@ export const ChamferPolarReferenceControlBar: React.FC<ChamferPolarReferenceCont
   onClearAllPolarRefs,
   onExit,
   uiShellMode = "compact",
+  isDark = true,
 }) => {
-  const [editingField, setEditingField] = useState<"dist" | "angle" | null>(null);
-  const [draftInput, setDraftInput] = useState("");
+  // INTEGRAÇÃO EXCLUSIVA AO NUMPAD PRÓPRIO DO CHAMFER (ZERO <input> NATIVO!)
+  const [numpadField, setNumpadField] = useState<"dist" | "angle" | null>(null);
+  const [numpadScreenPos, setNumpadScreenPos] = useState<{ x: number; y: number }>({
+    x: 240,
+    y: 120,
+  });
 
   if (!visible && polarRefsCount === 0) return null;
 
   const currentDist = lockedDistanceMm ?? livePreview?.distanceMm ?? 0;
   const currentAng = lockedAngleDeg ?? livePreview?.angleDeg ?? 90;
 
-  const openEditor = (field: "dist" | "angle") => {
+  const openChamferNumpad = (
+    field: "dist" | "angle",
+    ev: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    ev.stopPropagation();
+    ev.preventDefault();
+    const rect = ev.currentTarget.getBoundingClientRect();
+    setNumpadScreenPos({
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.bottom + 14),
+    });
+    setNumpadField(field);
     triggerHaptic("selection");
-    setEditingField(field);
-    setDraftInput(
-      field === "dist"
-        ? currentDist > 0
-          ? String(Number(currentDist.toFixed(2)))
-          : ""
-        : String(Number(currentAng.toFixed(1))),
-    );
-  };
-
-  const commitFieldValue = () => {
-    const parsed = parseFloat(draftInput.replace(",", "."));
-    if (Number.isFinite(parsed)) {
-      if (editingField === "dist" && parsed > 0) {
-        onChangeLockedDistance(parsed);
-        if (livePreview) {
-          onCommitPolarRef({ distanceMm: parsed, angleDeg: currentAng });
-        }
-      } else if (editingField === "angle") {
-        onChangeLockedAngle(((parsed % 360) + 360) % 360);
-      }
-      triggerHaptic("success");
-    }
-    setEditingField(null);
   };
 
   // Quando a ferramenta não está ativa, mas existem Ref. Polar fixadas, exibe apenas um micro-chip discreto para limpar
@@ -320,200 +314,239 @@ export const ChamferPolarReferenceControlBar: React.FC<ChamferPolarReferenceCont
   }
 
   return (
-    <div
-      data-testid="chamfer-polar-ref-bar"
-      role="toolbar"
-      aria-label="Barra da Ferramenta Ref. Polar"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        top: uiShellMode === "prumo" ? 52 : 22,
-        backgroundColor: "var(--chamfer-popover-bg, rgba(10, 15, 26, 0.92))",
-        borderColor: "var(--chamfer-border-strong, rgba(239, 68, 68, 0.45))",
-        color: "var(--chamfer-text-primary, #f1f5f9)",
-      }}
-      className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-40 flex flex-nowrap items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-semibold shadow-xl backdrop-blur-xl select-none max-w-[95vw] overflow-x-auto scrollbar-none whitespace-nowrap"
-    >
-      <span className="flex items-center gap-1 font-extrabold text-red-500 pr-1">
-        <Crosshair className="size-3.5" />
-        <span>REF. POLAR</span>
-      </span>
-
-      {!livePreview ? (
-        <span
-          style={{ color: "var(--chamfer-text-secondary, #94a3b8)" }}
-          className="text-[10px] px-1"
-        >
-          Toque na borda, vértice, centro ou DATUM
+    <>
+      <div
+        data-testid="chamfer-polar-ref-bar"
+        role="toolbar"
+        aria-label="Barra da Ferramenta Ref. Polar"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          top: uiShellMode === "prumo" ? 52 : 22,
+          backgroundColor: "var(--chamfer-popover-bg, rgba(10, 15, 26, 0.92))",
+          borderColor: "var(--chamfer-border-strong, rgba(239, 68, 68, 0.45))",
+          color: "var(--chamfer-text-primary, #f1f5f9)",
+        }}
+        className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-[60] flex flex-nowrap items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10.5px] font-semibold shadow-xl backdrop-blur-xl select-none max-w-[95vw] overflow-x-auto scrollbar-none whitespace-nowrap"
+      >
+        <span className="flex items-center gap-1 font-extrabold text-red-500 pr-1">
+          <Crosshair className="size-3.5" />
+          <span>REF. POLAR</span>
         </span>
-      ) : (
-        <>
-          {/* Distância editável d */}
-          {editingField === "dist" ? (
-            <input
-              type="text"
-              inputMode="decimal"
-              data-testid="polar-ref-dist-input"
-              value={draftInput}
-              autoFocus
-              onChange={(e) => setDraftInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitFieldValue();
-                if (e.key === "Escape") setEditingField(null);
-              }}
-              onBlur={commitFieldValue}
-              placeholder="mm"
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated, #0f172a)",
-                borderColor: "var(--chamfer-accent, #EF4444)",
-                color: "var(--chamfer-text-primary, #ffffff)",
-              }}
-              className="w-16 rounded-full border px-2 py-0.5 text-center text-[11px] font-bold outline-none"
-            />
-          ) : (
+
+        {!livePreview ? (
+          <span
+            style={{ color: "var(--chamfer-text-secondary, #94a3b8)" }}
+            className="text-[10px] px-1"
+          >
+            Toque na borda, vértice, centro ou DATUM
+          </span>
+        ) : (
+          <>
+            {/* Chip Distância d (aciona exclusivamente o Numpad próprio do CHAMFER — ZERO teclado nativo) */}
             <button
               type="button"
               data-testid="polar-ref-dist-chip"
-              onClick={() => openEditor("dist")}
-              className="rounded-full border border-red-500/45 bg-red-500/15 hover:bg-red-500/25 text-red-400 px-2 py-0.5 cursor-pointer shrink-0"
-              title="Toque para digitar a distância exata (mm)"
+              onClick={(e) => openChamferNumpad("dist", e)}
+              style={
+                numpadField === "dist"
+                  ? {
+                      backgroundColor: "var(--chamfer-accent, #EF4444)",
+                      borderColor: "var(--chamfer-accent, #EF4444)",
+                      color: "#FFFFFF",
+                    }
+                  : undefined
+              }
+              className={cn(
+                "rounded-full border px-2 py-0.5 cursor-pointer shrink-0 transition-colors",
+                numpadField !== "dist" &&
+                  "border-red-500/45 bg-red-500/15 hover:bg-red-500/25 text-red-400",
+              )}
+              title="Abrir Numpad CHAMFER para digitar distância exata (mm)"
             >
               d = {currentDist.toFixed(1)} mm ✎
             </button>
-          )}
 
-          {/* Ângulo editável ∠ */}
-          {editingField === "angle" ? (
-            <input
-              type="text"
-              inputMode="decimal"
-              data-testid="polar-ref-angle-input"
-              value={draftInput}
-              autoFocus
-              onChange={(e) => setDraftInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitFieldValue();
-                if (e.key === "Escape") setEditingField(null);
-              }}
-              onBlur={commitFieldValue}
-              placeholder="°"
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated, #0f172a)",
-                borderColor: "var(--chamfer-accent, #EF4444)",
-                color: "var(--chamfer-text-primary, #ffffff)",
-              }}
-              className="w-14 rounded-full border px-2 py-0.5 text-center text-[11px] font-bold outline-none"
-            />
-          ) : (
+            {/* Chip Ângulo ∠ (aciona exclusivamente o Numpad próprio do CHAMFER — ZERO teclado nativo) */}
             <button
               type="button"
               data-testid="polar-ref-angle-chip"
-              onClick={() => openEditor("angle")}
-              className="rounded-full border border-red-500/45 bg-red-500/15 hover:bg-red-500/25 text-red-400 px-2 py-0.5 cursor-pointer shrink-0"
-              title="Toque para digitar o ângulo exato (°)"
+              onClick={(e) => openChamferNumpad("angle", e)}
+              style={
+                numpadField === "angle"
+                  ? {
+                      backgroundColor: "var(--chamfer-accent, #EF4444)",
+                      borderColor: "var(--chamfer-accent, #EF4444)",
+                      color: "#FFFFFF",
+                    }
+                  : undefined
+              }
+              className={cn(
+                "rounded-full border px-2 py-0.5 cursor-pointer shrink-0 transition-colors",
+                numpadField !== "angle" &&
+                  "border-red-500/45 bg-red-500/15 hover:bg-red-500/25 text-red-400",
+              )}
+              title="Abrir Numpad CHAMFER para digitar ângulo exato (°)"
             >
               ∠ {currentAng.toFixed(1)}° ✎
             </button>
-          )}
 
-          {/* Presets angulares rápidos (0°, 30°, 45°, 90°, 120°) */}
-          <div className="hidden sm:flex items-center gap-0.5">
-            {[0, 30, 45, 90, 120].map((deg) => (
-              <button
-                key={deg}
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChangeLockedAngle(lockedAngleDeg === deg ? null : deg);
-                }}
-                style={
-                  lockedAngleDeg === deg
-                    ? {
-                        backgroundColor: "var(--chamfer-accent, #E11D48)",
-                        color: "#FFFFFF",
-                      }
-                    : undefined
-                }
-                className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[10px] font-bold cursor-pointer transition-colors",
-                  lockedAngleDeg !== deg && "opacity-75 hover:opacity-100",
-                )}
-              >
-                {deg}°
-              </button>
-            ))}
-          </div>
+            {/* Presets angulares rápidos (0°, 30°, 45°, 90°, 120°) */}
+            <div className="hidden sm:flex items-center gap-0.5">
+              {[0, 30, 45, 90, 120].map((deg) => (
+                <button
+                  key={deg}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangeLockedAngle(lockedAngleDeg === deg ? null : deg);
+                  }}
+                  style={
+                    lockedAngleDeg === deg
+                      ? {
+                          backgroundColor: "var(--chamfer-accent, #E11D48)",
+                          color: "#FFFFFF",
+                        }
+                      : undefined
+                  }
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold cursor-pointer transition-colors",
+                    lockedAngleDeg !== deg && "opacity-75 hover:opacity-100",
+                  )}
+                >
+                  {deg}°
+                </button>
+              ))}
+            </div>
 
-          <button
-            type="button"
-            data-testid="polar-ref-confirm-btn"
-            onClick={() => {
-              triggerHaptic("success");
-              onCommitPolarRef();
-            }}
-            style={{
-              backgroundColor: "var(--chamfer-accent, #E11D48)",
-              color: "#FFFFFF",
-            }}
-            className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10.5px] font-extrabold shadow-sm cursor-pointer active:scale-95 shrink-0"
-          >
-            <Check className="size-3 stroke-[2.6]" />
-            <span>Fixar ⊕</span>
-          </button>
-        </>
-      )}
+            <button
+              type="button"
+              data-testid="polar-ref-confirm-btn"
+              onClick={() => {
+                setNumpadField(null);
+                triggerHaptic("success");
+                onCommitPolarRef();
+              }}
+              style={{
+                backgroundColor: "var(--chamfer-accent, #E11D48)",
+                color: "#FFFFFF",
+              }}
+              className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10.5px] font-extrabold shadow-sm cursor-pointer active:scale-95 shrink-0"
+            >
+              <Check className="size-3 stroke-[2.6]" />
+              <span>Fixar ⊕</span>
+            </button>
+          </>
+        )}
 
-      {/* Toggle Snap Polar */}
-      <button
-        type="button"
-        onClick={() => {
-          triggerHaptic("selection");
-          onTogglePolarSnap();
-        }}
-        style={
-          polarSnapOn
-            ? {
-                borderColor: "var(--chamfer-accent, #E11D48)",
-                color: "var(--chamfer-accent, #E11D48)",
-              }
-            : undefined
-        }
-        className="flex items-center gap-0.5 rounded-full border border-current/25 px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0"
-        title="Trava angular polar (0°, 30°, 45°, 60°, 90°, 120°...)"
-      >
-        <Compass className="size-3" />
-        <span>Polar {polarSnapOn ? "ON" : "OFF"}</span>
-      </button>
-
-      {/* Limpar todas as referências */}
-      {polarRefsCount > 0 && (
+        {/* Toggle Snap Polar */}
         <button
           type="button"
-          data-testid="polar-ref-clear-all-btn"
           onClick={() => {
-            triggerHaptic("action");
-            onClearAllPolarRefs();
+            triggerHaptic("selection");
+            onTogglePolarSnap();
           }}
-          className="flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/15 hover:bg-red-500/25 text-red-400 px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0"
-          title="Limpar todas as cotas de referência Ref. Polar"
+          style={
+            polarSnapOn
+              ? {
+                  borderColor: "var(--chamfer-accent, #E11D48)",
+                  color: "var(--chamfer-accent, #E11D48)",
+                }
+              : undefined
+          }
+          className="flex items-center gap-0.5 rounded-full border border-current/25 px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0"
+          title="Trava angular polar (0°, 30°, 45°, 60°, 90°, 120°...)"
         >
-          <Trash2 className="size-3" />
-          <span>Limpar ({polarRefsCount})</span>
+          <Compass className="size-3" />
+          <span>Polar {polarSnapOn ? "ON" : "OFF"}</span>
         </button>
-      )}
 
-      {/* Fechar */}
-      <button
-        type="button"
-        onClick={() => {
-          triggerHaptic("tap");
-          onExit();
-        }}
-        className="flex size-5 items-center justify-center rounded-full hover:bg-red-500/20 opacity-80 hover:opacity-100 cursor-pointer shrink-0"
-        title="Sair do modo Ref. Polar (Esc)"
-      >
-        <X className="size-3" />
-      </button>
-    </div>
+        {/* Limpar todas as referências */}
+        {polarRefsCount > 0 && (
+          <button
+            type="button"
+            data-testid="polar-ref-clear-all-btn"
+            onClick={() => {
+              setNumpadField(null);
+              triggerHaptic("action");
+              onClearAllPolarRefs();
+            }}
+            className="flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/15 hover:bg-red-500/25 text-red-400 px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0"
+            title="Limpar todas as cotas de referência Ref. Polar"
+          >
+            <Trash2 className="size-3" />
+            <span>Limpar ({polarRefsCount})</span>
+          </button>
+        )}
+
+        {/* Fechar */}
+        <button
+          type="button"
+          onClick={() => {
+            setNumpadField(null);
+            triggerHaptic("tap");
+            onExit();
+          }}
+          className="flex size-5 items-center justify-center rounded-full hover:bg-red-500/20 opacity-80 hover:opacity-100 cursor-pointer shrink-0"
+          title="Sair do modo Ref. Polar (Esc)"
+        >
+          <X className="size-3" />
+        </button>
+      </div>
+
+      {/* NUMPAD PRÓPRIO DO CHAMFER PARA DISTÂNCIA (d) E ÂNGULO (∠) — PROIBIDO TECLADO NATIVO */}
+      {numpadField && livePreview && (
+        <ChamferDirectDimensionEditor
+          open={true}
+          onClose={() => setNumpadField(null)}
+          screenPos={numpadScreenPos}
+          currentValue={numpadField === "dist" ? currentDist : currentAng}
+          label={numpadField === "dist" ? "Ref. Polar — Distância (d)" : "Ref. Polar — Ângulo (∠)"}
+          unit={numpadField === "dist" ? "mm" : "°"}
+          allowNegative={numpadField === "angle"}
+          presets={
+            numpadField === "dist"
+              ? [
+                  { label: "10", value: 10 },
+                  { label: "25", value: 25 },
+                  { label: "40", value: 40 },
+                  { label: "50", value: 50 },
+                  { label: "100", value: 100 },
+                ]
+              : [
+                  { label: "0°", value: 0 },
+                  { label: "30°", value: 30 },
+                  { label: "45°", value: 45 },
+                  { label: "90°", value: 90 },
+                  { label: "120°", value: 120 },
+                  { label: "180°", value: 180 },
+                ]
+          }
+          onPreviewChange={(val) => {
+            if (!Number.isFinite(val)) return;
+            if (numpadField === "dist") {
+              if (val > 0) onChangeLockedDistance(val);
+            } else {
+              onChangeLockedAngle(((val % 360) + 360) % 360);
+            }
+          }}
+          onConfirm={(val) => {
+            if (Number.isFinite(val)) {
+              if (numpadField === "dist" && val > 0) {
+                onChangeLockedDistance(val);
+                onCommitPolarRef({ distanceMm: val, angleDeg: currentAng });
+              } else if (numpadField === "angle") {
+                const normAng = ((val % 360) + 360) % 360;
+                onChangeLockedAngle(normAng);
+              }
+            }
+            setNumpadField(null);
+          }}
+        />
+      )}
+    </>
   );
 };
+

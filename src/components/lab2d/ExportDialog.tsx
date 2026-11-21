@@ -79,7 +79,10 @@ export function ExportDialog({
     [cypcutValidation],
   );
 
-  const entities = scopes[scope];
+  const entities = useMemo(
+    () => (scopes[scope] ?? []).filter((e) => !e.isReferenceGuide),
+    [scopes, scope],
+  );
 
   const preview = useMemo(
     () =>

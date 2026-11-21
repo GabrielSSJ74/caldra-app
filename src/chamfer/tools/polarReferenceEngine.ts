@@ -417,3 +417,186 @@ export function buildCenterRadiusLineFromParams(
     angleDeg: safeAng,
   };
 }
+
+/* ========================================================================== *
+ *  BLINDAGEM ABSOLUTA DE GESTOS MULTITOQUE (PINÇA / ZOOM / PAN 2 DEDOS)      *
+ *  Máquina de estados determinística para arbitragem de ponteiros na         *
+ *  ferramenta Ref. Polar (e reutilizável em Traçar Peça).                    *
+ * ========================================================================== */
+
+export interface PolarPendingSinglePointer {
+  pointerId: number;
+  screenStart: Vec2;
+  worldStart: Vec2;
+  startedAtMs: number;
+  /** Se a origem já existia antes deste toque (para restaurar se o 2º dedo entrar) */
+  hadOriginBeforeDown: boolean;
+  /** Se já ultrapassou o limiar de micro-confirmação (>=80ms + arraste limpo) */
+  promotedToDrag: boolean;
+}
+
+export interface PolarPointerArbiterState {
+  activePointers: Map<number, Vec2>;
+  gestureLockedByNavigation: boolean;
+  cooldownUntilMs: number;
+  pendingSingle: PolarPendingSinglePointer | null;
+}
+
+export type PolarArbiterAction =
+  | { kind: "none" }
+  | { kind: "abort_and_restore_pre_gesture" }
+  | { kind: "promote_origin_or_drag"; worldPoint: Vec2 }
+  | { kind: "update_live_drag"; worldPoint: Vec2 }
+  | { kind: "commit_single_tap"; worldPoint: Vec2; hadOriginBeforeDown: boolean };
+
+export const POLAR_MICRO_CONFIRM_MS = 80;
+export const POLAR_DRAG_PROMOTE_PX = 8;
+export const POLAR_POST_PINCH_COOLDOWN_MS = 160;
+
+export function createPolarPointerArbiterState(): PolarPointerArbiterState {
+  return {
+    activePointers: new Map<number, Vec2>(),
+    gestureLockedByNavigation: false,
+    cooldownUntilMs: 0,
+    pendingSingle: null,
+  };
+}
+
+export function polarArbiterPointerDown(
+  state: PolarPointerArbiterState,
+  ev: {
+    pointerId: number;
+    screen: Vec2;
+    world: Vec2;
+    nowMs: number;
+    hasExistingOrigin: boolean;
+  },
+): PolarArbiterAction {
+  state.activePointers.set(ev.pointerId, { x: ev.screen.x, y: ev.screen.y });
+
+  // 2 ou mais dedos ativos -> TRAVA ABSOLUTA DE NAVEGAÇÃO (Pinça/Zoom/Pan)
+  if (state.activePointers.size >= 2) {
+    state.gestureLockedByNavigation = true;
+    const hadPending = state.pendingSingle !== null;
+    state.pendingSingle = null;
+    return hadPending ? { kind: "abort_and_restore_pre_gesture" } : { kind: "abort_and_restore_pre_gesture" };
+  }
+
+  // Ainda em trava ou janela de resfriamento pós-pinça -> ignora totalmente
+  if (state.gestureLockedByNavigation || ev.nowMs < state.cooldownUntilMs) {
+    state.pendingSingle = null;
+    return { kind: "none" };
+  }
+
+  // 1 único dedo limpo: armazena como pendente (NÃO crava origem no pointerdown imediato
+  // para impedir que o 1º dedo de uma pinça crie uma Ref. Polar acidental!)
+  state.pendingSingle = {
+    pointerId: ev.pointerId,
+    screenStart: { x: ev.screen.x, y: ev.screen.y },
+    worldStart: { x: ev.world.x, y: ev.world.y },
+    startedAtMs: ev.nowMs,
+    hadOriginBeforeDown: ev.hasExistingOrigin,
+    promotedToDrag: false,
+  };
+  return { kind: "none" };
+}
+
+export function polarArbiterPointerMove(
+  state: PolarPointerArbiterState,
+  ev: {
+    pointerId: number;
+    screen: Vec2;
+    world: Vec2;
+    nowMs: number;
+  },
+): PolarArbiterAction {
+  if (state.activePointers.has(ev.pointerId)) {
+    state.activePointers.set(ev.pointerId, { x: ev.screen.x, y: ev.screen.y });
+  }
+
+  if (state.activePointers.size >= 2 || state.gestureLockedByNavigation) {
+    state.gestureLockedByNavigation = true;
+    state.pendingSingle = null;
+    return { kind: "none" };
+  }
+
+  const pend = state.pendingSingle;
+  if (!pend || pend.pointerId !== ev.pointerId) {
+    // Cursor/hover livre com mouse (0 ponteiros pressionados)
+    if (state.activePointers.size === 0 && ev.nowMs >= state.cooldownUntilMs) {
+      return { kind: "update_live_drag", worldPoint: ev.world };
+    }
+    return { kind: "none" };
+  }
+
+  const elapsed = ev.nowMs - pend.startedAtMs;
+  const movePx = Math.hypot(
+    ev.screen.x - pend.screenStart.x,
+    ev.screen.y - pend.screenStart.y,
+  );
+
+  if (!pend.promotedToDrag) {
+    // Só promove para arraste ativo após ~80ms com 1 dedo único + deslocamento intencional
+    if (elapsed >= POLAR_MICRO_CONFIRM_MS && movePx >= POLAR_DRAG_PROMOTE_PX) {
+      pend.promotedToDrag = true;
+      return { kind: "promote_origin_or_drag", worldPoint: pend.worldStart };
+    }
+    return { kind: "none" };
+  }
+
+  return { kind: "update_live_drag", worldPoint: ev.world };
+}
+
+export function polarArbiterPointerUp(
+  state: PolarPointerArbiterState,
+  ev: {
+    pointerId: number;
+    world: Vec2;
+    nowMs: number;
+  },
+): PolarArbiterAction {
+  state.activePointers.delete(ev.pointerId);
+
+  if (state.gestureLockedByNavigation) {
+    state.pendingSingle = null;
+    // Só destrava quando TODOS os dedos deixarem a tela (+ cooldown anti-rebote)
+    if (state.activePointers.size === 0) {
+      state.gestureLockedByNavigation = false;
+      state.cooldownUntilMs = ev.nowMs + POLAR_POST_PINCH_COOLDOWN_MS;
+    }
+    return { kind: "none" };
+  }
+
+  const pend = state.pendingSingle;
+  state.pendingSingle = null;
+
+  if (
+    !pend ||
+    pend.pointerId !== ev.pointerId ||
+    state.activePointers.size > 0 ||
+    ev.nowMs < state.cooldownUntilMs
+  ) {
+    return { kind: "none" };
+  }
+
+  return {
+    kind: "commit_single_tap",
+    worldPoint: ev.world,
+    hadOriginBeforeDown: pend.hadOriginBeforeDown,
+  };
+}
+
+export function polarArbiterPointerCancel(
+  state: PolarPointerArbiterState,
+  pointerId: number,
+  nowMs: number,
+): PolarArbiterAction {
+  state.activePointers.delete(pointerId);
+  state.pendingSingle = null;
+  if (state.activePointers.size === 0) {
+    state.gestureLockedByNavigation = false;
+    state.cooldownUntilMs = nowMs + POLAR_POST_PINCH_COOLDOWN_MS;
+  }
+  return { kind: "abort_and_restore_pre_gesture" };
+}
+

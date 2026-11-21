@@ -598,6 +598,24 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       continue;
     }
 
+    // 1.5. MODO GABARITO (REF.): renderiza sempre em vermelho técnico pontilhado (#EF4444, [4, 4], 1.25px)
+    // e NUNCA entra no motor 3D Wireframe
+    if (e.isReferenceGuide) {
+      if (is3DWireframeActive) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = "#EF4444";
+      ctx.lineWidth = 1.35 * inv;
+      ctx.setLineDash(!lod ? [4 * inv, 4 * inv] : []);
+      ctx.beginPath();
+      traceEntity(ctx, e, lod);
+      ctx.stroke();
+      ctx.restore();
+      currentLayer = "";
+      continue;
+    }
+
     // 2. COLETA ENTIDADES PLANAS PARA O MOTOR 3D WIREFRAME TÉCNICO COM PROFUNDIDADE ÓPTICA
     if (is3DWireframeActive && e.type !== "point") {
       planarFor3D.push(e);

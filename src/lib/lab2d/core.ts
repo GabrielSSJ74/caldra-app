@@ -67,6 +67,8 @@ type Base = {
   cnc?: CncMeta;
   /** Estado de construção (geometria auxiliar/projeção) */
   isConstruction?: boolean;
+  /** Entidade do Modo Gabarito (Ref.) — visível em vermelho pontilhado, 100% editável e com SNAP/TRIM/Traçar Peça, mas estritamente excluída do 3D, DXF e BOM */
+  isReferenceGuide?: boolean;
   /** Elevação vertical no eixo +Z (mm) para criação de perfis em planos paralelos e Loft 3D */
   elevationZ?: number;
   /** Altura de extrusão individual no eixo +Z (mm) */

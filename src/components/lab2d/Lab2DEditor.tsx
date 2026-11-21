@@ -221,6 +221,10 @@ import {
   ChamferPolarReferenceControlBar,
   type LivePolarRefPreview,
 } from "./ChamferPolarReferenceOverlay";
+import {
+  ChamferTracePartSvgOverlay,
+  ChamferTracePartControlBar,
+} from "./ChamferTracePartOverlay";
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
 import { ChamferArrayHUD } from "./ChamferArrayHUD";
 import {
@@ -236,15 +240,30 @@ import {
   collectTrimSubPiecesCrossedByFence,
   buildTrimBatchPreview,
   commitTrimBatch,
+  trimPrimitiveToSvgPath,
   type TrimSubPiece,
   type TrimBatchPreview,
 } from "@/chamfer/tools/trimEngine2D";
+import {
+  buildTracePartPreview,
+  collectTraceSubPiecesCrossedByFence,
+  commitTracePartToRealEntities,
+  countReferenceGuideEntities,
+  hitTestTraceSubPiece,
+  removeAllReferenceGuides,
+  type TracePartPreview,
+} from "@/chamfer/tools/tracePartEngine2D";
 import {
   detectPolarRefOrigin,
   evaluateLivePolarReference,
   createPolarReferenceItem,
   findNearestPolarRefSnap,
   computeCenterRadiusLineGeometry,
+  createPolarPointerArbiterState,
+  polarArbiterPointerDown,
+  polarArbiterPointerMove,
+  polarArbiterPointerUp,
+  polarArbiterPointerCancel,
   type PolarReferenceItem,
   type PolarRefOriginAnchor,
 } from "@/chamfer/tools/polarReferenceEngine";
@@ -630,6 +649,7 @@ export type Tool =
   | "center"
   | "slot"
   | "polar_ref"
+  | "trace_part"
   | "loft_3d";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
@@ -1706,6 +1726,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [polarRefLockedDist, setPolarRefLockedDist] = useState<number | null>(null);
   const [polarRefLockedAngle, setPolarRefLockedAngle] = useState<number | null>(null);
   const [polarSnapOn, setPolarSnapOn] = useState<boolean>(true);
+  const polarArbiterRef = useRef(createPolarPointerArbiterState());
+  const polarPreGestureOriginRef = useRef<PolarRefOriginAnchor | null>(null);
+
+  /* MODO GABARITO (REF.) & FERRAMENTA "TRAÇAR PEÇA" (TRIM INVERSO / PASSAR A LIMPO) */
+  const [guideModeOn, setGuideModeOn] = useState<boolean>(false);
+  const guideModeOnRef = useRef<boolean>(false);
+  guideModeOnRef.current = guideModeOn;
+  const [guidesHidden, setGuidesHidden] = useState<boolean>(false);
+  const [traceMarkedKeys, setTraceMarkedKeys] = useState<string[]>([]);
+  const [traceHoverPiece, setTraceHoverPiece] = useState<TrimSubPiece | null>(null);
+  const [traceFenceTrail, setTraceFenceTrail] = useState<Vec2[]>([]);
+  const traceFenceRef = useRef<Vec2[]>([]);
+  const tracePointerDownWorldRef = useRef<Vec2 | null>(null);
 
   useEffect(() => {
     return ReferenceService.subscribe((nextRefState) => {
@@ -2548,6 +2581,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
         seenIds.add(entId);
         let nextEnt = ent.id === entId ? ent : { ...ent, id: entId };
+        // Modo Gabarito (Ref.): marca automaticamente novas entidades (exceto quando explicitamente `isReferenceGuide: false`, como no Traçar Peça!)
+        if (isBrandNew && guideModeOnRef.current && nextEnt.isReferenceGuide === undefined) {
+          nextEnt = {
+            ...nextEnt,
+            isReferenceGuide: true,
+          };
+        }
         if (isBrandNew && strokeOverride && !nextEnt.params?.strokeColor) {
           nextEnt = {
             ...nextEnt,
@@ -2735,6 +2775,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setPolarRefLivePreview(null);
       setPolarRefLockedDist(null);
       setPolarRefLockedAngle(null);
+      polarArbiterRef.current = createPolarPointerArbiterState();
+    }
+    if (tool !== "trace_part") {
+      setTraceMarkedKeys([]);
+      setTraceHoverPiece(null);
+      setTraceFenceTrail([]);
+      traceFenceRef.current = [];
+      tracePointerDownWorldRef.current = null;
     }
   }, [tool]);
 
@@ -2781,6 +2829,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTrimFenceTrail([]);
     swipeTrimFenceRef.current = [];
   }, [entities, trimMarkedKeys, smartTrimMode, commit]);
+
+  // Preview analítico e handlers da ferramenta "Traçar Peça" (TRIM Inverso / Passar a Limpo)
+  const guideEntitiesCount = useMemo(() => countReferenceGuideEntities(entities), [entities]);
+  const tracePartPreview: TracePartPreview | null = useMemo(() => {
+    if (tool !== "trace_part") return null;
+    return buildTracePartPreview(entities, traceMarkedKeys);
+  }, [tool, entities, traceMarkedKeys]);
+
+  const handleConfirmTracePartCreate = useCallback(() => {
+    if (traceMarkedKeys.length === 0) return;
+    const res = commitTracePartToRealEntities(entities, traceMarkedKeys, activeLayer);
+    if (res.createdRealEntities.length > 0) {
+      commit(res.updatedEntities);
+      setGuideModeOn(false);
+      triggerHaptic("success");
+      toast.success(
+        `✒️ Peça passada a limpo: ${res.createdRealEntities.length} entidade(s) vetorial(is) criada(s) em 1 passo Undo!`,
+      );
+    } else {
+      toast.info("Os trechos selecionados já existem como entidades vetoriais reais.");
+    }
+    setTraceMarkedKeys([]);
+    setTraceHoverPiece(null);
+    setTraceFenceTrail([]);
+    traceFenceRef.current = [];
+  }, [entities, traceMarkedKeys, activeLayer, commit]);
+
+  const handleDeleteAllReferenceGuides = useCallback(() => {
+    const res = removeAllReferenceGuides(entities);
+    if (res.removedCount === 0) {
+      toast.info("Nenhuma entidade de Gabarito para remover.");
+      return;
+    }
+    commit(res.updatedEntities);
+    setTraceMarkedKeys([]);
+    setGuidesHidden(false);
+    setGuideModeOn(false);
+    triggerHaptic("action");
+    toast.success(`🧹 ${res.removedCount} entidade(s) de Gabarito removida(s) (reversível com Desfazer).`);
+  }, [entities, commit]);
 
   const handleConfirmLivePolarRef = useCallback(
     (override?: { distanceMm?: number; angleDeg?: number }) => {
@@ -2987,8 +3075,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   const visible = useMemo(
-    () => activeEntities.filter((e) => Boolean(e && e.id) && layerOf(e.layer)?.visible !== false),
-    [activeEntities, layerOf],
+    () =>
+      activeEntities.filter(
+        (e) =>
+          Boolean(e && e.id) &&
+          layerOf(e.layer)?.visible !== false &&
+          !(guidesHidden && e.isReferenceGuide),
+      ),
+    [activeEntities, layerOf, guidesHidden],
   );
 
   /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
@@ -4066,6 +4160,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       description: "Cria linha vermelha pontilhada de referência não-vetorial com alvo magnético ⊕.",
       icon: Crosshair,
       action: () => setTool("polar_ref"),
+    },
+    {
+      id: "guide_mode",
+      title: "Modo Gabarito (Ref. Vermelho Pontilhado)",
+      keywords: ["gabarito", "ref", "referencia", "nao vetorial", "rascunho", "construcao"],
+      category: "precisao",
+      description: "Ativa criação em modo Gabarito (vermelho pontilhado, fora do 3D e DXF).",
+      icon: Compass,
+      action: () => {
+        setGuideModeOn((v) => !v);
+        setGuidesHidden(false);
+      },
+    },
+    {
+      id: "trace_part",
+      title: "Traçar Peça (Passar a Limpo / TRIM Inverso)",
+      keywords: ["tracar peca", "passar a limpo", "trim inverso", "gabarito", "contorno", "trace"],
+      category: "criar",
+      description: "Seleciona trechos exatos sobre gabaritos e promove apenas a peça final para vetores reais.",
+      icon: PenLine,
+      action: () => {
+        setGuidesHidden(false);
+        setTool("trace_part");
+      },
     },
     {
       id: "center_shapes",
@@ -5373,6 +5491,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     setMarquee(null);
     swipeTrimFenceRef.current = [];
+    setTrimFenceTrail([]);
+    traceFenceRef.current = [];
+    tracePointerDownWorldRef.current = null;
+    setTraceFenceTrail([]);
+    // Trava absoluta de navegação na Ref. Polar: descarta qualquer toque pendente ou origem criada no 1º dedo da pinça
+    polarArbiterRef.current.gestureLockedByNavigation = true;
+    polarArbiterRef.current.pendingSingle = null;
+    if (tool === "polar_ref") {
+      const prevOrigin = polarPreGestureOriginRef.current;
+      setPolarRefOriginAnchor(prevOrigin);
+      if (!prevOrigin) {
+        setPolarRefLivePreview(null);
+      }
+    }
     setSwipeTrimCutPreview([]);
     setOverlappingCandidates([]);
     if (freehandDrawingRef.current || freehandRawPtsRef.current.length > 0) {
@@ -6354,54 +6486,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (tool === "polar_ref") {
-      if (!polarRefOriginAnchor) {
-        const anchor = detectPolarRefOrigin(
-          raw,
-          entities,
-          18 / Math.max(0.05, view.k),
-          temporaryOrigin?.p ?? null,
-        );
-        setPolarRefOriginAnchor(anchor);
-        setPolarRefLockedDist(null);
-        setPolarRefLockedAngle(null);
-        const live = evaluateLivePolarReference({
-          originAnchor: anchor,
-          rawCursor: anchor.point,
-          orthoOn,
-          polarSnapOn,
-        });
-        setPolarRefLivePreview({ originAnchor: anchor, ...live });
-        triggerHaptic("tap");
-        toast.info(`⌖ Origem Ref. Polar fixada (${anchor.label}). Arraste ou defina d / ∠.`);
-      } else {
-        const live = evaluateLivePolarReference({
-          originAnchor: polarRefOriginAnchor,
-          rawCursor: raw,
-          orthoOn,
-          polarSnapOn,
-          lockedDistanceMm: polarRefLockedDist,
-          lockedAngleDeg: polarRefLockedAngle,
-        });
-        if (live.distanceMm >= 0.05) {
-          const item = createPolarReferenceItem({
-            origin: polarRefOriginAnchor.point,
-            distanceMm: live.distanceMm,
-            angleDeg: live.angleDeg,
-            originLabel: polarRefOriginAnchor.label,
-            isPerpendicularToEdge: live.isPerpendicularToEdge,
-          });
-          commitPolarRefs([...polarRefsRef.current, item]);
-          setPolarRefOriginAnchor(null);
-          setPolarRefLivePreview(null);
-          setPolarRefLockedDist(null);
-          setPolarRefLockedAngle(null);
-          triggerHaptic("success");
-          toast.success(
-            `⌖ Ref. Polar fixada: d = ${item.distanceMm.toFixed(1)} mm • ∠ ${item.angleDeg.toFixed(1)}°`,
-          );
-        } else {
-          toast.info("Afaste o cursor da origem para definir a distância da Ref. Polar.");
-        }
+      // BLINDAGEM CONTRA PINÇA 2 DEDOS: registra no árbitro e só confirma origem/alvo no pointerup limpo
+      // ou após micro-confirmação de arraste com 1 dedo único (ZERO origens fantasma ao dar zoom/pan!)
+      polarPreGestureOriginRef.current = polarRefOriginAnchor;
+      const arbiterAct = polarArbiterPointerDown(polarArbiterRef.current, {
+        pointerId: ev.pointerId,
+        screen: { x: ev.clientX, y: ev.clientY },
+        world: raw,
+        nowMs: performance.now(),
+        hasExistingOrigin: Boolean(polarRefOriginAnchor),
+      });
+      if (arbiterAct.kind === "abort_and_restore_pre_gesture") {
+        setPolarRefOriginAnchor(polarPreGestureOriginRef.current);
+        if (!polarPreGestureOriginRef.current) setPolarRefLivePreview(null);
+      }
+      return;
+    }
+    if (tool === "trace_part") {
+      if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current) return;
+      tracePointerDownWorldRef.current = raw;
+      traceFenceRef.current = [raw];
+      setTraceFenceTrail([raw]);
+      try {
+        (ev.currentTarget as Element | null)?.setPointerCapture?.(ev.pointerId);
+      } catch {
+        // Ignora se já capturado
       }
       return;
     }
@@ -6761,6 +6870,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
       setTrimFenceTrail([...swipeTrimFenceRef.current]);
+    }
+
+    if (tool === "trace_part" && traceFenceRef.current.length > 0 && ptrsRef.current.size === 1 && !isMultiTouchGestureRef.current) {
+      const nativeEv = ev.nativeEvent as PointerEvent;
+      const coalesced = typeof nativeEv.getCoalescedEvents === "function" ? nativeEv.getCoalescedEvents() : [];
+      if (coalesced.length > 0) {
+        for (const ce of coalesced) {
+          const pt = toWorld({
+            clientX: ce.clientX,
+            clientY: ce.clientY,
+            pointerType: ce.pointerType,
+          });
+          const lastFence = traceFenceRef.current[traceFenceRef.current.length - 1];
+          if (!lastFence || dist(lastFence, pt) > 1.5 / view.k) {
+            traceFenceRef.current.push(pt);
+          }
+        }
+      } else {
+        const rawPt = toWorld(ev);
+        const lastFence = traceFenceRef.current[traceFenceRef.current.length - 1];
+        if (!lastFence || dist(lastFence, rawPt) > 1.5 / view.k) {
+          traceFenceRef.current.push(rawPt);
+        }
+      }
+      setTraceFenceTrail([...traceFenceRef.current]);
     }
 
     if (tool === "freehand" && freehandDrawingRef.current && ptrsRef.current.size === 1) {
@@ -7128,7 +7262,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
 
     if (tool === "polar_ref") {
-      if (polarRefOriginAnchor) {
+      if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current || polarArbiterRef.current.gestureLockedByNavigation) {
+        return;
+      }
+      const arbiterAct = polarArbiterPointerMove(polarArbiterRef.current, {
+        pointerId: ptrsRef.current.size === 1 ? [...ptrsRef.current.keys()][0]! : -1,
+        screen: { x: clientX, y: clientY },
+        world: raw,
+        nowMs: performance.now(),
+      });
+      if (arbiterAct.kind === "promote_origin_or_drag" && !polarRefOriginAnchor) {
+        const anchor = detectPolarRefOrigin(
+          arbiterAct.worldPoint,
+          entities,
+          18 / Math.max(0.05, view.k),
+          temporaryOrigin?.p ?? null,
+        );
+        setPolarRefOriginAnchor(anchor);
+        setPolarRefLockedDist(null);
+        setPolarRefLockedAngle(null);
+        const live = evaluateLivePolarReference({
+          originAnchor: anchor,
+          rawCursor: raw,
+          orthoOn,
+          polarSnapOn,
+        });
+        setPolarRefLivePreview({ originAnchor: anchor, ...live });
+        setPolarRefHoveredOrigin(null);
+        setLoupeCadPos(live.target);
+        triggerHaptic("tap");
+      } else if (polarRefOriginAnchor) {
         const live = evaluateLivePolarReference({
           originAnchor: polarRefOriginAnchor,
           rawCursor: raw,
@@ -7150,6 +7313,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setPolarRefHoveredOrigin(hovered);
         setPolarRefLivePreview(null);
         setLoupeCadPos(hovered.point);
+      }
+    }
+
+    if (tool === "trace_part") {
+      if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current) return;
+      if (traceFenceRef.current.length >= 2) {
+        const startPt = traceFenceRef.current[0]!;
+        const endPt = traceFenceRef.current[traceFenceRef.current.length - 1]!;
+        if (dist(startPt, endPt) > 4 / Math.max(0.05, view.k)) {
+          const crossed = collectTraceSubPiecesCrossedByFence(
+            traceFenceRef.current,
+            entities,
+            10 / Math.max(0.05, view.k),
+          );
+          if (crossed.length > 0) {
+            setTraceMarkedKeys((prev) => {
+              const set = new Set(prev);
+              let changed = false;
+              for (const piece of crossed) {
+                if (!set.has(piece.key)) {
+                  set.add(piece.key);
+                  changed = true;
+                }
+              }
+              return changed ? Array.from(set) : prev;
+            });
+          }
+          setTraceHoverPiece(null);
+        }
+      } else {
+        const hit = hitTestTraceSubPiece(raw, entities, 14 / Math.max(0.05, view.k));
+        setTraceHoverPiece(hit ?? null);
       }
     }
 
@@ -7473,6 +7668,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
       touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN";
     if (wasMultitouch) {
+      if (ev) {
+        polarArbiterPointerUp(polarArbiterRef.current, {
+          pointerId: ev.pointerId,
+          world: cursorRef.current,
+          nowMs: performance.now(),
+        });
+      } else {
+        polarArbiterPointerCancel(polarArbiterRef.current, -1, performance.now());
+      }
+      traceFenceRef.current = [];
+      tracePointerDownWorldRef.current = null;
+      setTraceFenceTrail([]);
       previewGeometricMarkCandidateRef.current = null;
       setPreviewGeometricMarkCandidate(null);
       setPendingGeometricMarkConfirmation(null);
@@ -7493,6 +7700,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         gestureCooldownUntilRef.current = now + 150;
         gestureUntilRef.current = now + 200;
         dragCooldownUntilRef.current = now + 200;
+        polarArbiterRef.current.gestureLockedByNavigation = false;
+        polarArbiterRef.current.cooldownUntilMs = now + 180;
         if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
         cooldownTimerRef.current = setTimeout(() => {
           isMultiTouchGestureRef.current = false;
@@ -7845,6 +8054,103 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             });
           }
         }
+      }
+      return;
+    }
+
+    // Finaliza REF. POLAR somente em toque único limpo (100% blindado contra pinça 2 dedos)
+    if (tool === "polar_ref" && ev) {
+      const rawUp = toWorld(ev);
+      const act = polarArbiterPointerUp(polarArbiterRef.current, {
+        pointerId: ev.pointerId,
+        world: rawUp,
+        nowMs: performance.now(),
+      });
+      if (act.kind === "commit_single_tap") {
+        if (!polarRefOriginAnchor) {
+          const anchor = detectPolarRefOrigin(
+            act.worldPoint,
+            entities,
+            18 / Math.max(0.05, view.k),
+            temporaryOrigin?.p ?? null,
+          );
+          setPolarRefOriginAnchor(anchor);
+          setPolarRefLockedDist(null);
+          setPolarRefLockedAngle(null);
+          const live = evaluateLivePolarReference({
+            originAnchor: anchor,
+            rawCursor: anchor.point,
+            orthoOn,
+            polarSnapOn,
+          });
+          setPolarRefLivePreview({ originAnchor: anchor, ...live });
+          triggerHaptic("tap");
+          toast.info(`⌖ Origem Ref. Polar fixada (${anchor.label}). Arraste ou defina d / ∠ no Numpad.`);
+        } else {
+          const live = evaluateLivePolarReference({
+            originAnchor: polarRefOriginAnchor,
+            rawCursor: act.worldPoint,
+            orthoOn,
+            polarSnapOn,
+            lockedDistanceMm: polarRefLockedDist,
+            lockedAngleDeg: polarRefLockedAngle,
+          });
+          if (live.distanceMm >= 0.05) {
+            const item = createPolarReferenceItem({
+              origin: polarRefOriginAnchor.point,
+              distanceMm: live.distanceMm,
+              angleDeg: live.angleDeg,
+              originLabel: polarRefOriginAnchor.label,
+              isPerpendicularToEdge: live.isPerpendicularToEdge,
+            });
+            commitPolarRefs([...polarRefsRef.current, item]);
+            setPolarRefOriginAnchor(null);
+            setPolarRefLivePreview(null);
+            setPolarRefLockedDist(null);
+            setPolarRefLockedAngle(null);
+            triggerHaptic("success");
+            toast.success(
+              `⌖ Ref. Polar fixada: d = ${item.distanceMm.toFixed(1)} mm • ∠ ${item.angleDeg.toFixed(1)}°`,
+            );
+          } else {
+            toast.info("Afaste o cursor da origem ou toque nos chips d / ∠ para definir a medida.");
+          }
+        }
+      }
+      return;
+    }
+
+    // Finaliza TRAÇAR PEÇA (Toque direto alternando seleção ou Arraste "pincel / faca")
+    if (tool === "trace_part") {
+      const fence = traceFenceRef.current;
+      const downPt = tracePointerDownWorldRef.current ?? fence[0] ?? cursorRef.current;
+      const endPt = fence.length > 0 ? fence[fence.length - 1]! : cursorRef.current;
+      const isSwipe = fence.length >= 2 && dist(downPt, endPt) > 4 / Math.max(0.05, view.k);
+
+      traceFenceRef.current = [];
+      tracePointerDownWorldRef.current = null;
+      setTraceFenceTrail([]);
+
+      if (isSwipe) {
+        const crossed = collectTraceSubPiecesCrossedByFence(
+          fence,
+          entities,
+          10 / Math.max(0.05, view.k),
+        );
+        if (crossed.length > 0) {
+          setTraceMarkedKeys((prev) => Array.from(new Set([...prev, ...crossed.map((c) => c.key)])));
+          triggerHaptic("selection");
+        }
+        return;
+      }
+
+      const hitPiece = hitTestTraceSubPiece(downPt, entities, 14 / Math.max(0.05, view.k));
+      if (hitPiece) {
+        const hitKey = hitPiece.key;
+        setTraceMarkedKeys((prev) =>
+          prev.includes(hitKey) ? prev.filter((k) => k !== hitKey) : [...prev, hitKey],
+        );
+        triggerHaptic("selection");
       }
       return;
     }
@@ -11127,6 +11433,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               setLockedConstraints({});
               toast.success("Ponto de referência limpo");
             }}
+            guideModeOn={guideModeOn}
+            onToggleGuideMode={() => setGuideModeOn((v) => !v)}
+            guideEntitiesCount={guideEntitiesCount}
             dimKind={dimKind}
             onPickDimKind={(k) => {
               setDimKind(k);
@@ -13629,6 +13938,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
+              {/* TRAÇAR PEÇA (TRIM INVERSO / PASSAR A LIMPO) — OVERLAY ANIMADO SOBRE ARCOS E LINHAS REAIS */}
+              {tool === "trace_part" && (
+                <ChamferTracePartSvgOverlay
+                  preview={tracePartPreview}
+                  hoverPiece={traceHoverPiece}
+                  fenceTrail={traceFenceTrail}
+                  viewK={view.k}
+                />
+              )}
+
               {/* MARCADOR DE CENTRO FIXO (C) PARA LINHA / POLILINHA NO MODO CENTRO-RAIO */}
               {(() => {
                 const centerMarker: Vec2 | null =
@@ -13766,7 +14085,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       )}
                       {sol && (
                         <>
+                          {/* PRÉVIA HONESTA 1: Corpos principais que SERÃO MANTIDOS (Verde Esmeralda) */}
+                          {sol.keptBodies?.map((prim, idx) => (
+                            <path
+                              key={`fillet-kept-${idx}`}
+                              data-testid="fillet-preview-kept-body"
+                              d={trimPrimitiveToSvgPath(prim)}
+                              fill="none"
+                              stroke="#10B981"
+                              strokeWidth={2.8 / safeK}
+                              strokeOpacity={0.85}
+                              strokeLinecap="round"
+                            />
+                          ))}
+
+                          {/* PRÉVIA HONESTA 2: Bicos excedentes do canto que SERÃO APAGADOS (Vermelho Tracejado) */}
+                          {sol.removedBeaks?.map((prim, idx) => (
+                            <path
+                              key={`fillet-beak-${idx}`}
+                              data-testid="fillet-preview-removed-beak"
+                              d={trimPrimitiveToSvgPath(prim)}
+                              fill="none"
+                              stroke="#EF4444"
+                              strokeWidth={2.4 / safeK}
+                              strokeDasharray={`${5 / safeK} ${3.5 / safeK}`}
+                              strokeOpacity={0.95}
+                              strokeLinecap="round"
+                            />
+                          ))}
+
+                          {/* PRÉVIA HONESTA 3: Novo arco tangente R em cor de destaque sólida */}
                           <path
+                            data-testid="fillet-preview-arc"
                             d={filletArcToSvgPath(
                               sol.arcCenter,
                               sol.radius,
@@ -13774,7 +14124,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               sol.endAngle,
                             )}
                             fill="none"
-                            stroke="var(--chamfer-accent, #E11D48)"
+                            stroke="var(--chamfer-accent, #38BDF8)"
                             strokeWidth={3.2 / safeK}
                             strokeLinecap="round"
                           />
@@ -13783,7 +14133,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             cy={sol.tangentA.y}
                             r={4.2 / safeK}
                             fill="#FFFFFF"
-                            stroke="var(--chamfer-accent, #E11D48)"
+                            stroke="var(--chamfer-accent, #38BDF8)"
                             strokeWidth={1.8 / safeK}
                           />
                           <circle
@@ -13791,14 +14141,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             cy={sol.tangentB.y}
                             r={4.2 / safeK}
                             fill="#FFFFFF"
-                            stroke="var(--chamfer-accent, #E11D48)"
+                            stroke="var(--chamfer-accent, #38BDF8)"
                             strokeWidth={1.8 / safeK}
                           />
                           <circle
                             cx={sol.arcCenter.x}
                             cy={sol.arcCenter.y}
                             r={2.5 / safeK}
-                            fill="var(--chamfer-accent, #E11D48)"
+                            fill="var(--chamfer-accent, #38BDF8)"
                             fillOpacity={0.8}
                           />
                         </>
@@ -14650,7 +15000,89 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   setTool("select");
                 }}
                 uiShellMode={uiShellMode}
+                isDark={isDark}
               />
+            )}
+
+          {/* BARRA DA FERRAMENTA "TRAÇAR PEÇA" (PASSAR A LIMPO SOBRE GABARITOS) */}
+          {tool === "trace_part" &&
+            activeMode === "2d" &&
+            !solidOpen &&
+            !isInPlaceSolid3DActive && (
+              <ChamferTracePartControlBar
+                markedCount={traceMarkedKeys.length}
+                guideCount={guideEntitiesCount}
+                guidesHidden={guidesHidden}
+                onCreatePart={handleConfirmTracePartCreate}
+                onUnmarkLast={() => {
+                  setTraceMarkedKeys((prev) => prev.slice(0, -1));
+                  triggerHaptic("tap");
+                }}
+                onClearMarks={() => {
+                  setTraceMarkedKeys([]);
+                  triggerHaptic("tap");
+                }}
+                onToggleHideGuides={() => {
+                  setGuidesHidden((v) => !v);
+                  triggerHaptic("selection");
+                }}
+                onDeleteAllGuides={handleDeleteAllReferenceGuides}
+                onExit={() => {
+                  setTraceMarkedKeys([]);
+                  setTraceHoverPiece(null);
+                  setTool("select");
+                }}
+                uiShellMode={uiShellMode}
+              />
+            )}
+
+          {/* INDICADOR DISCRETO DE MODO GABARITO ATIVO (NÃO-VETORIAL) */}
+          {guideModeOn &&
+            activeMode === "2d" &&
+            !solidOpen &&
+            !isInPlaceSolid3DActive &&
+            tool !== "trace_part" &&
+            tool !== "polar_ref" && (
+              <div
+                data-testid="chamfer-guide-mode-banner"
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  top: uiShellMode === "prumo" ? 50 : 20,
+                  backgroundColor: "var(--chamfer-popover-bg, rgba(15, 23, 42, 0.9))",
+                  borderColor: "rgba(239, 68, 68, 0.55)",
+                  color: "var(--chamfer-text-primary, #f8fafc)",
+                }}
+                className="pointer-events-auto absolute right-3 z-35 flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[9.5px] font-bold shadow-md backdrop-blur-md select-none"
+              >
+                <span className="size-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-red-400">MODO GABARITO (NÃO-VETORIAL)</span>
+                {guideEntitiesCount > 0 && (
+                  <button
+                    type="button"
+                    data-testid="guide-banner-trace-btn"
+                    onClick={() => {
+                      setGuidesHidden(false);
+                      setTool("trace_part");
+                      triggerHaptic("selection");
+                    }}
+                    style={{ backgroundColor: "var(--chamfer-accent, #10B981)", color: "#FFFFFF" }}
+                    className="rounded-full px-2 py-0.5 text-[9.5px] font-extrabold cursor-pointer active:scale-95"
+                  >
+                    ✒️ Traçar Peça
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuideModeOn(false);
+                    triggerHaptic("tap");
+                  }}
+                  className="rounded-full px-1 opacity-75 hover:opacity-100 cursor-pointer"
+                  title="Desativar Modo Gabarito"
+                >
+                  ✕
+                </button>
+              </div>
             )}
 
           {/* BARRA UNIFICADA DE MEDIDAS EM TEMPO REAL E CONFIRMAÇÃO (60 FPS AO VIVO + PÓS-SOLTURA) — EXCLUSIVA DO MODO 2D PLANO PARA ZERO COLISÃO COM BARRAS 3D */}
@@ -14662,6 +15094,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             tool !== "trim" &&
             tool !== "smart_trim" &&
             tool !== "polar_ref" &&
+            tool !== "trace_part" &&
             (() => {
             const hasSubmodeBar =
               tool === "line" ||
@@ -15570,6 +16003,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onToggleSnap={() => setSnapOn((s) => !s)}
                 orthoOn={orthoOn}
                 onToggleOrtho={() => setOrthoOn((o) => !o)}
+                guideModeOn={guideModeOn}
+                onToggleGuideMode={() => setGuideModeOn((v) => !v)}
+                guideEntitiesCount={guideEntitiesCount}
                 showGrid={showGrid}
                 onToggleGrid={() => setShowGrid((g) => !g)}
                 grid={grid}
@@ -16156,6 +16592,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             setLockedConstraints({});
             toast.success("Ponto de referência limpo");
           }}
+          guideModeOn={guideModeOn}
+          onToggleGuideMode={() => setGuideModeOn((v) => !v)}
+          guideEntitiesCount={guideEntitiesCount}
           orthoOn={orthoOn}
           setOrthoOn={setOrthoOn}
           trackingOn={trackingOn}
@@ -16980,6 +17419,80 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     <span>⌖</span>
                     <span>Ref. Polar{polarRefs.length > 0 ? ` (${polarRefs.length})` : ""}</span>
                   </button>
+
+                  {/* MODO GABARITO (REF. VERMELHO PONTILHADO NÃO-VETORIAL) */}
+                  <button
+                    type="button"
+                    data-testid="chamfer-bottombar-guide-mode-btn"
+                    onClick={() => {
+                      setGuideModeOn((prev) => {
+                        const next = !prev;
+                        if (next) {
+                          setGuidesHidden(false);
+                          toast.info("📐 Modo Gabarito ATIVO: novos desenhos serão gabaritos vermelhos (fora do 3D/DXF).");
+                        } else {
+                          toast.info("Modo Gabarito desativado: voltando a criar entidades vetoriais reais.");
+                        }
+                        return next;
+                      });
+                      triggerHaptic("selection");
+                    }}
+                    title="Modo Gabarito (Ref.) — Todas as ferramentas 2D criam gabaritos vermelhos pontilhados (fora do 3D, DXF e BOM)"
+                    style={
+                      guideModeOn
+                        ? {
+                            backgroundColor: "#EF4444",
+                            borderColor: "#EF4444",
+                            color: "#FFFFFF",
+                          }
+                        : undefined
+                    }
+                    className={cn(
+                      "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
+                      guideModeOn
+                        ? "shadow-xs"
+                        : isDark
+                          ? "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border-[#EF4444]/35 text-[#FCA5A5]"
+                          : "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border-[#EF4444]/35 text-[#DC2626]",
+                    )}
+                  >
+                    <span>📐</span>
+                    <span>Gabarito{guideEntitiesCount > 0 ? ` (${guideEntitiesCount})` : ""}</span>
+                  </button>
+
+                  {/* ATALHO CONTEXTUAL "TRAÇAR PEÇA" QUANDO GABARITO ATIVO, EXISTEM GABARITOS OU FERRAMENTA ATIVA */}
+                  {(guideModeOn || guideEntitiesCount > 0 || tool === "trace_part") && (
+                    <button
+                      type="button"
+                      data-testid="chamfer-bottombar-trace-part-btn"
+                      onClick={() => {
+                        setGuidesHidden(false);
+                        setTool((prev) => (prev === "trace_part" ? "select" : "trace_part"));
+                        triggerHaptic("selection");
+                      }}
+                      title="Traçar Peça (Passar a Limpo) — Selecione os trechos reais sobre o gabarito"
+                      style={
+                        tool === "trace_part"
+                          ? {
+                              backgroundColor: "var(--chamfer-accent, #10B981)",
+                              borderColor: "var(--chamfer-accent, #10B981)",
+                              color: "#FFFFFF",
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
+                        tool === "trace_part"
+                          ? "shadow-xs"
+                          : isDark
+                            ? "bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300"
+                            : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/40 text-emerald-700",
+                      )}
+                    >
+                      <span>✒️</span>
+                      <span>Traçar Peça</span>
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -19727,15 +20240,17 @@ export const EntityShape = React.memo(function EntityShape({
   const noStroke = isIsoSolid && !!e.params?.noStroke;
   const customDashArr = Array.isArray(e.params?.dash) ? (e.params.dash as number[]) : null;
 
+  const isGuideRef = e.isReferenceGuide === true;
   const props = {
     fill: fillColor,
-    stroke: noStroke ? "none" : customStroke,
-    strokeOpacity: 1,
-    strokeWidth: customWidth,
+    stroke: noStroke ? "none" : isGuideRef ? "#EF4444" : customStroke,
+    strokeOpacity: isGuideRef ? 0.92 : 1,
+    strokeWidth: isGuideRef ? 1.35 / k : customWidth,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
-    strokeDasharray:
-      preview && !isIsoSolid
+    strokeDasharray: isGuideRef
+      ? `${4 / k} ${4 / k}`
+      : preview && !isIsoSolid
         ? `${5 / k} ${4 / k}`
         : customDashArr && customDashArr.length > 0
           ? customDashArr.map((d) => d / k).join(" ")

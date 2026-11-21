@@ -444,6 +444,7 @@ export function classifyOuterAndHoleEntities(rawEntities: Entity[]): ClassifiedO
     entityById.set(e.id, e);
     if (
       e.isConstruction ||
+      e.isReferenceGuide ||
       e.params?.isLoft3DSolid ||
       e.params?.loft3d ||
       e.layer === "centro" ||
@@ -858,7 +859,7 @@ export function buildClassifiedWireframeScene3D(
 
   // 2. Processa cada entidade individualmente para classificar todas as suas arestas nas 5 categorias
   for (const e of entities) {
-    if (e.type === "text" || e.type === "point" || e.params?.isIsoSolidFace) continue;
+    if (e.type === "text" || e.type === "point" || e.params?.isIsoSolidFace || e.isReferenceGuide) continue;
 
     // CATEGORIA 3.5: Linhas de Centro, Eixos de Simetria e Construção 3D
     if (

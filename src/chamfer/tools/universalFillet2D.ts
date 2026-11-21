@@ -11,6 +11,7 @@
  */
 
 import { dist, uid, type Entity, type Vec2 } from "@/lib/lab2d/core";
+import type { TrimGeometricPrimitive } from "@/chamfer/tools/trimEngine2D";
 
 const TWO_PI = Math.PI * 2;
 const EPS = 1e-6;
@@ -62,6 +63,10 @@ export interface UniversalFilletSolution {
   trimmedB: Entity[];
   /** Arco geométrico real resultante (`type: "arc"`) */
   filletArc: Extract<Entity, { type: "arc" }>;
+  /** Bicos excedentes que SERÃO APAGADOS (para prévia honesta em vermelho tracejado) */
+  removedBeaks: TrimGeometricPrimitive[];
+  /** Corpos principais que SERÃO MANTIDOS (para prévia honesta em verde esmeralda) */
+  keptBodies: TrimGeometricPrimitive[];
   /** Lista completa de entidades resultante após aplicar o fillet */
   updatedEntities: Entity[];
   /** Pontuação de proximidade aos cliques do usuário (menor = melhor) */
@@ -380,43 +385,104 @@ export function findFilletTargetAtPoint(
 /* ----------------------------------------------------- trimming helpers */
 
 /**
- * Apara (ou estende) uma linha até o ponto de tangência `tangentPt`,
- * preservando o lado onde o usuário clicou (`keepSidePt`).
+ * Calcula o vetor unitário tangente do ARCO DE FILLET no ponto `tangentPt` apontando
+ * PARA DENTRO do arco de fillet (em direção a `arcMidpoint`).
+ *
+ * TEOREMA DA CONTINUIDADE C¹ SEM CÚSPIDE (Invariante Anti-Inversão):
+ *  - O bico excedente a ser REMOVIDO parte de `tangentPt` no MESMO sentido `+vIntoFillet`;
+ *  - O corpo principal a ser PRESERVADO parte de `tangentPt` no sentido OPOSTO `-vIntoFillet`.
+ * Isso garante 100% que clicar próximo ao canto NUNCA inverte o corte nem apaga a peça principal!
  */
-function trimLinePrimitive(
+function filletIntoTangentAt(
+  arcCenter: Vec2,
+  startAngle: number,
+  endAngle: number,
+  tangentPt: Vec2,
+): Vec2 {
+  const th = normAngle(Math.atan2(tangentPt.y - arcCenter.y, tangentPt.x - arcCenter.x));
+  const a0 = normAngle(startAngle);
+  const a1 = normAngle(endAngle);
+  const angDist = (u: number, v: number) => {
+    const d = Math.abs(u - v);
+    return Math.min(d, TWO_PI - d);
+  };
+  // Tangente CCW positiva no ângulo `th`: (-sin(th), cos(th))
+  const tCcw = { x: -Math.sin(th), y: Math.cos(th) };
+  // Se tangentPt está em a0 (início do arco CCW), entrar no arco é +tCcw; se em a1 (fim), entrar é -tCcw
+  if (angDist(th, a0) <= angDist(th, a1)) {
+    return tCcw;
+  }
+  return { x: -tCcw.x, y: -tCcw.y };
+}
+
+interface TrimWithPreviewResult {
+  entities: Entity[];
+  keptPrimitive: TrimGeometricPrimitive | null;
+  removedBeak: TrimGeometricPrimitive | null;
+}
+
+/**
+ * Apara uma linha (ou segmento de polilinha) exatamente em `tangentPt`,
+ * removendo SEMPRE o bico na direção de `discardDir` (`+vIntoFillet`, rumo à quina `I`)
+ * e preservando SEMPRE o corpo principal na direção oposta (`-vIntoFillet`).
+ */
+function trimLinePrimitiveWithBeak(
   prim: Extract<FilletPrimitive, { kind: "line" }>,
   tangentPt: Vec2,
-  keepSidePt: Vec2,
-): Entity[] {
-  const projKeep = projectPointOnInfiniteLine(keepSidePt, prim.p1, prim.p2).t;
-  const projTan = projectPointOnInfiniteLine(tangentPt, prim.p1, prim.p2).t;
-
-  // Escolhe qual extremidade manter com base no lado clicado pelo usuário relativo a tangentPt
-  let keptEnd: Vec2;
-  if (Math.abs(projKeep - projTan) > 1e-4) {
-    keptEnd = projKeep < projTan ? prim.p1 : prim.p2;
-  } else {
-    keptEnd = dist(keepSidePt, prim.p1) <= dist(keepSidePt, prim.p2) ? prim.p1 : prim.p2;
+  discardDir: Vec2,
+): TrimWithPreviewResult {
+  const dx = prim.p2.x - prim.p1.x;
+  const dy = prim.p2.y - prim.p1.y;
+  const len = Math.hypot(dx, dy);
+  if (len < EPS) {
+    return { entities: [prim.originalEntity], keptPrimitive: null, removedBeak: null };
   }
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Se u (p1 -> p2) aponta na mesma direção de discardDir, então p2 é o bico a descartar e p1 é o corpo principal!
+  const dot = ux * discardDir.x + uy * discardDir.y;
+  const keptEnd = dot >= 0 ? prim.p1 : prim.p2;
+  const discardedEnd = dot >= 0 ? prim.p2 : prim.p1;
 
   const trimmedSeg: [Vec2, Vec2] =
     keptEnd === prim.p1 ? [prim.p1, tangentPt] : [tangentPt, prim.p2];
 
+  const keptPrimitive: TrimGeometricPrimitive | null =
+    dist(trimmedSeg[0], trimmedSeg[1]) > 1e-4
+      ? { kind: "line", p1: trimmedSeg[0], p2: trimmedSeg[1] }
+      : null;
+
+  // O bico removido só existe se `discardedEnd` estiver efetivamente no lado `discardDir` de `tangentPt`
+  const beakVecX = discardedEnd.x - tangentPt.x;
+  const beakVecY = discardedEnd.y - tangentPt.y;
+  const beakForward = beakVecX * discardDir.x + beakVecY * discardDir.y;
+  const removedBeak: TrimGeometricPrimitive | null =
+    beakForward > 1e-3 && dist(tangentPt, discardedEnd) > 1e-3
+      ? { kind: "line", p1: tangentPt, p2: discardedEnd }
+      : null;
+
   if (prim.sourceType === "line") {
     const orig = prim.originalEntity as Extract<Entity, { type: "line" }>;
-    if (dist(trimmedSeg[0], trimmedSeg[1]) < 1e-4) return [];
-    return [
-      {
-        ...orig,
-        x1: trimmedSeg[0].x,
-        y1: trimmedSeg[0].y,
-        x2: trimmedSeg[1].x,
-        y2: trimmedSeg[1].y,
-      },
-    ];
+    if (dist(trimmedSeg[0], trimmedSeg[1]) < 1e-4) {
+      return { entities: [], keptPrimitive: null, removedBeak };
+    }
+    return {
+      entities: [
+        {
+          ...orig,
+          x1: trimmedSeg[0].x,
+          y1: trimmedSeg[0].y,
+          x2: trimmedSeg[1].x,
+          y2: trimmedSeg[1].y,
+        },
+      ],
+      keptPrimitive,
+      removedBeak,
+    };
   }
 
-  // Polilinha: substitui apenas o segmento envolvido preservando os demais lados como linhas/polilinha limpa
+  // Polilinha: substitui apenas o segmento envolvido preservando os demais lados como linhas limpas
   const poly = prim.originalEntity as Extract<Entity, { type: "polyline" }>;
   const segs = getPolylineSegmentsWithIndex(poly);
   const segIdx = prim.polylineSegIndex ?? 0;
@@ -428,6 +494,7 @@ function trimLinePrimitive(
           id: poly.id,
           layer: poly.layer,
           group: poly.group,
+          isReferenceGuide: poly.isReferenceGuide,
           type: "line",
           x1: trimmedSeg[0].x,
           y1: trimmedSeg[0].y,
@@ -440,6 +507,7 @@ function trimLinePrimitive(
         id: uid(),
         layer: poly.layer,
         group: poly.group,
+        isReferenceGuide: poly.isReferenceGuide,
         type: "line",
         x1: s.p1.x,
         y1: s.p1.y,
@@ -448,33 +516,36 @@ function trimLinePrimitive(
       });
     }
   }
-  return out;
+  return { entities: out, keptPrimitive, removedBeak };
 }
 
 /**
  * Apara um arco ou círculo exatamente no ponto de tangência `tangentPt`,
- * mantendo o lado onde o usuário clicou (`keepSidePt`).
- * - Para `circle`: mantém o círculo intacto se apenas 1 ponto de tangência (ou se houver 2 cortes no futuro pelo TRIM);
- *   melhor ainda: para concordância em círculo completo, mantém o círculo se não há outro ponto de corte,
- *   OU se o usuário clicou em um arco, apara o arco exatamente até `tangentPt` mantendo o lado clicado!
+ * removendo SEMPRE o bico curto que parte de `tangentPt` na direção `discardDir` (`+vIntoFillet`)
+ * e preservando SEMPRE o corpo principal na direção oposta (`-vIntoFillet`).
  */
-function trimCircleOrArcPrimitive(
+function trimCircleOrArcPrimitiveWithBeak(
   prim: Extract<FilletPrimitive, { kind: "circle" | "arc" }>,
   tangentPt: Vec2,
-  keepSidePt: Vec2,
-): Entity[] {
+  discardDir: Vec2,
+): TrimWithPreviewResult {
   const tanAngle = normAngle(Math.atan2(tangentPt.y - prim.cy, tangentPt.x - prim.cx));
 
   if (prim.isFullCircle) {
-    // Um círculo fechado sem outro ponto de corte só pode ser mantido fechado (1 ponto não corta círculo em 2),
-    // preservando integridade geométrica para o usuário aparar a sobra se desejar.
-    return [prim.originalEntity];
+    return {
+      entities: [prim.originalEntity],
+      keptPrimitive: { kind: "circle", cx: prim.cx, cy: prim.cy, r: prim.r },
+      removedBeak: null,
+    };
   }
 
   const orig = prim.originalEntity as Extract<Entity, { type: "arc" }>;
   const start = normAngle(orig.a0);
+  const end = normAngle(orig.a1);
   const totalSweep = ccwSweep(orig.a0, orig.a1);
-  if (totalSweep < 1e-4) return [orig];
+  if (totalSweep < 1e-4) {
+    return { entities: [orig], keptPrimitive: null, removedBeak: null };
+  }
 
   const toOffset = (ang: number) => {
     let d = normAngle(ang) - start;
@@ -482,43 +553,43 @@ function trimCircleOrArcPrimitive(
     return d;
   };
 
+  // Direção tangente CCW (+ângulo, rumo a orig.a1) no ponto tanAngle
+  const uToA1 = { x: -Math.sin(tanAngle), y: Math.cos(tanAngle) };
+  // Se uToA1 aponta na mesma direção que discardDir (+vIntoFillet), então o lado [tanAngle -> end] é o bico!
+  const discardSecondHalf = uToA1.x * discardDir.x + uToA1.y * discardDir.y >= 0;
+
   const tanOff = toOffset(tanAngle);
-  const clickAng = normAngle(Math.atan2(keepSidePt.y - prim.cy, keepSidePt.x - prim.cx));
-  const clickOff = toOffset(clickAng);
 
-  // Se o ponto de tangência está dentro do arco, corta o lado oposto ao clique
   if (tanOff > 1e-4 && tanOff < totalSweep - 1e-4) {
-    const keepFirstHalf =
-      clickOff <= totalSweep + 0.5
-        ? clickOff <= tanOff
-        : dist(keepSidePt, pointOnCircle(prim.cx, prim.cy, prim.r, orig.a0)) <=
-          dist(keepSidePt, pointOnCircle(prim.cx, prim.cy, prim.r, orig.a1));
-
-    if (keepFirstHalf) {
-      return [
-        {
-          ...orig,
-          a0: start,
-          a1: tanAngle,
-        },
-      ];
+    if (discardSecondHalf) {
+      // Mantém [start -> tanAngle], descarta bico [tanAngle -> end]
+      return {
+        entities: [{ ...orig, a0: start, a1: tanAngle }],
+        keptPrimitive: { kind: "arc", cx: prim.cx, cy: prim.cy, r: prim.r, a0: start, a1: tanAngle },
+        removedBeak: { kind: "arc", cx: prim.cx, cy: prim.cy, r: prim.r, a0: tanAngle, a1: end },
+      };
     }
-    return [
-      {
-        ...orig,
-        a0: tanAngle,
-        a1: normAngle(orig.a1),
-      },
-    ];
+    // Mantém [tanAngle -> end], descarta bico [start -> tanAngle]
+    return {
+      entities: [{ ...orig, a0: tanAngle, a1: end }],
+      keptPrimitive: { kind: "arc", cx: prim.cx, cy: prim.cy, r: prim.r, a0: tanAngle, a1: end },
+      removedBeak: { kind: "arc", cx: prim.cx, cy: prim.cy, r: prim.r, a0: start, a1: tanAngle },
+    };
   }
 
-  // Se o ponto de tangência cai fora do arco atual, estende a extremidade mais próxima até tanAngle
-  const p0 = pointOnCircle(prim.cx, prim.cy, prim.r, orig.a0);
-  const p1 = pointOnCircle(prim.cx, prim.cy, prim.r, orig.a1);
-  if (dist(tangentPt, p0) <= dist(tangentPt, p1)) {
-    return [{ ...orig, a0: tanAngle, a1: normAngle(orig.a1) }];
+  // Caso de extensão (ponto de tangência fora do vão atual do arco): estende a extremidade voltada ao fillet
+  if (discardSecondHalf) {
+    return {
+      entities: [{ ...orig, a0: start, a1: tanAngle }],
+      keptPrimitive: { kind: "arc", cx: prim.cx, cy: prim.cy, r: prim.r, a0: start, a1: tanAngle },
+      removedBeak: null,
+    };
   }
-  return [{ ...orig, a0: start, a1: tanAngle }];
+  return {
+    entities: [{ ...orig, a0: tanAngle, a1: end }],
+    keptPrimitive: { kind: "arc", cx: prim.cx, cy: prim.cy, r: prim.r, a0: tanAngle, a1: end },
+    removedBeak: null,
+  };
 }
 
 /**
@@ -635,6 +706,7 @@ function solveSamePolylineCornerFillet(
     id: uid(),
     layer: poly.layer,
     group: poly.group,
+    isReferenceGuide: poly.isReferenceGuide,
     type: "arc",
     cx: arcCenter.x,
     cy: arcCenter.y,
@@ -645,6 +717,7 @@ function solveSamePolylineCornerFillet(
 
   // Decompõe apenas em segmentos retos exatos + arco real (sem polilinha facetada!)
   const replacementLines: Entity[] = [];
+  const keptBodies: TrimGeometricPrimitive[] = [];
   for (const s of segs) {
     let p1 = s.p1;
     let p2 = s.p2;
@@ -660,14 +733,23 @@ function solveSamePolylineCornerFillet(
         id: replacementLines.length === 0 ? poly.id : uid(),
         layer: poly.layer,
         group: poly.group,
+        isReferenceGuide: poly.isReferenceGuide,
         type: "line",
         x1: p1.x,
         y1: p1.y,
         x2: p2.x,
         y2: p2.y,
       });
+      if (s.index === segIdxA || s.index === segIdxB) {
+        keptBodies.push({ kind: "line", p1, p2 });
+      }
     }
   }
+
+  const removedBeaks: TrimGeometricPrimitive[] = [
+    { kind: "line", p1: tA, p2: corner },
+    { kind: "line", p1: tB, p2: corner },
+  ];
 
   const updatedEntities: Entity[] = [];
   for (const e of allEntities) {
@@ -690,6 +772,8 @@ function solveSamePolylineCornerFillet(
     trimmedA: replacementLines,
     trimmedB: [],
     filletArc,
+    removedBeaks,
+    keptBodies,
     updatedEntities,
     score: 0,
     variantLabel: "Canto Interno",
@@ -836,6 +920,7 @@ function solveLineLineFillet(
   const filletArc: Extract<Entity, { type: "arc" }> = {
     id: uid(),
     layer: primA.layer,
+    isReferenceGuide: primA.originalEntity.isReferenceGuide && primB.originalEntity.isReferenceGuide,
     type: "arc",
     cx: arcCenter.x,
     cy: arcCenter.y,
@@ -844,9 +929,20 @@ function solveLineLineFillet(
     a1: arcInfo.endAngle,
   };
 
-  // Para trim exato: mantém a extremidade `farEnd` em cada linha!
-  const trimmedA = trimLinePrimitive(primA, tA, legA.farEnd);
-  const trimmedB = trimLinePrimitive(primB, tB, legB.farEnd);
+  // Invariante C¹: descarta SEMPRE o bico rumo à interseção `inter` (mesma direção de vIntoFillet)
+  const dirDiscardA = filletIntoTangentAt(arcCenter, arcInfo.startAngle, arcInfo.endAngle, tA);
+  const dirDiscardB = filletIntoTangentAt(arcCenter, arcInfo.startAngle, arcInfo.endAngle, tB);
+  const resA = trimLinePrimitiveWithBeak(primA, tA, dirDiscardA);
+  const resB = trimLinePrimitiveWithBeak(primB, tB, dirDiscardB);
+  const trimmedA = resA.entities;
+  const trimmedB = resB.entities;
+  const removedBeaks: TrimGeometricPrimitive[] = [resA.removedBeak, resB.removedBeak].filter(
+    (b): b is TrimGeometricPrimitive => b !== null,
+  );
+  const keptBodies: TrimGeometricPrimitive[] = [resA.keptPrimitive, resB.keptPrimitive].filter(
+    (b): b is TrimGeometricPrimitive => b !== null,
+  );
+
   const updatedEntities = buildUpdatedEntitiesList(
     allEntities,
     primA.entityId,
@@ -868,6 +964,8 @@ function solveLineLineFillet(
     trimmedA,
     trimmedB,
     filletArc,
+    removedBeaks,
+    keptBodies,
     updatedEntities,
     score: dist(tA, clickA) + dist(tB, clickB),
     variantLabel: "Quadrante Ativo",
@@ -1016,6 +1114,8 @@ function solveLineCircleFillet(
         const filletArc: Extract<Entity, { type: "arc" }> = {
           id: uid(),
           layer: lineWasFirst ? linePrim.layer : circPrim.layer,
+          isReferenceGuide:
+            linePrim.originalEntity.isReferenceGuide && circPrim.originalEntity.isReferenceGuide,
           type: "arc",
           cx: center.x,
           cy: center.y,
@@ -1024,11 +1124,23 @@ function solveLineCircleFillet(
           a1: arcInfo.endAngle,
         };
 
-        const trimmedLine = trimLinePrimitive(linePrim, tLine, lineClick);
-        const trimmedCirc = trimCircleOrArcPrimitive(circPrim, tArc, circClick);
+        // Invariante C¹ anti-inversão: remove SEMPRE apenas o bico que aponta para o canto (+vIntoFillet)
+        const dirDiscardLine = filletIntoTangentAt(center, arcInfo.startAngle, arcInfo.endAngle, tLine);
+        const dirDiscardCirc = filletIntoTangentAt(center, arcInfo.startAngle, arcInfo.endAngle, tArc);
+        const resLine = trimLinePrimitiveWithBeak(linePrim, tLine, dirDiscardLine);
+        const resCirc = trimCircleOrArcPrimitiveWithBeak(circPrim, tArc, dirDiscardCirc);
 
-        const trimmedA = lineWasFirst ? trimmedLine : trimmedCirc;
-        const trimmedB = lineWasFirst ? trimmedCirc : trimmedLine;
+        const trimmedA = lineWasFirst ? resLine.entities : resCirc.entities;
+        const trimmedB = lineWasFirst ? resCirc.entities : resLine.entities;
+        const removedBeaks: TrimGeometricPrimitive[] = [
+          resLine.removedBeak,
+          resCirc.removedBeak,
+        ].filter((b): b is TrimGeometricPrimitive => b !== null);
+        const keptBodies: TrimGeometricPrimitive[] = [
+          resLine.keptPrimitive,
+          resCirc.keptPrimitive,
+        ].filter((b): b is TrimGeometricPrimitive => b !== null);
+
         const idA = lineWasFirst ? linePrim.entityId : circPrim.entityId;
         const idB = lineWasFirst ? circPrim.entityId : linePrim.entityId;
 
@@ -1053,6 +1165,8 @@ function solveLineCircleFillet(
           trimmedA,
           trimmedB,
           filletArc,
+          removedBeaks,
+          keptBodies,
           updatedEntities,
           score,
           variantLabel: `${lr.label} (${lo.tag})`,
@@ -1196,6 +1310,7 @@ function solveCircleCircleFillet(
       const filletArc: Extract<Entity, { type: "arc" }> = {
         id: uid(),
         layer: primA.layer,
+        isReferenceGuide: primA.originalEntity.isReferenceGuide && primB.originalEntity.isReferenceGuide,
         type: "arc",
         cx: center.x,
         cy: center.y,
@@ -1204,8 +1319,19 @@ function solveCircleCircleFillet(
         a1: arcInfo.endAngle,
       };
 
-      const trimmedA = trimCircleOrArcPrimitive(primA, tA, clickA);
-      const trimmedB = trimCircleOrArcPrimitive(primB, tB, clickB);
+      const dirDiscardA = filletIntoTangentAt(center, arcInfo.startAngle, arcInfo.endAngle, tA);
+      const dirDiscardB = filletIntoTangentAt(center, arcInfo.startAngle, arcInfo.endAngle, tB);
+      const resA = trimCircleOrArcPrimitiveWithBeak(primA, tA, dirDiscardA);
+      const resB = trimCircleOrArcPrimitiveWithBeak(primB, tB, dirDiscardB);
+      const trimmedA = resA.entities;
+      const trimmedB = resB.entities;
+      const removedBeaks: TrimGeometricPrimitive[] = [resA.removedBeak, resB.removedBeak].filter(
+        (b): b is TrimGeometricPrimitive => b !== null,
+      );
+      const keptBodies: TrimGeometricPrimitive[] = [resA.keptPrimitive, resB.keptPrimitive].filter(
+        (b): b is TrimGeometricPrimitive => b !== null,
+      );
+
       const updatedEntities = buildUpdatedEntitiesList(
         allEntities,
         primA.entityId,
@@ -1227,6 +1353,8 @@ function solveCircleCircleFillet(
         trimmedA,
         trimmedB,
         filletArc,
+        removedBeaks,
+        keptBodies,
         updatedEntities,
         score,
         variantLabel: combo.label,

@@ -378,7 +378,7 @@ export function ChamferDirectDimensionEditor({
         WebkitBackdropFilter: "blur(16px)",
         color: textPrimary,
       }}
-      className="z-50 flex flex-col gap-1 overflow-y-auto scrollbar-none select-none animate-in fade-in zoom-in-95 duration-150"
+      className="z-[90] flex flex-col gap-1 overflow-y-auto scrollbar-none select-none animate-in fade-in zoom-in-95 duration-150"
     >
       {/* 1. CABEÇALHO ENXUTO: TÍTULO CURTO COM TRUNCAMENTO + BADGE LIVRE / 🔒 FIXO + BOTÃO ✕ */}
       <div

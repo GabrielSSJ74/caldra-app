@@ -181,6 +181,9 @@ interface ChamferCadToolbarProps {
   onStartSetReferencePoint?: () => void;
   temporaryOrigin?: { p: { x: number; y: number }; label: string } | null;
   onClearTemporaryOrigin?: () => void;
+  guideModeOn?: boolean;
+  onToggleGuideMode?: () => void;
+  guideEntitiesCount?: number;
 
   // Medição e Cotas
   dimKind: DimKind;
@@ -285,6 +288,9 @@ export function ChamferCadToolbar({
   onStartSetReferencePoint,
   temporaryOrigin,
   onClearTemporaryOrigin,
+  guideModeOn = false,
+  onToggleGuideMode,
+  guideEntitiesCount = 0,
   dimKind,
   onPickDimKind,
   thickness,
@@ -444,7 +450,8 @@ export function ChamferCadToolbar({
           tool === "freehand" ||
           tool === "slot" ||
           tool === "point" ||
-          tool === "text"
+          tool === "text" ||
+          tool === "trace_part"
         );
       case "modificar":
         return (
@@ -1430,6 +1437,15 @@ export function ChamferCadToolbar({
                       onClick={() => handleSelectTool("text", "criar")}
                       desc="Anotação rica justificada, fórmulas nativas ou gravação"
                     />
+                    <FlyoutItem
+                      label="Traçar Peça (Passar a Limpo)"
+                      keyLabel="TRÇ"
+                      badge={guideEntitiesCount > 0 ? `${guideEntitiesCount} ref` : "NOVO"}
+                      icon={PenLine}
+                      active={tool === "trace_part"}
+                      onClick={() => handleSelectTool("trace_part", "criar")}
+                      desc="TRIM Inverso: selecione trechos entre interseções do gabarito para gerar vetores reais"
+                    />
                     {onOpenPresets && (
                       <FlyoutItem
                         label="Presets Paramétricos"
@@ -2076,6 +2092,39 @@ export function ChamferCadToolbar({
                         <span>Parâmetros</span>
                       </button>
                     </div>
+                    {onToggleGuideMode && (
+                      <button
+                        type="button"
+                        data-testid="chamfer-pre-guide-mode-btn"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onToggleGuideMode();
+                        }}
+                        style={
+                          guideModeOn
+                            ? {
+                                backgroundColor: "rgba(239, 68, 68, 0.16)",
+                                borderColor: "rgba(239, 68, 68, 0.65)",
+                                color: "#EF4444",
+                              }
+                            : {
+                                backgroundColor: "var(--chamfer-surface-elevated)",
+                                borderColor: "var(--chamfer-border)",
+                                color: "var(--chamfer-text-primary)",
+                              }
+                        }
+                        className="flex items-center justify-between rounded-xl border px-2.5 py-1.5 transition-colors cursor-pointer"
+                        title="Desenhar entidades auxiliares em vermelho pontilhado (não-vetorial; ignoradas no 3D/DXF/BOM)"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Compass className="size-4" />
+                          <span>Modo Gabarito (Ref.)</span>
+                        </div>
+                        <span className="font-bold">
+                          {guideModeOn ? "ATIVO" : guideEntitiesCount > 0 ? `${guideEntitiesCount}` : "OFF"}
+                        </span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {

@@ -25,6 +25,12 @@ import { flattenPath } from "./bezier";
 import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
 import {
+  computeGuaranteedInteriorPoint,
+  pointInPolygonRayCast,
+  sampleCanonicalArcPoints,
+  stitchPlanarLoops2D,
+} from "@/chamfer/geometry/planarTo3DBuilder";
+import {
   buildLoft3DMeshForEntity,
   isLoft3DEntity,
   LOFT_N_SAMPLES,
@@ -927,29 +933,27 @@ export function consolidateStitchedLoopsInEntities2D(
     return { entities: [], stitchedCount: 0, openTraceEntities: [] };
   }
 
-  interface OpenChainSegment {
-    entity: Entity;
-    pts: Vec2[];
-    used: boolean;
-  }
-
-  const openSegments: OpenChainSegment[] = [];
-  const normalizedEntities: Entity[] = [];
+  // Estágio 1–3 Canônico: costura topológica de arcos orientados + linhas abertas
+  // usando `stitchPlanarLoops2D` (zero inversão de arcos, divisão de cruzamentos/T-junctions,
+  // deduplicação <= 0.02mm e extração Half-Edge / DCEL) preservando todas as features 3D especiais!
+  const specialOrClosedEntities: Entity[] = [];
+  const openCandidateEntities: Entity[] = [];
   let stitchedCount = 0;
 
   for (const ent of entities) {
     if (
+      ent.isReferenceGuide ||
       ent.isConstruction ||
       ent.layer === "cota" ||
       ent.layer === "referencia" ||
       ent.params?.excludeFrom3D
     ) {
-      normalizedEntities.push(ent);
+      specialOrClosedEntities.push(ent);
       continue;
     }
     const fhMeta = ent.params?.freehand as { usageRole?: string } | undefined;
     if (fhMeta?.usageRole === "markup") {
-      normalizedEntities.push(ent);
+      specialOrClosedEntities.push(ent);
       continue;
     }
 
@@ -966,7 +970,7 @@ export function consolidateStitchedLoopsInEntities2D(
             if (cleanPts.length >= 3) {
               const needsUpdate = !ent.closed || cleanPts.length !== ent.pts.length;
               if (needsUpdate) stitchedCount++;
-              normalizedEntities.push({
+              specialOrClosedEntities.push({
                 ...ent,
                 closed: true,
                 pts: cleanPts,
@@ -975,21 +979,18 @@ export function consolidateStitchedLoopsInEntities2D(
             }
           } else if (!ent.closed) {
             stitchedCount++;
-            normalizedEntities.push({ ...ent, closed: true });
+            specialOrClosedEntities.push({ ...ent, closed: true });
             continue;
           }
-          normalizedEntities.push(ent);
+          specialOrClosedEntities.push(ent);
           continue;
         }
       }
       if (!ent.closed && ent.pts.length >= 2) {
-        openSegments.push({
-          entity: ent,
-          pts: ent.pts.map((p) => ({ x: p.x, y: p.y })),
-          used: false,
-        });
+        openCandidateEntities.push(ent);
+        continue;
       }
-      normalizedEntities.push(ent);
+      specialOrClosedEntities.push(ent);
       continue;
     }
 
@@ -1002,7 +1003,7 @@ export function consolidateStitchedLoopsInEntities2D(
           const cleanPts = sanitizeClosedPolygonLoop2D(flat, toleranceMm + 0.05);
           if (cleanPts.length >= 3) {
             stitchedCount++;
-            normalizedEntities.push({
+            specialOrClosedEntities.push({
               ...ent,
               type: "polyline",
               pts: cleanPts,
@@ -1012,176 +1013,67 @@ export function consolidateStitchedLoopsInEntities2D(
           }
         }
       }
-      normalizedEntities.push(ent);
+      specialOrClosedEntities.push(ent);
       continue;
     }
 
-    if (ent.type === "line") {
-      const len = Math.hypot(ent.x2 - ent.x1, ent.y2 - ent.y1);
-      if (len > 0.1) {
-        openSegments.push({
-          entity: ent,
-          pts: [
-            { x: ent.x1, y: ent.y1 },
-            { x: ent.x2, y: ent.y2 },
-          ],
-          used: false,
-        });
-      }
-      normalizedEntities.push(ent);
+    if (ent.type === "line" || ent.type === "arc") {
+      openCandidateEntities.push(ent);
       continue;
     }
 
-    if (ent.type === "arc") {
-      if (ent.r > 0.1) {
-        let sweep = ent.a1 - ent.a0;
-        if (Math.abs(sweep) < 1e-4) sweep = Math.PI * 2;
-        const steps = Math.max(16, Math.min(96, Math.ceil((Math.abs(sweep) / (Math.PI / 2)) * 24)));
-        const arcPts: Vec2[] = [];
-        for (let i = 0; i <= steps; i++) {
-          const a = ent.a0 + (sweep * i) / steps;
-          arcPts.push({
-            x: ent.cx + Math.cos(a) * ent.r,
-            y: ent.cy + Math.sin(a) * ent.r,
-          });
-        }
-        openSegments.push({
-          entity: ent,
-          pts: arcPts,
-          used: false,
-        });
-      }
-      normalizedEntities.push(ent);
-      continue;
-    }
-
-    normalizedEntities.push(ent);
+    specialOrClosedEntities.push(ent);
   }
 
-  // Costura topológica planar de segmentos abertos (`line`, `arc`, `polyline` aberta) em ciclos fechados
   const consumedIds = new Set<string>();
   const stitchedPolylines: Entity[] = [];
 
-  for (let i = 0; i < openSegments.length; i++) {
-    const startSeg = openSegments[i]!;
-    if (startSeg.used || startSeg.pts.length < 2) continue;
+  if (openCandidateEntities.length > 0) {
+    const { loops } = stitchPlanarLoops2D(openCandidateEntities, 0.15);
+    const byId = new Map<string, Entity>();
+    for (const e of openCandidateEntities) byId.set(e.id, e);
 
-    const chainSegs: OpenChainSegment[] = [startSeg];
-    startSeg.used = true;
-    const chainPts: Vec2[] = [...startSeg.pts];
-
-    let closedLoopFound = false;
-    let safety = 0;
-    while (safety++ < 256) {
-      const head = chainPts[0]!;
-      const tail = chainPts[chainPts.length - 1]!;
-      if (
-        chainSegs.length >= 2 &&
-        chainPts.length >= 4 &&
-        Math.hypot(head.x - tail.x, head.y - tail.y) <= toleranceMm
-      ) {
-        closedLoopFound = true;
-        break;
+    for (let i = 0; i < loops.length; i++) {
+      const loop = loops[i]!;
+      const primaryEnt = byId.get(loop.sourceEntityIds[0] ?? "") ?? openCandidateEntities[0]!;
+      for (const sid of loop.sourceEntityIds) {
+        consumedIds.add(sid);
       }
-
-      // Procura o segmento não utilizado cuja extremidade esteja mais próxima de `tail` (<= toleranceMm)
-      let bestSeg: OpenChainSegment | null = null;
-      let bestReverse = false;
-      let bestDist = toleranceMm;
-
-      for (const cand of openSegments) {
-        if (cand.used || cand.pts.length < 2) continue;
-        const cStart = cand.pts[0]!;
-        const cEnd = cand.pts[cand.pts.length - 1]!;
-        const dStart = Math.hypot(tail.x - cStart.x, tail.y - cStart.y);
-        const dEnd = Math.hypot(tail.x - cEnd.x, tail.y - cEnd.y);
-        if (dStart <= bestDist) {
-          bestDist = dStart;
-          bestSeg = cand;
-          bestReverse = false;
-        }
-        if (dEnd <= bestDist) {
-          bestDist = dEnd;
-          bestSeg = cand;
-          bestReverse = true;
-        }
-      }
-
-      if (!bestSeg) break;
-      bestSeg.used = true;
-      chainSegs.push(bestSeg);
-      const ptsToAppend = bestReverse ? [...bestSeg.pts].reverse() : bestSeg.pts;
-      for (let k = 1; k < ptsToAppend.length; k++) {
-        chainPts.push(ptsToAppend[k]!);
-      }
-    }
-
-    const head = chainPts[0]!;
-    const tail = chainPts[chainPts.length - 1]!;
-    if (
-      !closedLoopFound &&
-      chainSegs.length >= 2 &&
-      chainPts.length >= 4 &&
-      Math.hypot(head.x - tail.x, head.y - tail.y) <= toleranceMm
-    ) {
-      closedLoopFound = true;
-    }
-
-    if (closedLoopFound) {
-      const cleanLoop = sanitizeClosedPolygonLoop2D(chainPts, toleranceMm + 0.05);
-      const areaAbs = Math.abs(signedArea2D(cleanLoop));
-      if (cleanLoop.length >= 3 && areaAbs >= 0.5) {
-        for (const s of chainSegs) {
-          consumedIds.add(s.entity.id);
-        }
-        const primaryEnt = chainSegs[0]!.entity;
-        stitchedPolylines.push({
-          id: primaryEnt.id,
-          type: "polyline",
-          pts: ensureCCW(cleanLoop),
-          closed: true,
-          layer: primaryEnt.layer,
-          elevationZ: primaryEnt.elevationZ,
-          extrudeHeight: primaryEnt.extrudeHeight,
-          shellWallThickness: primaryEnt.shellWallThickness,
-          params: {
-            ...(primaryEnt.params ?? {}),
-            stitchedFromSegmentIds: chainSegs.map((s) => s.entity.id),
-            isStitchedClosedContour2D: true,
-          },
-        });
-        stitchedCount++;
-        continue;
-      }
-    }
-
-    // Se não fechou ciclo, libera segmentos para permanecerem como traços abertos
-    for (const s of chainSegs) {
-      s.used = false;
+      stitchedPolylines.push({
+        id:
+          i === 0 || !stitchedPolylines.some((sp) => sp.id === primaryEnt.id)
+            ? primaryEnt.id
+            : `${primaryEnt.id}-loop-${i}`,
+        type: "polyline",
+        pts: ensureCCW(loop.points),
+        closed: true,
+        layer: primaryEnt.layer,
+        elevationZ: loop.elevationZ,
+        extrudeHeight: loop.extrudeHeight ?? primaryEnt.extrudeHeight,
+        shellWallThickness: primaryEnt.shellWallThickness,
+        params: {
+          ...(primaryEnt.params ?? {}),
+          stitchedFromSegmentIds: loop.sourceEntityIds,
+          isStitchedClosedContour2D: true,
+          planarTo3DCanonical: true,
+        },
+      });
+      stitchedCount++;
     }
   }
 
-  const finalEntities: Entity[] = [];
-  const stitchedByPrimaryId = new Map<string, Entity>();
-  for (const sp of stitchedPolylines) {
-    stitchedByPrimaryId.set(sp.id, sp);
-  }
+  // Reconstroi a lista preservando ordem original + loops costurados + segmentos abertos remanescentes
+  const remainingOpen = openCandidateEntities.filter((e) => !consumedIds.has(e.id));
+  const finalEntities: Entity[] = [
+    ...specialOrClosedEntities,
+    ...stitchedPolylines,
+    ...remainingOpen,
+  ];
 
-  for (const ent of normalizedEntities) {
-    const replacement = stitchedByPrimaryId.get(ent.id);
-    if (replacement) {
-      finalEntities.push(replacement);
-      stitchedByPrimaryId.delete(ent.id);
-      continue;
-    }
-    if (consumedIds.has(ent.id)) {
-      continue;
-    }
-    finalEntities.push(ent);
-  }
-
+  // Fallback extra para `arc` isolado aberto (mantendo amostragem canônica sem inversão caso usado como openTrace)
   const openTraceEntities = finalEntities.filter((ent) => {
     if (
+      ent.isReferenceGuide ||
       ent.isConstruction ||
       ent.layer === "cota" ||
       ent.layer === "referencia" ||
@@ -1189,7 +1081,8 @@ export function consolidateStitchedLoopsInEntities2D(
     ) {
       return false;
     }
-    if (ent.type === "line" || ent.type === "arc") return true;
+    if (ent.type === "line") return true;
+    if (ent.type === "arc") return sampleCanonicalArcPoints(ent.cx, ent.cy, ent.r, ent.a0, ent.a1).length >= 2;
     if (ent.type === "polyline" && !ent.closed) {
       if (ent.pts.length < 2) return false;
       const f = ent.pts[0]!;
@@ -1220,7 +1113,12 @@ export function consolidateStitchedLoopsInEntities2D(
 export function extractBaseClosedLoop2D(
   entity: Entity,
 ): { points: Vec2[]; isSmoothCircle: boolean; corners: Vec2[] } | null {
-  if (entity.isConstruction || entity.layer === "cota" || entity.layer === "referencia") {
+  if (
+    entity.isReferenceGuide ||
+    entity.isConstruction ||
+    entity.layer === "cota" ||
+    entity.layer === "referencia"
+  ) {
     return null;
   }
 
@@ -1953,11 +1851,10 @@ export function buildDirectTopology3DScene(
       continue;
     }
 
-    // Calcula a profundidade de aninhamento (Point-in-Polygon Inclusion Depth Parity)
+    // Calcula a profundidade de aninhamento (Árvore de Contenção Par-Ímpar com ponto interno garantido)
     // Profundidade ímpar (1, 3...) -> Furo do contorno pai imediatamente superior
     // Profundidade par (0, 2...) -> Corpo Sólido independente (peça externa ou ilha interna)
-    const samplePt = cand.basePoints[0]!;
-    const midPt = cand.basePoints[Math.floor(cand.basePoints.length / 2)] ?? samplePt;
+    const interiorPt = computeGuaranteedInteriorPoint(cand.basePoints);
     let inclusionDepth = 0;
     let smallestContainingOuterGroup: SolidProfileGroup | null = null;
 
@@ -1969,9 +1866,8 @@ export function buildDirectTopology3DScene(
         Math.abs(ancestor.params3D.elevationZ - cand.params3D.elevationZ) < 1.0;
       if (!sameZ) continue;
       if (
-        cand.areaAbs < ancestor.areaAbs * 0.96 &&
-        pointInPolygon2D(samplePt, ancestor.basePoints) &&
-        pointInPolygon2D(midPt, ancestor.basePoints)
+        cand.areaAbs < ancestor.areaAbs * 0.99 &&
+        pointInPolygonRayCast(interiorPt, ancestor.basePoints)
       ) {
         inclusionDepth++;
         const matchingGrp = groups.find((g) => g.outer.entity.id === ancestor.entity.id);
